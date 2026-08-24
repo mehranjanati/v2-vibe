@@ -4,6 +4,8 @@
  * Features 401 response interception to trigger authentication modals
  */
 
+import { authPlane, controlPlane } from '@/config/api';
+
 import type{
 	ApiResponse,
 	AppsListData,
@@ -159,7 +161,13 @@ class ApiClient {
 	private csrfTokenInfo: CSRFTokenInfo | null = null;
 
 	constructor(config: ApiClientConfig = {}) {
-		this.baseUrl = config.baseUrl || '';
+		// Default the base URL to the control plane (Go backend) when it is
+		// configured. This routes all /api/* calls away from the static host
+		// (which would otherwise return the SPA's index.html) to the backend.
+		this.baseUrl =
+			config.baseUrl ||
+			controlPlane.baseUrl ||
+			'';
 		this.defaultHeaders = {
 			'Content-Type': 'application/json',
 			...config.defaultHeaders,
@@ -195,10 +203,13 @@ class ApiClient {
 	 */
 	private async fetchCsrfToken(): Promise<boolean> {
 		try {
-			const response = await fetch(`${this.baseUrl}/api/auth/csrf-token`, {
-				method: 'GET',
-				credentials: 'include',
-			});
+			const response = await fetch(
+				`${authPlane.baseUrl}/api/auth/csrf-token`,
+				{
+					method: 'GET',
+					credentials: 'include',
+				},
+			);
 
 			if (response.ok) {
 				const data: ApiResponse<CsrfTokenResponseData> = await response.json();
@@ -327,7 +338,17 @@ class ApiClient {
 			);
 		}
 
-		const url = `${this.baseUrl}${endpoint}`;
+		// Auth endpoints (login/register/OAuth/profile/sessions/api-keys)
+		// and GitHub App export routes (/api/github-app/*) route to the auth
+		// plane — the lightweight Edge Worker backed by D1/KV. User
+		// credentials + OAuth flows + GitHub export live on Cloudflare's
+		// edge, not on the Go control plane. Everything else goes to the
+		// control plane (Go backend) for agent/sessions/LLM/deploy.
+		const isAuthEndpoint =
+			endpoint.startsWith('/api/auth/') ||
+			endpoint.startsWith('/api/github-app/');
+		const baseUrl = isAuthEndpoint ? authPlane.baseUrl : this.baseUrl;
+		const url = `${baseUrl}${endpoint}`;
 		const authHeaders = await this.getAuthHeaders();
 		const config: RequestInit = {
 			method: options.method || 'GET',
@@ -1286,7 +1307,7 @@ class ApiClient {
 	initiateOAuth(provider: OAuthProvider, redirectUrl?: string): void {
 		const oauthUrl = new URL(
 			`/api/auth/oauth/${provider}`,
-			window.location.origin,
+			authPlane.baseUrl,
 		);
 		if (redirectUrl) {
 			oauthUrl.searchParams.set('redirect_url', redirectUrl);
@@ -1321,10 +1342,7 @@ class ApiClient {
 	 * Initiate an authenticated account-link flow (redirects to provider)
 	 */
 	initiateProviderLink(provider: OAuthProvider): void {
-		const linkUrl = new URL(
-			`/api/auth/link/${provider}`,
-			window.location.origin,
-		);
+		const linkUrl = new URL(`/api/auth/link/${provider}`, authPlane.baseUrl);
 		window.location.href = linkUrl.toString();
 	}
 

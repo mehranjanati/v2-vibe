@@ -1,0 +1,12 @@
+# Environment
+.env
+.env.local
+
+# Build artifacts
+/bin/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/

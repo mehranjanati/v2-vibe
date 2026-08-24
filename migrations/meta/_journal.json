@@ -64,6 +64,13 @@
       "when": 1784039913365,
       "tag": "0006_puzzling_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784039913366,
+      "tag": "0008_github_tokens",
+      "breakpoints": true
     }
   ]
 }

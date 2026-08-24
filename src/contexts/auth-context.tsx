@@ -18,6 +18,7 @@ import {
 	useQueryClient,
 } from '@tanstack/react-query';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { authPlane } from '@/config/api';
 import { useSentryUser } from '@/hooks/useSentryUser';
 import { queryKeys } from '@/lib/query-keys';
 import type {
@@ -294,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 			const oauthUrl = new URL(
 				`/api/auth/oauth/${provider}`,
-				window.location.origin,
+				authPlane.baseUrl,
 			);
 			oauthUrl.searchParams.set('redirect_url', intendedUrl);
 			window.location.href = oauthUrl.toString();

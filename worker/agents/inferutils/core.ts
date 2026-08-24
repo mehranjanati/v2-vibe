@@ -295,18 +295,32 @@ export async function buildGatewayUrl(
         return constructGatewayUrl(url, providerOverride);
     }
 
-    // If CLOUDFLARE_AI_GATEWAY_URL is set and is a valid URL, use it directly
-    if (env.CLOUDFLARE_AI_GATEWAY_URL && 
-        env.CLOUDFLARE_AI_GATEWAY_URL !== 'none' && 
+    // If CLOUDFLARE_AI_GATEWAY_URL is set and is a valid URL, use it directly.
+    // The override may point at an explicit gateway sub-path. When it already
+    // names `compat`, `dynamic` (Cloudflare AI Gateway dynamic routing), or a
+    // provider-specific sub-path, the path is honored verbatim so those
+    // features aren't mangled. Otherwise we append `/compat` to preserve the
+    // original default behavior for a bare base URL.
+    if (env.CLOUDFLARE_AI_GATEWAY_URL &&
+        env.CLOUDFLARE_AI_GATEWAY_URL !== 'none' &&
         env.CLOUDFLARE_AI_GATEWAY_URL.trim() !== '') {
-        
+
         try {
             const url = new URL(env.CLOUDFLARE_AI_GATEWAY_URL);
             // Validate it's actually an HTTP/HTTPS URL
             if (url.protocol === 'http:' || url.protocol === 'https:') {
-                // Add 'providerOverride' as a segment to the URL
-                const cleanPathname = url.pathname.replace(/\/$/, ''); // Remove trailing slash
-                url.pathname = buildGatewayPathname(cleanPathname, providerOverride);
+                const cleanPathname = url.pathname.replace(/\/+$/, ''); // Remove trailing slash
+                const lastSegment = cleanPathname.split('/').pop() || '';
+                const hasExplicitSubPath =
+                    lastSegment === 'compat' ||
+                    lastSegment === 'dynamic' ||
+                    providerOverride !== undefined;
+                if (hasExplicitSubPath) {
+                    // Honor the caller's explicit gateway sub-path verbatim.
+                    url.pathname = providerOverride ? `${cleanPathname}/${providerOverride}` : cleanPathname;
+                } else {
+                    url.pathname = buildGatewayPathname(cleanPathname, providerOverride);
+                }
                 return url.toString();
             }
         } catch (error) {

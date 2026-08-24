@@ -15,6 +15,14 @@ export default defineConfig({
 		force: true,
 	},
 
+	// Static SPA build output for Cloudflare Pages. The Cloudflare Vite
+	// plugin builds the Worker alongside; this controls the frontend bundle
+	// destination (dist/) used for Pages Direct Upload deployments.
+	build: {
+		outDir: 'dist',
+		emptyOutDir: true,
+	},
+
 	// build: {
 	//     rollupOptions: {
 	//       output: {
@@ -28,7 +36,7 @@ export default defineConfig({
 		react(),
 		svgr(),
 		cloudflare({
-			configPath: 'wrangler.jsonc',
+			configPath: 'wrangler.v2.jsonc',
 		}),
 		tailwindcss(),
 		// sentryVitePlugin({

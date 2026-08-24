@@ -27,6 +27,7 @@ import { appEvents } from '@/lib/app-events';
 import { createWebSocketMessageHandler, type HandleMessageDeps, type BackendErrorDialogState } from '../utils/handle-websocket-message';
 import { isConversationalMessage, addOrUpdateMessage, createUserMessage, handleRateLimitError, createAIMessage, type ChatMessage, type ClarifyingQuestion } from '../utils/message-helpers';
 import { sendWebSocketMessage } from '../utils/websocket-helpers';
+import { deployProject, createAgentSession as controlPlaneCreateSession } from '@/services/controlPlaneClient';
 import { initialStages as defaultStages, updateStage as updateStageHelper } from '../utils/project-stage-helpers';
 import type { ProjectStage } from '../utils/project-stage-helpers';
 import { useLimitsContext } from '@/contexts/limits-context';
@@ -534,149 +535,171 @@ export function useChat({
 						return;
 					}
 
-					// Prevent duplicate session creation on rerenders while streaming
-					connectionStatus.current = 'connecting';
+				// Prevent duplicate session creation on rerenders while streaming
+				connectionStatus.current = 'connecting';
 
-					// Start new code generation using API client
-					const response = await apiClient.createAgentSession({
-						query: userQuery,
-						projectType,
-						behaviorType: explicitBehaviorType,
-						images: userImages, // Pass images from URL params for multi-modal blueprint
-					});
+				// --- Control Plane path (preferred) ---
+				// The Go backend returns the room/agent id and websocketUrl
+				// directly (simple JSON), so we connect immediately.
+				const cpSession = await controlPlaneCreateSession(userQuery, projectType);
+				if (cpSession.success && cpSession.data?.agentId && cpSession.data.websocketUrl) {
+					const agentId = cpSession.data.agentId;
+					logger.debug('🚀 Control-plane session created:', agentId);
+					setIsBootstrapping(false);
 
-					const parser = createRepairingJSONParser();
+					// The Go backend generates files asynchronously when it
+					// receives `generate_all`, so request generation explicitly.
+					connectWithRetry(cpSession.data.websocketUrl);
+					setChatId(agentId);
 
-					const result: {
-						websocketUrl: string;
-						agentId: string;
-						behaviorType: BehaviorType;
-						projectType: ProjectType;
-						template: {
-							files: FileType[];
-						};
-					} = {
-						websocketUrl: '',
-						agentId: '',
-						behaviorType: 'phasic',
-						projectType: 'app',
-						template: {
-							files: [],
-						},
-					};
-
-					let startedBlueprintStream = false;
-					const initialBehaviorType = getBehaviorTypeForProject(projectType);
-					if (initialBehaviorType === 'phasic') {
-						sendMessage(
-							createAIMessage('main', "Sure, let's get started. Bootstrapping the project first...", true),
-						);
-					}
-
-					for await (const obj of ndjsonStream(response.stream)) {
-                        logger.debug('Received chunk from server:', obj);
-						if (obj.chunk) {
-							if (!startedBlueprintStream) {
-								sendMessage(createAIMessage('main', 'Blueprint is being generated...', true));
-								logger.info('Blueprint stream has started');
-								setIsBootstrapping(false);
-								setIsGeneratingBlueprint(true);
-								startedBlueprintStream = true;
-								updateStage('bootstrap', { status: 'completed' });
-								updateStage('blueprint', { status: 'active' });
-							}
-							parser.feed(obj.chunk);
-							try {
-								const partial = parser.finalize();
-								setBlueprint(partial);
-							} catch (e) {
-								logger.error('Error parsing JSON:', e, obj.chunk);
-							}
-						}
-						if (obj.agentId) {
-							result.agentId = obj.agentId;
-						}
-						if (obj.websocketUrl) {
-							result.websocketUrl = obj.websocketUrl;
-							logger.debug('📡 Received WebSocket URL from server:', result.websocketUrl)
-						}
-						if (obj.behaviorType) {
-							result.behaviorType = obj.behaviorType;
-							setBehaviorType(obj.behaviorType);
-							logger.debug('Received behaviorType from server:', obj.behaviorType);
-						}
-						if (obj.projectType) {
-							result.projectType = obj.projectType;
-							logger.debug('Received projectType from server:', obj.projectType);
-						}
-						if (obj.template) {
-                            logger.debug('Received template from server:', obj.template);
-							result.template = obj.template;
-							if (obj.template.files) {
-								loadBootstrapFiles(obj.template.files);
-							}
-						}
-					}
-
-					updateStage('blueprint', { status: 'completed' });
-					setIsGeneratingBlueprint(false);
-					const finalBehaviorType = getBehaviorTypeForProject(projectType);
-					if (finalBehaviorType === 'phasic') {
-						sendMessage(
-							createAIMessage('main', 'Blueprint generation complete. Now starting the code generation...', true),
-						);
-					}
-
-					if (!result.websocketUrl || !result.agentId) {
-						throw new Error('Failed to initialize agent session');
-					}
-
-					// Connect to WebSocket
-					logger.debug('connecting to ws with created id');
-					connectWithRetry(result.websocketUrl);
-					setChatId(result.agentId); // This comes from the server response
-					
-					// Emit app-created event for sidebar updates
-					appEvents.emitAppCreated(result.agentId, {
+					appEvents.emitAppCreated(agentId, {
 						title: userQuery || 'New App',
 						description: userQuery,
 					});
-				} else if (connectionStatus.current === 'idle') {
-					// Prevent duplicate connect calls on rerenders
-					connectionStatus.current = 'connecting';
-
-					setIsBootstrapping(false);
-					// Show a thinking placeholder while we fetch the agent
-					// summary. The think behavior rehydrates from the ThinkAgent DO via
-					// `GET_CONVERSATION_STATE`, which produces the real
-					// thread directly — no placeholder is needed there.
-					if (getBehaviorTypeForProject(projectType) !== 'think') {
-						setMessages(() => [
-							createAIMessage('fetching-chat', 'Starting from where you left off...', true),
-						]);
-					}
-
-					// Fetch existing agent connection details
-					const response = await apiClient.connectToAgent(urlChatId);
-					if (!response.success || !response.data) {
-						logger.error('Failed to fetch existing chat:', { chatId: urlChatId, error: response.error });
-						throw new Error(response.error?.message || 'Failed to connect to agent');
-					}
-
-					logger.debug('Existing agentId API result', response.data);
-					// Set the chatId for existing chat - this enables the chat input
-					setChatId(urlChatId);
-
-
-					if (!response.data.websocketUrl) {
-						throw new Error('Missing websocketUrl for existing agent');
-					}
-
-					logger.debug('connecting from init for existing chatId');
-					connectWithRetry(response.data.websocketUrl, {
-						disableGenerate: true, // We'll handle generation resume in the WebSocket open handler
-					});
+					return;
 				}
+
+				// --- Legacy fallback: Cloudflare Worker streaming session ---
+				// Used only if the control plane is unreachable or unconfigured.
+				logger.debug('Control plane unavailable; falling back to legacy session creation');
+				const response = await apiClient.createAgentSession({
+					query: userQuery,
+					projectType,
+					behaviorType: explicitBehaviorType,
+					images: userImages, // Pass images from URL params for multi-modal blueprint
+				});
+
+				const parser = createRepairingJSONParser();
+
+				const result: {
+					websocketUrl: string;
+					agentId: string;
+					behaviorType: BehaviorType;
+					projectType: ProjectType;
+					template: {
+						files: FileType[];
+					};
+				} = {
+					websocketUrl: '',
+					agentId: '',
+					behaviorType: 'phasic',
+					projectType: 'app',
+					template: {
+						files: [],
+					},
+				};
+
+				let startedBlueprintStream = false;
+				const initialBehaviorType = getBehaviorTypeForProject(projectType);
+				if (initialBehaviorType === 'phasic') {
+					sendMessage(
+						createAIMessage('main', "Sure, let's get started. Bootstrapping the project first...", true),
+					);
+				}
+
+				for await (const obj of ndjsonStream(response.stream)) {
+					logger.debug('Received chunk from server:', obj);
+					if (obj.chunk) {
+						if (!startedBlueprintStream) {
+							sendMessage(createAIMessage('main', 'Blueprint is being generated...', true));
+							logger.info('Blueprint stream has started');
+							setIsBootstrapping(false);
+							setIsGeneratingBlueprint(true);
+							startedBlueprintStream = true;
+							updateStage('bootstrap', { status: 'completed' });
+							updateStage('blueprint', { status: 'active' });
+						}
+						parser.feed(obj.chunk);
+						try {
+							const partial = parser.finalize();
+							setBlueprint(partial);
+						} catch (e) {
+							logger.error('Error parsing JSON:', e, obj.chunk);
+						}
+					}
+					if (obj.agentId) {
+						result.agentId = obj.agentId;
+					}
+					if (obj.websocketUrl) {
+						result.websocketUrl = obj.websocketUrl;
+						logger.debug('📡 Received WebSocket URL from server:', result.websocketUrl)
+					}
+					if (obj.behaviorType) {
+						result.behaviorType = obj.behaviorType;
+						setBehaviorType(obj.behaviorType);
+						logger.debug('Received behaviorType from server:', obj.behaviorType);
+					}
+					if (obj.projectType) {
+						result.projectType = obj.projectType;
+						logger.debug('Received projectType from server:', obj.projectType);
+					}
+					if (obj.template) {
+						logger.debug('Received template from server:', obj.template);
+						result.template = obj.template;
+						if (obj.template.files) {
+							loadBootstrapFiles(obj.template.files);
+						}
+					}
+				}
+
+				updateStage('blueprint', { status: 'completed' });
+				setIsGeneratingBlueprint(false);
+				const finalBehaviorType = getBehaviorTypeForProject(projectType);
+				if (finalBehaviorType === 'phasic') {
+					sendMessage(
+						createAIMessage('main', 'Blueprint generation complete. Now starting the code generation...', true),
+					);
+				}
+
+				if (!result.websocketUrl || !result.agentId) {
+					throw new Error('Failed to initialize agent session');
+				}
+
+				// Connect to WebSocket
+				logger.debug('connecting to ws with created id');
+				connectWithRetry(result.websocketUrl);
+				setChatId(result.agentId);
+
+				// Emit app-created event for sidebar updates
+				appEvents.emitAppCreated(result.agentId, {
+					title: userQuery || 'New App',
+					description: userQuery,
+				});
+			} else if (connectionStatus.current === 'idle') {
+				// Prevent duplicate connect calls on rerenders
+				connectionStatus.current = 'connecting';
+
+				setIsBootstrapping(false);
+				// Show a thinking placeholder while we fetch the agent
+				// summary. The think behavior rehydrates from the ThinkAgent DO via
+				// `GET_CONVERSATION_STATE`, which produces the real
+				// thread directly — no placeholder is needed there.
+				if (getBehaviorTypeForProject(projectType) !== 'think') {
+					setMessages(() => [
+						createAIMessage('fetching-chat', 'Starting from where you left off...', true),
+					]);
+				}
+
+				// Fetch existing agent connection details
+				const response = await apiClient.connectToAgent(urlChatId);
+				if (!response.success || !response.data) {
+					logger.error('Failed to fetch existing chat:', { chatId: urlChatId, error: response.error });
+					throw new Error(response.error?.message || 'Failed to connect to agent');
+				}
+
+				logger.debug('Existing agentId API result', response.data);
+				// Set the chatId for existing chat - this enables the chat input
+				setChatId(urlChatId);
+
+				if (!response.data.websocketUrl) {
+					throw new Error('Missing websocketUrl for existing agent');
+				}
+
+				logger.debug('connecting from init for existing chatId');
+				connectWithRetry(response.data.websocketUrl, {
+					disableGenerate: true, // We'll handle generation resume in the WebSocket open handler
+				});
+			}
 			} catch (error) {
 				// Allow retry on failure
 				connectionStatus.current = 'idle';
@@ -768,40 +791,78 @@ export function useChat({
 		instanceId: string,
 		target: 'platform' | 'user' = 'platform',
 	) => {
+		// Helper to arm the 1-minute deployment timeout fallback.
+		const armDeploymentTimeout = () => {
+			if (deploymentTimeoutRef.current) {
+				clearTimeout(deploymentTimeoutRef.current);
+				deploymentTimeoutRef.current = null;
+			}
+			deploymentTimeoutRef.current = setTimeout(() => {
+				if (isDeploying) {
+					logger.warn('Deployment timeout after 1 minute');
+					setIsDeploying(false);
+					setCloudflareDeploymentUrl('');
+					setIsRedeployReady(false);
+					sendMessage(createAIMessage('deployment_timeout', `Deployment timed out after 1 minute.\n\nPlease try deploying again. The server may be busy.`));
+					onDebugMessage?.('warning',
+						'Deployment Timeout',
+						`Deployment for ${instanceId} timed out after 60 seconds`,
+						'Deployment Timeout Management'
+					);
+				}
+				deploymentTimeoutRef.current = null;
+			}, 60000);
+		};
+
 		try {
-			// Send deployment command via WebSocket instead of HTTP request
+			// Prefer the control-plane REST deploy endpoint (Go backend).
+			const res = await deployProject(instanceId);
+			if (res.success) {
+				logger.debug('🚀 Control-plane deployment started:', instanceId);
+				setIsDeploying(true);
+				setDeploymentError('');
+				setCloudflareDeploymentUrl('');
+				setIsRedeployReady(false);
+
+				// Listen for control-plane deployment completion/failure to
+				// reset state. The Go backend emits deployment_completed /
+				// deployment_failed over the room WebSocket.
+				const onDeployMessage = (event: MessageEvent) => {
+					try {
+						const msg = JSON.parse(String(event.data)) as {
+							type: string;
+							previewURL?: string;
+							error?: string;
+						};
+						if (msg.type === 'deployment_completed') {
+							setIsDeploying(false);
+							setCloudflareDeploymentUrl(msg.previewURL || '');
+							setDeploymentError('');
+							setIsRedeployReady(false);
+							clearDeploymentTimeout();
+							websocket?.removeEventListener('message', onDeployMessage);
+						} else if (msg.type === 'deployment_failed') {
+							setIsDeploying(false);
+							setDeploymentError(msg.error || 'Deployment failed');
+							setCloudflareDeploymentUrl('');
+							setIsRedeployReady(true);
+							clearDeploymentTimeout();
+							websocket?.removeEventListener('message', onDeployMessage);
+						}
+					} catch {
+						// ignore malformed frames
+					}
+				};
+				websocket?.addEventListener('message', onDeployMessage);
+
+				armDeploymentTimeout();
+				return;
+			}
+
+			// Fallback: legacy WebSocket deploy message.
 			if (sendWebSocketMessage(websocket, 'deploy', { instanceId, target })) {
 				logger.debug('🚀 Deployment WebSocket message sent:', instanceId);
-
-				// Clear any existing deployment timeout
-				if (deploymentTimeoutRef.current) {
-					clearTimeout(deploymentTimeoutRef.current);
-					deploymentTimeoutRef.current = null;
-				}
-				
-				// Set 1-minute timeout for deployment
-				deploymentTimeoutRef.current = setTimeout(() => {
-					if (isDeploying) {
-						logger.warn('Deployment timeout after 1 minute');
-
-						// Reset deployment state
-						setIsDeploying(false);
-						setCloudflareDeploymentUrl('');
-						setIsRedeployReady(false);
-
-						// Show timeout message
-						sendMessage(createAIMessage('deployment_timeout', `Deployment timed out after 1 minute.\n\nPlease try deploying again. The server may be busy.`));
-
-						// Debug logging for timeout
-						onDebugMessage?.('warning',
-							'Deployment Timeout',
-							`Deployment for ${instanceId} timed out after 60 seconds`,
-							'Deployment Timeout Management'
-						);
-					}
-					deploymentTimeoutRef.current = null;
-				}, 60000); // 1 minute = 60,000ms
-
+				armDeploymentTimeout();
 			} else {
 				throw new Error('WebSocket connection not available');
 			}
@@ -817,7 +878,7 @@ export function useChat({
 
 			sendMessage(createAIMessage('deployment_error', `Failed to initiate deployment: ${error instanceof Error ? error.message : 'Unknown error'}\n\nYou can try again.`));
 		}
-	}, [websocket, sendMessage, isDeploying, onDebugMessage]);
+	}, [websocket, sendMessage, isDeploying, onDebugMessage, clearDeploymentTimeout]);
 
 	const allFiles = useMemo(() => mergeFiles(bootstrapFiles, files), [bootstrapFiles, files]);
 

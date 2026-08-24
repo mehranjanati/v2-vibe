@@ -1,0 +1,58 @@
+/**
+ * V2 vibe - Fresh deploy config for a lightweight Worker.
+ *
+ * Deploys a NEW Worker (vibesdk-v2) from a minimal entry point that only
+ * serves the frontend + auth/OAuth routes. This keeps the script under the
+ * free-tier 3 MiB size limit by avoiding heavy dependencies (CodeGen DO,
+ * ThinkAgent, SpaceDO, containers, sandbox, dispatch).
+ *
+ * Bindings:
+ *   - D1 → v2-vibe   (78a4275a-a78e-46e5-9adf-74566fbafd6b)
+ *   - KV  → vibeos   (01a4941872b942d4b7429c4b43c484ad)
+ *   - R2  → vibesdk-templates
+ *   - AI binding (free)
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "vibesdk-v2",
+	"main": "worker/light-index.ts",
+	"compatibility_date": "2026-05-23",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"directory": "dist/client",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": true,
+		"binding": "ASSETS"
+	},
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "v2-vibe",
+			"database_id": "78a4275a-a78e-46e5-9adf-74566fbafd6b"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "VibecoderStore",
+			"id": "01a4941872b942d4b7429c4b43c484ad"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "TEMPLATES_BUCKET",
+			"bucket_name": "vibesdk-templates"
+		}
+	],
+	"vars": {
+		"TEMPLATES_REPOSITORY": "https://github.com/cloudflare/vibesdk-templates",
+		"CLOUDFLARE_AI_GATEWAY": "v2-vibe",
+		"CUSTOM_DOMAIN": "vibesdk-v2.elbaan.workers.dev",
+		"CONTROL_PLANE_URL": "http://localhost:8080"
+	},
+	"workers_dev": true,
+	"preview_urls": true
+}
