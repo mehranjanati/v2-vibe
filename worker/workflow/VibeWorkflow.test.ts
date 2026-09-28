@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
 import type { WorkflowStep } from 'cloudflare:workers';
 import {
@@ -103,16 +104,27 @@ function makeFakeDb(opts: { instance: FakeInstanceRow | null; dag: Record<string
   };
 }
 
-function makeCtx() {
-  const pending: Promise<unknown>[] = [];
-  return {
-    ctx: {
-      waitUntil(promise: Promise<unknown>): void {
-        pending.push(promise);
-      },
-    },
-    pending,
-  };
+/**
+ * `WorkflowEntrypoint` is a workerd-native class: its constructor only accepts a
+ * native `ExecutionContext`, while the pool-workers runtime can only hand out a
+ * JS-shaped one (`createExecutionContext()` returns a plain class instance), so
+ * `new VibeWorkflow(...)` always throws
+ * "Failed to construct 'WorkflowEntrypoint': constructor parameter 1 is not of
+ * type 'ExecutionContext'". Build the instance from the prototype and inject the
+ * two fields `run()` reads instead; `ctx.waitUntil` still lands in
+ * `waitOnExecutionContext`.
+ */
+function makeWorkflow(ctx: ExecutionContext, env: Env): VibeWorkflow {
+  const instance = Object.create(VibeWorkflow.prototype) as VibeWorkflow;
+  for (const [key, value] of Object.entries({ ctx, env })) {
+    Object.defineProperty(instance, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return instance;
 }
 
 interface RunResult {
@@ -143,9 +155,9 @@ async function runWorkflow(opts: {
       : null,
   });
   const step = makeStep({ results: opts.results, invokeCallbacks: opts.invokeCallbacks });
-  const { ctx, pending } = makeCtx();
+  const ctx = createExecutionContext();
 
-  const workflow = new VibeWorkflow(
+  const workflow = makeWorkflow(
     ctx as unknown as ExecutionContext,
     { DB: fakeDb.db } as unknown as Env,
   );
@@ -160,7 +172,7 @@ async function runWorkflow(opts: {
   } catch (error) {
     outcome = { success: false, error: error as Error };
   }
-  await Promise.allSettled(pending);
+  await waitOnExecutionContext(ctx);
 
   const stepDoConfigs: Record<string, unknown> = {};
   for (const call of step.calls) {
