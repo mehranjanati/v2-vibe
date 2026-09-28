@@ -38,16 +38,29 @@ const cfLines = cfText.split(/\r?\n/);
 
 const registryIds = new Set();
 const registryRowRe = /^\|\s*`\[S(\d+)\]`\s*\|/;
-cfLines.forEach((line, i) => {
+// Parse the registry table itself (located by its own header row inside §۷), not
+// every table in the file: later tables may legitimately open a row with a source
+// id, such as the per-source evidence log added in 2026-09-28.
+const registryHeaderIdx = cfLines.findIndex((line) => /^\|\s*شناسه\s*\|/.test(line) && /لینک/.test(line));
+if (registryHeaderIdx === -1) {
+  fail(`${CF_LIMITS}: the §۷ source-registry table header ('| شناسه | منبع | لینک | …') was not found`);
+}
+for (let i = registryHeaderIdx + 1; registryHeaderIdx !== -1 && i < cfLines.length; i += 1) {
+  const line = cfLines[i];
+  if (!line.startsWith('|')) break; // end of the registry table
+  if (/^\|[\s|:-]+\|$/.test(line)) continue; // header separator
   const m = line.match(registryRowRe);
-  if (!m) return;
+  if (!m) {
+    fail(`${CF_LIMITS}:${i + 1}: malformed source registry row (expected '| \`[Sn]\` | … | link | date | date |'): ${line.trim().slice(0, 60)}`);
+    continue;
+  }
   registryIds.add(`[S${m[1]}]`);
   if (!/https:\/\//.test(line)) fail(`${CF_LIMITS}:${i + 1}: source registry row ${m[0].trim()} has no official URL`);
   const dates = line.match(/\b\d{4}-\d{2}-\d{2}\b/g) || [];
   if (dates.length < 2) {
     fail(`${CF_LIMITS}:${i + 1}: source registry row ${m[0].trim()} must keep both the document date and our 'Last verified' date`);
   }
-});
+}
 if (registryIds.size === 0) fail(`${CF_LIMITS}: no [Sn] source rows found in the §۷ registry`);
 
 const referencedIds = new Set(cfText.match(/\[S\d+\]/g) || []);

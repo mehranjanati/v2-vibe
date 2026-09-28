@@ -1,6 +1,6 @@
 # CF LIMITS — سقف‌های واقعی Cloudflare که اسپک‌های ما به آن‌ها وابسته‌اند
 
-> **تاریخ آخرین بازبینی این فایل: ۲۰۲۶-۰۹-۲۵** (بازبینی قبلی: ۲۰۲۶-۰۹-۲۳).
+> **تاریخ آخرین بازبینی این فایل: ۲۰۲۶-۰۹-۲۸** (بازبینی قبلی: ۲۰۲۶-۰۹-۲۵؛ بازبینی زندهٔ شش منبع رسمی انجام شد — شاهد در §۷).
 > **قرارداد منبع (الزامی — T9):** هر ادعای زمان‌محور یک شناسهٔ منبع دارد (`[S1]`…`[S6]`) و هر شناسه در §۷ به «لینک رسمی + `Last updated` خودِ سند + `Last verified` (تاریخ بازبینی ما)» نگاشته شده است؛ برای جدول‌های یک‌منبعی §۳/§۵/§۶، بلوک `Source`/`Last verified` سطح-بخش پوشش‌دهندهٔ همهٔ ردیف‌ها است. ادعاهای مشتق/اندازه‌گیری خودمان با `[derived]`، و مقدارهایی که در داک رسمی پیدا نشدند با `⚠️ unverified` علامت می‌خورند (نمونه در §۲). هیچ عدد تیک‌نخورده‌ای بدون منبع و تاریخ بازبینی در این فایل نیست.
 > قاعده: هر عددی که در `docs/DEV_SPEC_*` نوشته می‌شود و منبعش اینجا نیست، قبل از تیک‌زدن باید از داک رسمی تأیید شود.
 > چرا این فایل: راهنمای معماری (`docs/llm.md` + آرشیو تاریخی `docs/archive/llm-legacy.md`) جای مرجع عددی نیست — این فایل فقط «عدد + منبع + اثر روی تسک» است.
@@ -8,7 +8,7 @@
 ## ۱) Cron Triggers (مرجع P6.6.2)
 
 **Source:** `[S1]` Cron Triggers (سینتکس و انتشار) · `[S2]` Scheduled Handler (رفتار runtime) · `[S3]` Workers Limits (سقف account plan و CPU/wall time)
-**Last verified:** 2026-09-25 — همهٔ ردیف‌ها روی داک رسمی همین تاریخ دیده شدند.
+**Last verified:** 2026-09-28 — همهٔ ردیف‌ها روی داک رسمی همین تاریخ دیده شدند.
 
 | مورد | مقدار | منبع |
 |---|---|---|
@@ -30,7 +30,7 @@
 ## ۲) Workflows — مسیر پیشنهادی برای cron (P6.6.1/P6.6.2)
 
 **Source:** `[S5]` Trigger Workflows (`schedules` روی binding) · `[S4]` Workflows Limits (بودجهٔ concurrency و سقف‌های اجرا)
-**Last verified:** 2026-09-25
+**Last verified:** 2026-09-28
 
 به‌جای `scheduled()` دستی، خودِ Workflow از `schedules` روی binding پشتیبانی می‌کند:
 
@@ -40,12 +40,12 @@
 | حداکثر طول cron expression | ⚠️ **unverified** — عدد ۲۵۶ کاراکتر در هیچ‌یک از S4/S5 پیدا نشد (توضیح زیر جدول) | — |
 | در Workers Paid، instanceهای cron-triggered | تا **۱ ساعت به‌ازای هر firing** بدون مصرف اسلات concurrency اجرا می‌شوند؛ بعد از آن وارد صف عادی می‌شوند (fail/timeout نمی‌شوند) | `[S4]` |
 
-> ⚠️ **unverified — ردیف «حداکثر طول cron expression» `[S4]` `[S5]`:** در بازبینی ۲۰۲۶-۰۹-۲۵ این عدد پیدا نشد؛ `[S5]` فقط «up to 100 cron expressions per account» را می‌گوید و `[S4]` هیچ ردیفی برای schedule یا طول cron ندارد (نمای `node_modules/wrangler/config-schema.json` هم فیلدی برای این سقف نشان نمی‌دهد). تا وقتی با تست واقعی (deploy یک عبارِ بلندتر از ۲۵۶ کاراکتر) یا پاسخ پشتیبانی Cloudflare تأیید نشود، **به این عدد در اسپک‌ها استناد نکن**.
+> ⚠️ **unverified — ردیف «حداکثر طول cron expression» `[S4]` `[S5]`:** در بازبینی‌های ۲۰۲۶-۰۹-۲۵ و ۲۰۲۶-۰۹-۲۸ این عدد پیدا نشد؛ `[S5]` فقط «up to 100 cron expressions per account» را می‌گوید و `[S4]` هیچ ردیفی برای schedule یا طول cron ندارد (نمای `node_modules/wrangler/config-schema.json` هم فیلدی برای این سقف نشان نمی‌دهد). تا وقتی با تست واقعی (deploy یک عبارِ بلندتر از ۲۵۶ کاراکتر) یا پاسخ پشتیبانی Cloudflare تأیید نشود، **به این عدد در اسپک‌ها استناد نکن**.
 
 ## ۳) Workflows — جدول سقف‌ها (مرجع P6.5، P6.6، P2.3)
 
 **Source:** `[S4]` Workflows Limits — هر ردیف جدول زیر ۱:۱ از جدول همان صفحه است (ردیف «حداکثر اجرا» به سقف روزانهٔ Workers گره خورده ⇒ `[S4]` + `[S3]`).
-**Last verified:** 2026-09-25
+**Last verified:** 2026-09-28
 
 | سقف | Workers Free | Workers Paid |
 |---|---|---|
@@ -73,7 +73,7 @@
 ## ۴) 🔴 سقف حجم Worker تغییر کرده (مرجع P2.8.2، P6.7، P4)
 
 **Source:** `[S6]` Changelog 2026-09-04 · `[S3]` Workers Limits (ردیف `Worker size`) · `[S4]` Workflows Limits (شاهد متن قدیمی که هنوز به‌روز نشده)
-**Last verified:** 2026-09-25
+**Last verified:** 2026-09-28
 
 - ❌ **سقف قدیمی «۳MB فشرده (Free) / ۱۰MB فشرده (Paid)» در ۴ سپتامبر ۲۰۲۶ حذف شد.** `[S6]`
 - ✅ سقف فعلی: **۶۴ MiB برای هر دو پلن — روی حجم فشرده‌نشدهٔ باندل**. Wrangler فقط عدد `Total Upload` را می‌شمارد؛ عدد `gzip` صرفاً اطلاعی است. `[S6]` `[S3]`
@@ -88,7 +88,7 @@
 ## ۵) سایر عددهای مرتبط
 
 **Source:** `[S3]` Workers Limits — هر ردیف جدول زیر از جدول‌های `Account plan limits` و `Request and response limits` همان صفحه است.
-**Last verified:** 2026-09-25
+**Last verified:** 2026-09-28
 
 | سقف | Workers Free | Workers Paid |
 |---|---|---|
@@ -109,7 +109,7 @@
 ## ۶) نقشهٔ اثر روی تسک‌ها
 
 **Source:** `[derived]` — این جدول تحلیل داخلی است؛ هر عدد به منبع ردیف متناظرش در §۱–§۵ اشاره می‌کند (بدون سند پلتفرمی مستقل).
-**Last verified:** 2026-09-25 (اعداد پایه دوباره تأیید شدند)
+**Last verified:** 2026-09-28 (اعداد پایه دوباره تأیید شدند)
 
 | تسک | عدد مرتبط | اقدام لازم |
 |---|---|---|
@@ -122,24 +122,46 @@
 | P6.8 (observability) | retention ۳ روز در Free | منبع حقیقت لاگ‌ها `workflow_step_logs` (D1) باشد، نه حالت Workflow |
 | P4 (Sandbox) | سقف اسکریپت دیگر مانع نیست؛ CPU ۱۰ms(Free) هست | توجیه «کانتینر جدا» را به CPU/عدم binding پایه‌گذاری کن، نه به سقف ۳MiB |
 
-## ۷) منابع، شناسه‌ها و تاریخ بازبینی (بازبینی ۲۰۲۶-۰۹-۲۵)
+## ۷) منابع، شناسه‌ها و تاریخ بازبینی (بازبینی ۲۰۲۶-۰۹-۲۸)
 
 **Source:** خودِ این جدول — نگاشت `[S1]`…`[S6]` به لینک رسمی Cloudflare.
-**Last verified:** 2026-09-25 (ستون `Last updated` = تاریخی که خودِ سند در همان لحظه اعلام می‌کرد).
+**Last verified:** 2026-09-28 (ستون `Last updated` = تاریخی که خودِ سند در همان لحظه اعلام می‌کرد).
 
 | شناسه | منبع | لینک | Last updated (سند) | Last verified (ما) |
 |---|---|---|---|---|
-| `[S1]` | Cron Triggers (فیلدها، گرانولاریتی، UTC، `L W #`، ۱=یکشنبه، انتشار تا ۱۵ دقیقه) | https://developers.cloudflare.com/workers/configuration/cron-triggers/ | 2026-09-04 | 2026-09-25 |
-| `[S2]` | Scheduled Handler (انتظار ۱۵ دقیقه، `controller.cron`، `ctx.waitUntil`) | https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/ | 2026-09-04 | 2026-09-25 |
-| `[S3]` | Workers Limits (account plan، CPU، Worker size، static assets، wall time، request/response) | https://developers.cloudflare.com/workers/platform/limits/ | 2026-09-05 | 2026-09-25 |
-| `[S4]` | Workflows Limits (جدول Free/Paid، steps، payload، state، retention، concurrency، بودجهٔ cron) | https://developers.cloudflare.com/workflows/reference/limits/ | 2026-09-21 | 2026-09-25 |
-| `[S5]` | Trigger Workflows (`schedules` روی binding؛ «up to 100 cron expressions per account») | https://developers.cloudflare.com/workflows/build/trigger-workflows/ | 2026-09-17 | 2026-09-25 |
-| `[S6]` | Changelog: حذف سقف فشرده و ۶۴ MiB فشرده‌نشده | https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/ | 2026-09-04 | 2026-09-25 |
+| `[S1]` | Cron Triggers (فیلدها، گرانولاریتی، UTC، `L W #`، ۱=یکشنبه، انتشار تا ۱۵ دقیقه) | https://developers.cloudflare.com/workers/configuration/cron-triggers/ | 2026-09-04 | 2026-09-28 |
+| `[S2]` | Scheduled Handler (انتظار ۱۵ دقیقه، `controller.cron`، `ctx.waitUntil`) | https://developers.cloudflare.com/workers/runtime-apis/handlers/scheduled/ | 2026-09-04 | 2026-09-28 |
+| `[S3]` | Workers Limits (account plan، CPU، Worker size، static assets، wall time، request/response) | https://developers.cloudflare.com/workers/platform/limits/ | 2026-09-05 | 2026-09-28 |
+| `[S4]` | Workflows Limits (جدول Free/Paid، steps، payload، state، retention، concurrency، بودجهٔ cron) | https://developers.cloudflare.com/workflows/reference/limits/ | 2026-09-21 | 2026-09-28 |
+| `[S5]` | Trigger Workflows (`schedules` روی binding؛ «up to 100 cron expressions per account») | https://developers.cloudflare.com/workflows/build/trigger-workflows/ | 2026-09-17 | 2026-09-28 |
+| `[S6]` | Changelog: حذف سقف فشرده و ۶۴ MiB فشرده‌نشده | https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/ | 2026-09-04 | 2026-09-28 |
+
+**شاهد بازبینی ۲۰۲۶-۰۹-۲۸ (اجرای زندهٔ همین روش روی هر شش منبع):** ستون `Last updated` هر شش صفحه **بدون تغییر** نسبت به ثبت قبلی بود (Sep 4 2026 · Sep 4 2026 · Sep 5 2026 · Sep 21 2026 · Sep 17 2026 · September 4 2026) و ادعاهای زیر متن‌به‌متن دوباره دیده شدند:
+
+| منبع | ادعاهای دوباره تأییدشده (۲۰۲۶-۰۹-۲۸) |
+|---|---|
+| `[S1]` | جدول «Supported cron expressions» کامل: «five fields, along with most Quartz scheduler-like cron syntax extensions»؛ Minute `0-59`؛ Days of Month `* , - / L W`؛ Weekdays `* , - / L #`؛ «Days of the week go from 1 = Sunday to 7 = Saturday»؛ ماه/روز هفته «case-insensitive 3-letter abbreviations» (`JAN`, `aug`, `MON`, `fri`)؛ `* * * * *` = «At every minute»؛ «Cron Triggers execute on UTC time.»؛ «may take several minutes (up to 15 minutes) to propagate» |
+| `[S2]` | «The runtime waits for the promise returned by the `scheduled()` handler to resolve (up to the 15-minute duration limit).»؛ `controller.cron` (تشخیص چند trigger) |
+| `[S3]` | جدول Account plan کامل: Requests 100,000/day؛ CPU 10 ms / 5 min؛ Memory 128 MB؛ Subrequests 50 / 10,000؛ Env vars 64/128 (≤ 5 KB)؛ **Worker size 64 MiB / 64 MiB**؛ startup 1 second؛ Workers 100 / 500؛ **Cron Triggers 5 / 250 per account**؛ Static Assets 20,000 / 100,000 فایل و **25 MiB** هر فایل. به‌علاوه: «CPU time per Cron Trigger 10 ms / 30 seconds (< 1 hour interval) / 15 min (>= 1 hour interval)»؛ «Scheduled Workers have a maximum wall time of 15 minutes per invocation.»؛ «`waitUntil()` … extends execution for up to 30 seconds after the response or disconnect» |
+| `[S4]` | جدول Limits کامل: «1MiB (2^20 bytes)» نتیجهٔ step غیر-stream و payload؛ state 100MB/1GB؛ steps **1,024 / 10,000** (تا 25,000)؛ retention **3 / 30 روز**؛ queued 100,000/2,000,000؛ subrequests 50 / 10,000؛ retries 10,000؛ نام/instance id 64/100 کاراکتر؛ footnote 5: «Workers Paid cron-triggered Workflow instances have a separate one-hour cron concurrency budget per firing.» |
+| `[S5]` | متن دقیق: «add a `schedules` array (**up to 100 cron expressions per account**) to the Workflow binding» |
+| `[S6]` | «That limit has been removed. Cloudflare now only checks the uncompressed size of your bundle, which is 64 MiB across all plans.»؛ «The `Total Upload` value is your uncompressed bundle size… The `gzip` value is shown for reference but is no longer a limit.» |
+
+دو نکتهٔ حاصل از همین بازبینی که ادعاهای موجود را تأیید می‌کنند (و تغییر عددی لازم نشد):
+- صفحهٔ `[S4]` **هنوز** ردیف کهنهٔ «3MB max script size per … / 10MB max script size per …» را نشان می‌دهد ⇒ هشدار §۴ («متن داک عقب‌تر از changelog است») در ۲۰۲۶-۰۹-۲۸ هم معتبر است.
+- در `[S5]` هنوز **هیچ عددی برای طول cron expression** نیامده ⇒ ردیف `⚠️ unverified` در §۲ و «به آن استناد نکن» در `DEV_CHECKLIST.md` (P6.6.2) پابرجا می‌ماند.
 
 **روش بازبینی (تکرارپذیر، فقط خواندنی):**
-1. نسخهٔ مارک‌داون هر صفحه را بگیر: `https://developers.cloudflare.com/<مسیر صفحه>/index.md` (مثلاً `.../workers/platform/limits/index.md`). اگر پاسخ ناقص برگشت، همان مارک‌داون را با پیشوند `https://r.jina.ai/` بخوان — بخش‌های وسط صفحه (مثل «Supported cron expressions») در fetch معمولی بریده می‌شوند.
+1. نسخهٔ مارک‌داون هر صفحه را بگیر: `https://developers.cloudflare.com/<مسیر صفحه>/index.md` (مثلاً `.../workers/platform/limits/index.md`). **روش مطمئن‌تر (آزموده‌شده ۲۰۲۶-۰۹-۲۸):** فایل را کامل دانلود کن و بخش موردنظر را محلی برش بزن، چون fetch ساده بخش میانی صفحه را می‌بُرد:
+   ```bash
+   curl -sS -o /tmp/cron.md https://developers.cloudflare.com/workers/configuration/cron-triggers/index.md
+   sed -n '/## Supported cron expressions/,/^## /p' /tmp/cron.md      # فقط بخش هدف
+   grep -n "Last updated" /tmp/cron.md                                # تاریخ سند
+   ```
+   اگر دسترسی `curl` نبود، همان مارک‌داون را با پیشوند `https://r.jina.ai/` بخوان (بخش‌های وسط همچنان ممکن است بریده شوند).
 2. ستون `Last updated` هر صفحه را از همان مارک‌داون بردار؛ اگر از `Last verified` این فایل جلو زد، ادعاهای آن منبع (`[S1]`…`[S6]`) باید دوباره چک شوند.
-3. اندازه‌گیری بیلد SPA `[derived]`: `stat -f '%z %N' dist/client/assets/* | sort -rn | head` و `find dist/client -type f | wc -l`.
+3. هر ادعای تأییدشده را در بلوک «شاهد بازبینی» بالا با تاریخ ثبت کن، و `Last verified` جدول و سکشن‌ها را به همان تاریخ ببر (بازبینی زنده یک رویداد تاریخ‌دار است، حتی وقتی عددی عوض نشده).
+4. اندازه‌گیری بیلد SPA `[derived]`: `stat -f '%z %N' dist/client/assets/* | sort -rn | head` و `find dist/client -type f | wc -l`.
 
 > **قاعدهٔ به‌روزرسانی:** هر بار یکی از صفحات بالا تغییر کرد، `Last verified` همان منبع و ادعاهای وابسته در §۱–§۵ را با تاریخ جدید به‌روز کن؛ اگر عددی در داک رسمی پیدا نشد، آن را `⚠️ unverified` علامت بزن (نمونه: §۲) و مبنای تیک‌زدن نکن.
 >
