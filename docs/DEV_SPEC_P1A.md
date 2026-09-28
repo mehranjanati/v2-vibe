@@ -2,8 +2,8 @@
 
 ## P1.0 — تمیزکاری ریپو (پیش‌نیاز همه)
 
-- هدف: ۵۴۳ تغییر روی `main` به PR تمیز تبدیل شود.
-- مراحل: `git fetch github origin` → برانچ `chore/phase1-cleanup` → کامیت منطقی چندتایی (team.go/skills/WS/checklist جدا) → push → PR به `github/main` → rebase روی آخرین main → مرج.
+- هدف: تبدیل working tree آلودهٔ `main` به یک PR تمیز. **اندازه‌گیری ۲۰۲۶-۰۹-۲۸ روی `main`:** ۵۷۲ ورودی `git status --porcelain` = ۳۸۲ حذف + ۶۶ اصلاح + ۹۳ افزودن + ۳۱ untracked. (عدد قدیمی «۵۴۳» برآورد پیش از شمارش دقیق بود.)
+- مراحل (اجراشده ۲۰۲۶-۰۹-۲۸؛ جزئیات و شواهد در `docs/DEV_CHECKLIST.md` → P1.0.1…P1.0.3): `git fetch github origin` → برنچ **`chore/p1.0-repo-cleanup`** → سه کامیت منطقی: (۱) `feat(phase-1): commit multi-agent engine, workflow API and dual-plane wiring`، (۲) `chore: remove retired worker/agents, space and container surfaces`، (۳) `docs: track the spec set, CF limits, audit backlog and archive` → push → **PR #1** به `github/main` (`https://github.com/mehranjanati/v2-vibe/pull/1`) → مرج فقط پس از سبز شدن هر دو job (`ci` + `go-test`) → merge commit `22a5cb3`.
 - تست: P1.0.3: پس از مرج `cd backend && go vet ./... && go test ./...` + روت `bun run typecheck && bun run lint && bun run build` — هر ۵ سبز، وگرنه revert.
 - P1.0.4: در تمام کامیت‌ها `git add -A` روی ریشه نزن؛ `.dev.vars*`، `.prod.vars`، `.env*`، `.wrangler/`، `dist/` و `backend/dist/` باید کامیت‌نشده بمانند (در `.gitignore` هستند ✅).
 
