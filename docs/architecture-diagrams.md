@@ -77,6 +77,12 @@ Vite variable is unset).
 
 > `TEMPLATES_BUCKET` (R2) is intentionally **not** bound: the light Worker never
 > reads it at runtime — see the comment in `wrangler.v2.jsonc`.
+>
+> **Maintenance rule (T16):** the binding set lives in three places that must agree —
+> `wrangler.v2.jsonc` (deployment truth), `worker-configuration.d.ts` (regenerate with
+> `bun run cf-typegen`) and this table. Adding or removing a binding therefore means:
+> edit the config → `bun run cf-typegen` → update this table, all in the same change.
+> `bun run docs:check` fails when they disagree (`scripts/validate-docs-invariants.mjs`).
 
 ## Historical diagrams (removed)
 

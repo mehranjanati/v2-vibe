@@ -4,7 +4,7 @@
 > ترتیب اجرا: P0 → P1 (شامل P1-git، lineage و P1.10) → P5 (پیش‌نیاز موج ۱ فروش، بعد از P1-git و P1.10، قبل یا موازی P2) → P2 → P6 (ادیتور ورکفلو n8n-like) → P3 → P4.
 > مشخصات اجرایی + تست هر تسک: `docs/DEV_TASKS_SPEC.md` (ایندکس) ← `docs/DEV_SPEC_P1A.md` · `docs/DEV_SPEC_P1B.md` · `docs/DEV_SPEC_P2.md` · `docs/DEV_SPEC_P3P4.md` · `docs/DEV_SPEC_P5.md` · `docs/DEV_SPEC_P6.md`.
 >
-> **Backlog اصلاح مستندات:** `docs/DOCS_AUDIT_BACKLOG.md` (۱۵ تسک با اولویت P0–P3؛ ✅ همه انجام شد — وضعیت زنده و معیار پذیرش هر تسک همان‌جاست).
+> **Backlog اصلاح مستندات:** `docs/DOCS_AUDIT_BACKLOG.md` (۱۶ تسک با اولویت P0–P3؛ ✅ همه انجام شد — وضعیت زنده و معیار پذیرش هر تسک همان‌جاست).
 
 
 ## P0 — تثبیت شده ✅

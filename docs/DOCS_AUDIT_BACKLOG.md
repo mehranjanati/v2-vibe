@@ -1,6 +1,8 @@
 # DOCS AUDIT BACKLOG — تسک‌های اصلاح مستندات
 
-> خروجی بررسی `docs/` در working tree فعلی (۲۰۲۶-۰۹-۲۴؛ پیگیری T5 → T10، T6، T7 و T8 و T9 در ۲۰۲۶-۰۹-۲۵). این backlog صرفاً **ترتیب اجرا، اولویت، وابستگی، فایل هدف، معیار پذیرش و تست** هر مورد را ثبت می‌کند.
+> خروجی بررسی `docs/` در working tree فعلی (۲۰۲۶-۰۹-۲۴؛ پیگیری T5 → T10، T6، T7 و T8 و T9 در ۲۰۲۶-۰۹-۲۵؛ **T16 (نگهداشت دوره‌ای ماشینی‌شده) در ۲۰۲۶-۰۹-۲۸**). این backlog صرفاً **ترتیب اجرا، اولویت، وابستگی، فایل هدف، معیار پذیرش و تست** هر مورد را ثبت می‌کند.
+>
+> - **سه روتین نگهداشت دوره‌ای** (route / عدد پلتفرم / binding) در بخش `## T16` همین فایل به‌صورت gate ماشینی ثبت شده‌اند: هر سه در `bun run docs:check` اجرا می‌شوند (pre-commit + job `ci`).
 >
 > - مرجع گزارش تحلیلی: تاریخچهٔ گفتگوی Cline (بررسی `docs/`).
 > - مرجع جریان توسعه: `DEV_CHECKLIST.md` و `docs/DEV_TASKS_SPEC.md`.
@@ -25,6 +27,7 @@
 | T13 | P2 — متوسط | ✅ | بازنویسی کامل `docs/setup.md` برای دو-پلنی + آرشیو V1 + کشف اینکه `bun run setup` در این درخت اجرا نمی‌شود | `docs/setup.md`, `docs/archive/setup-legacy.md`, `README.md`, `AGENTS.md`, `.github/workflows/deploy-*.yml` |
 | T14 | P2 — متوسط | ✅ | پورت‌کردن `scripts/setup.ts` به `wrangler.v2.jsonc` + رفع باگ گارد اجرا + حالت read-only `--check` | `scripts/setup.ts` (+ `docs/setup.md`, `README.md`, `AGENTS.md`) |
 | T15 | P2 — متوسط | ✅ | پاک‌سازی بلوک env قدیمی دو ورک‌فلو + افزودن jobهای گیت `lint`/`typecheck`/`go-test` و وابسته‌کردن `deploy` به آن‌ها | `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-release-live.yml`, `.github/workflows/ci.yml` |
+| T16 | P2 — متوسط | ✅ | نگهداشت دوره‌ای ماشینی شد: cross-check منیفست route با کد، اینواریانت‌های `CF_LIMITS` و parity سه‌طرفهٔ binding + اجرای `docs:check` در CI (drift واقعی `/health` هم کشف و رفع شد) | `scripts/validate-postman.mjs`, `scripts/validate-docs-invariants.mjs`, `scripts/postman-negative.contract.json`, `scripts/postman-route-contract.json`, `worker/light-index.ts`, `package.json`, `.github/workflows/ci.yml`, `.husky/pre-commit`, `docs/POSTMAN_COLLECTION_README.md`, `docs/CF_LIMITS.md`, `docs/architecture-diagrams.md`, `AGENTS.md` |
 
 ## ترتیب اجرا
 
@@ -38,8 +41,9 @@
 8. ✅ **T13** (پیگیری T12: بازنویسی کامل `docs/setup.md` + آرشیو V1 + اصلاح ادعای `bun run setup` در README/AGENTS + پاک‌سازی ورک‌فلوها؛ انجام شد ۲۰۲۶-۰۹-۲۷).
 9. ✅ **T14** (کد: پورت `scripts/setup.ts` به `wrangler.v2.jsonc` + رفع باگ گارد اجرا + `--check`؛ انجام شد ۲۰۲۶-۰۹-۲۷).
 10. ✅ **T15** (پیگیری T14: پاک‌سازی بلوک env دو ورک‌فلو + jobهای گیت CI برای `lint`/`typecheck`/`go test ./...` و وابسته‌کردن `deploy` به آن‌ها؛ انجام شد ۲۰۲۶-۰۹-۲۷).
+11. ✅ **T16** (بدون وابستگی جدید، سوار بر T3/T4 + T9 + T6 + T15: سه قانون نگهداشت دوره‌ای به gate ماشینی تبدیل شد — از جمله `docs:check` در CI؛ انجام شد ۲۰۲۶-۰۹-۲۸).
 
-**پیشرفت:** ✅ ۱۵ از ۱۵ تسک انجام شده (T1 … T15) — backlog بسته است.
+**پیشرفت:** ✅ ۱۶ از ۱۶ تسک انجام شده (T1 … T16) — backlog بسته است.
 
 ---
 
@@ -379,6 +383,39 @@
 
 ---
 
+## T16 — نگهداشت دوره‌ای ماشینی‌شده: سه تریگر (route / CF limits / bindings) ✅
+
+- **اولویت:** P2 — متوسط (نوع تغییر: کد اسکریپت‌های ولیدیتور + CI + سند)
+- **وضعیت:** ✅ انجام شد (۲۰۲۶-۰۹-۲۸)
+- **وابستگی:** سوار بر T3/T4 (منیفست + جدول §۷)، T6 (جدول bindingها)، T9 (قرارداد منبع `CF_LIMITS`)، T15 (jobهای CI)
+- **فایل هدف:** `scripts/validate-postman.mjs`, `scripts/validate-docs-invariants.mjs` (جدید), `scripts/postman-negative.contract.json` (فیکسچر جدید), `scripts/validate-postman-negative.mjs`, `scripts/postman-route-contract.json`, `worker/light-index.ts`, `package.json`, `.github/workflows/ci.yml`, `.husky/pre-commit`, `docs/POSTMAN_COLLECTION_README.md`, `docs/CF_LIMITS.md`, `docs/architecture-diagrams.md`, `AGENTS.md`
+- **شرح:** سه قانون نگهداشت که تا امروز فقط **قرارداد نوشتاری** بودند، به gate ماشینی تبدیل شدند:
+
+  | تریگر | جای به‌روزرسانی | اجبار ماشینی (اجرا در `docs:check`) |
+  |---|---|---|
+  | تغییر route | جدول §۷ `POSTMAN_COLLECTION_README.md` + `scripts/postman-route-contract.json` | `validate-postman.mjs`: منیفست ↔ ثبت‌های واقعی کد، **دو طرفه** (`app.Get("/x")` در همهٔ `backend/pkg/api/*.go` و `app.get('/x')` در `worker/light/lightApp.ts`) |
+  | تغییر عدد پلتفرم | `docs/CF_LIMITS.md` + `Last verified` همان `[Sn]` | `validate-docs-invariants.mjs`: هر `[Sn]` ارجاع‌شده باید در جدول §۷ تعریف شده باشد، هر `## ` سکشن `**Last verified:**` خودش را داشته باشد، و هر ردیف §۷ لینک رسمی + دو تاریخ (سند و بازبینی ما) را نگه دارد |
+  | تغییر binding | `bun run cf-typegen` + جدول «Bindings (light Worker)» در `docs/architecture-diagrams.md` | `validate-docs-invariants.mjs`: parity سه‌طرفهٔ `wrangler.v2.jsonc` ↔ جدول ↔ `worker-configuration.d.ts` + الزام باقی‌ماندن یادداشت «R2 عمداً unbound است» |
+
+  1. **drift واقعی که همین بررسی کشف کرد (شاهدِ اینکه gate لازم بود):** `scripts/postman-route-contract.json` ردیف `GET /health` را در `worker.live` داشت و کامنت سرصفحهٔ `worker/light-index.ts` هم `/api/health — health check` را ادعا می‌کرد، در حالی که Worker هیچ روت `/health` ندارد (`worker/light/lightApp.ts` فقط `/api/status` را دارد و `/health` مال کنترل‌پلین Go است — README §۷ از قبل همین را درست می‌گفت). هر دو جا اصلاح شد: ردیف از منیفست حذف و کامنت به `/api/status` + توضیح fallback تبدیل شد.
+  2. **دو طرفه بودن cross-check:** هم «منیفست چیزی دارد که در کد نیست» و هم «کد روتی دارد که در منیفست نیست» خطا می‌دهد. `not_available_503` و catch-allها (`*`، `/api/*`) از `live` کنار گذاشته می‌شوند چون قراردادشان در همان بخش ۵۰۳ ثبت شده است.
+  3. **فیکسچر منفی جدید:** `scripts/postman-negative.contract.json` یک ردیف کهنه (`GET /api/ghost`) + یک ردیف زندهٔ حذف‌شده (`GET /api/status`) دارد؛ `validate-postman-negative.mjs` حالا دو سناریو را اجرا می‌کند (violationهای سطح کالکشن + drift منیفست) و منتظر خروج غیرصفر هر دو است.
+  4. **`CF_LIMITS` بدون تغییر ادعا:** هیچ عدد/تاریخی دست‌کاری نشد (تصمیم آگاهانه — تاریخ‌ها ادعای واقعی‌اند)؛ فقط قاعدهٔ ماشینی در §۷ و یادآوری «بازبینی زندهٔ صفحات کلودفلر گام دستی و شبکه‌ای است» اضافه شد.
+  5. **bindings:** مقایسهٔ فعلی هر سه منبع هم‌خوان است: `ASSETS`، `AI`، `DB`، `VibecoderStore`، `WORKFLOWS` (۵ binding) — R2 عمداً bind نشده و یادداشت آن لازم است.
+  6. **اجبار در CI:** `docs:check` قبلاً فقط در pre-commit بود (با `--no-verify` یا `SKIP_TESTS=1` دور می‌خورد)؛ حالا یک step «Docs checks» در job `ci` فایل `.github/workflows/ci.yml` هم هست.
+- **معیار پذیرش:** ✅
+  - `bun run docs:check` سبز: `validate-spec-refs` OK + `Postman contract validation PASSED: 12 active requests … manifest matches code (21 worker + 26 control routes, last_verified 2026-09-28)` + `docs-invariants: OK (CF_LIMITS: 7 sections, 6 sources, 6 ids referenced; bindings: 5 in parity)`.
+  - سناریوهای منفی واقعاً fail می‌شوند: فیکسچر contract (هر دو پیام drift)، یک ردیف جعلی در جدول bindingها (`GHOSTBINDING`) و یک ارجاع بی‌منبع در `CF_LIMITS` (`[S9]`) — هر سه با خروج غیرصفر؛ فایل‌های دست‌کاری‌شدهٔ موقت بیت‌به‌بیت بازگردانده شدند (`git status` تمیز).
+  - `node scripts/validate-postman-negative.mjs` → `NEGATIVE SELF-TEST PASSED` برای هر دو کلاس.
+  - پس از افزودن step به CI: پارس YAML و بررسی `jobs.ci.steps` شامل `bun run docs:check` (اجرای واقعی روی رانر GitHub انجام نشد — نیازمند push).
+- **تست:** `bun run docs:check` + `node scripts/validate-postman-negative.mjs` + سناریوهای منفی دستی + `bun run typecheck` (کامنت `worker/light-index.ts`) + `bun run lint` + `cd backend && go vet ./... && go test ./...` (بدون رگرسیون) + پارس YAML ورک‌فلو.
+- **آگاهانه انجام‌نشده (شفاف):**
+  - **بازبینی زندهٔ صفحات کلودفلر** (مقایسهٔ `Last updated` اسناد رسمی با §۷) ماشینی نشد؛ نیازمند شبکه است و طبق روش §۷ دستی می‌ماند. در تاریخ ۲۰۲۶-۰۹-۲۸ هیچ منبعی از `Last verified` خود جلو نزده بود، پس re-verify لازم نبود.
+  - **`bun run cf-typegen` دوباره اجرا نشد:** اجرای آن نیازمند اعتبار Cloudflare است و فایل تولیدشده تغییر نکرده؛ parity فعلی با بازرسی سه‌طرفه تأیید شد (فایل حاوی هر ۵ binding است). قاعدهٔ «config → cf-typegen → جدول» در `docs/architecture-diagrams.md` مستند شده تا در تغییر بعدی binding اجرا شود.
+  - routeها فقط **ثبت‌شده‌ها با literal** را می‌بینند؛ اگر روزی روتی با متغیر ثبت شود، cross-check آن را به‌صورت خطای صریح گزارش می‌دهد (نه سکوت) تا آگاهانه در منیفست ثبت شود.
+
+---
+
 ## وابستگی‌ها (نمودار)
 
 ```
@@ -393,6 +430,11 @@ T9 ✅ (مستقل)
 T10 ✅ ──► T11 ✅ (README.md بازگردانده و dual-plane شد — ۲۰۲۶-۰۹-۲۷)
 T13 ✅ ──► T14 ✅ (پورت scripts/setup.ts به wrangler.v2.jsonc — ۲۰۲۶-۰۹-۲۷)
 T14 ✅ ──► T15 ✅ (پاک‌سازی env دو ورک‌فلو + jobهای گیت CI — ۲۰۲۶-۰۹-۲۷)
+
+T3/T4 ✅ ─┐
+T6 ✅ ────┼──► T16 ✅ (نگهداشت ماشینی: route / CF limits / bindings + docs:check در CI — ۲۰۲۶-۰۹-۲۸)
+T9 ✅ ────┤
+T15 ✅ ───┘
 ```
 
 ## تعریف Done برای هر task

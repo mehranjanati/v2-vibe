@@ -167,7 +167,7 @@ Feature settings are intentionally omitted from the committed `wrangler.v2.jsonc
 | `bun run lint` | ESLint (covers `src/**` and `worker/**` only) |
 | `bun run test` | Root Vitest suite (Workers pool via `wrangler.test.jsonc`) |
 | `bun run test:watch` | Vitest in watch mode |
-| `bun run docs:check` | Validate `file:line` spec references and the Postman route contract |
+| `bun run docs:check` | Docs gates: `file:line` spec references, the Postman route contract **vs the live route tables**, and the `CF_LIMITS` source / binding invariants |
 | `bun run db:generate` / `bun run db:migrate:remote` | Generate the Drizzle schema / apply migrations to D1 `v2-vibe` |
 | `bun run deploy` | Deploy the light Worker using `.prod.vars` |
 | `bun run --cwd sdk test` | SDK package tests (independent Bun package) |

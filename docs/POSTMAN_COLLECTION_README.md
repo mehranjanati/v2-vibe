@@ -1,7 +1,7 @@
 # V2 Vibe API Postman Collection — Two-Plane Smoke Tests
 
 > Active collection: `docs/v1dev-api-collection.postman_collection.json` (v2.0.0, **12 requests in 2 plane folders**) + environment `docs/v1dev-environment.postman_environment.json`.
-> Sources of truth: `backend/pkg/api/routes.go` (Go control plane) and `worker/light/lightApp.ts` (light Worker). Last verified: **2026-09-24**.
+> Sources of truth: `backend/pkg/api/routes.go` (Go control plane) and `worker/light/lightApp.ts` (light Worker). Last verified: **2026-09-28** (route manifest re-derived from the live registrations; the light Worker has **no** `/health` — it serves `/api/status`).
 > Legacy artifact (29 requests, single `{{baseUrl}}`): archived at `docs/archive/v1dev-api-collection.legacy.postman_collection.json` + `docs/archive/v1dev-environment.legacy.postman_environment.json` — **historical only, do not use for smoke tests**.
 
 ## 1. Topology: two planes, no shared base URL
@@ -56,8 +56,9 @@ The collection test script implements this rule:
 ## 5. Validator + negative self-test
 
 - Route contract manifest: `scripts/postman-route-contract.json` (live routes per plane + `dead_on_both_planes`, derived from Phase-1 source verification). Update it deliberately when routes change.
-- Validator: `node scripts/validate-postman.mjs` — checks `workerUrl`/`controlUrl` exist, `baseUrl`/`localUrl` absent, every request has a plane marker consistent with its base variable, no dead routes, no unresolved variables, NDJSON parsing present for `POST /api/agent`, `app_id` chaining present, collection prerequest is Worker-aware, no duplicate/conflicting definitions. Exits non-zero on any violation.
-- Negative self-test: `node scripts/validate-postman-negative.mjs` — runs the validator against `scripts/postman-negative.{collection,environment}.json` fixtures (one of each violation class) and asserts non-zero exit.
+- Validator: `node scripts/validate-postman.mjs` — checks `workerUrl`/`controlUrl` exist, `baseUrl`/`localUrl` absent, every request has a plane marker consistent with its base variable, no dead routes, no unresolved variables, NDJSON parsing present for `POST /api/agent`, `app_id` chaining present, collection prerequest is Worker-aware, no duplicate/conflicting definitions. **Since 2026-09-28 (T16) it also cross-checks the manifest against the route registrations in the two planes** (`app.Get("/x")` in `backend/pkg/api/*.go`, `app.get('/x')` in `worker/light/lightApp.ts`): a manifest entry with no matching registration *and* a live registration missing from the manifest both fail. `not_available_503` patterns and the catch-alls (`*`, `/api/*`) are excluded from `live`. Exits non-zero on any violation.
+- Negative self-test: `node scripts/validate-postman-negative.mjs` — runs the validator against `scripts/postman-negative.{collection,environment}.json` (request-level violations) **and** against `scripts/postman-negative.contract.json` (manifest drift: one stale entry + one missing live route), asserting a non-zero exit for both classes.
+- Both validators run in `bun run docs:check` (pre-commit and the `ci` workflow), so a route change that skips this file or the §۷ table below fails the gate.
 
 ## 6. What was removed (and why)
 
@@ -65,7 +66,7 @@ Active set shrank **29 → 12**. Removed from active (preserved in `docs/archive
 
 Also out of scope (unchanged): `POST /api/ws-ticket` (referenced by `sdk/src/http.ts`, implemented nowhere) — not added, not worked around.
 
-## 7. Ownership table (verified 2026-09-24؛ مسیر کامل `file:line`ها: ۲۰۲۶-۰۹-۲۵ — T8)
+## 7. Ownership table (verified 2026-09-28؛ مسیر کامل `file:line`ها: ۲۰۲۶-۰۹-۲۵ — T8؛ هم‌خوانی ماشینی با کد: T16 در `scripts/validate-postman.mjs`)
 
 | Endpoint (active) | Plane | Source |
 |---|---|---|
