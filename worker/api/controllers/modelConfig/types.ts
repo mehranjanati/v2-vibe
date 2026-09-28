@@ -3,7 +3,7 @@
  */
 
 import type { UserModelConfigWithMetadata, ModelTestResult } from '../../../database/types';
-import type { AgentActionKey, ModelConfig, AIModels } from '../../../agents/inferutils/config.types';
+import type { AgentActionKey, ModelConfig, AIModels } from 'worker/types/infer-config.types';
 
 export interface UserProviderStatus {
   provider: string;

@@ -5,17 +5,17 @@ This guide explains how to run the decoupled hybrid stack locally:
 - **Control Plane** (Go Fiber + Redis): sessions, VFS, LLM streaming, vector RAG, and Cloudflare Pages deployments.
 - **Execution Plane** (Cloudflare Pages): the React SPA frontend that talks to the control plane.
 
-The React frontend first tries the Go control plane for session creation, WebSocket streaming, and deployment; it falls back to the legacy Cloudflare Worker only if the control plane is unreachable.
+The React frontend sends session creation, WebSocket streaming, and deployment to the Go control plane. The control plane is **required for chat**: the light edge Worker deliberately answers `503 NOT_AVAILABLE` for `/api/agent*`, `/api/projects/*` and `/ws/*` (see `worker/light/lightApp.ts`), so there is no working chat replacement at the edge.
 
 ---
 
 ## Prerequisites
 
-- Go 1.22+
+- Go 1.25.5+
 - Redis (with the Redisearch module, for the `idx:vfs` vector index)
 - Bun (the repo uses Bun; `npm`/`pnpm` work too)
 - A Cloudflare AI Gateway URL + API key (for LLM generation)
-- Cloudflare Account ID + API token (for Pages deploys) — optional for local UI testing
+- Cloudflare Account ID + API token (D1 persistence + Pages deploys) — fill the token with `bun run d1:token`; optional for local UI testing
 
 ---
 
@@ -45,11 +45,16 @@ PORT=8080
 
 # LLM / AI Gateway (OpenAI-compatible SSE endpoint)
 AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/<account>/<gateway>
+# Use a STATIC Cloudflare API Token with "Workers AI" permissions
+# (Account > API Tokens > Create Token). Never use the short-lived OAuth token
+# from `wrangler login` — it expires and causes HTTP 401s from the gateway.
 AI_GATEWAY_API_KEY=your-api-key
 
 # Cloudflare Pages deployment (server-side only, never exposed to the bundle)
-CLOUDFLARE_ACCOUNT_ID=your-account-id
-CLOUDFLARE_API_TOKEN=your-api-token
+# CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN / D1_DATABASE_ID now live in the
+# REPO-ROOT .env (single source of truth). cmd/main.go loads `.env`, `../.env`
+# and `backend/.env`, so both run modes pick them up. Fill the token with:
+#   bun run d1:token
 # CLOUDFLARE_PAGES_PROJECT=my-pages-project   # optional, defaults to vibesdk-<chatId>
 ```
 
@@ -97,7 +102,7 @@ If you also want to exercise the execution plane (Cloudflare Workers/Workflows/V
 VITE_EXECUTION_PLANE_URL=https://your-worker.workers.dev
 ```
 
-> When `VITE_CONTROL_PLANE_URL` is unset, the frontend falls back to the same origin (Vite proxy / Cloudflare plugin) — i.e. the legacy Worker path.
+> When `VITE_CONTROL_PLANE_URL` is unset, `controlPlane.baseUrl` falls back to the same origin (`src/config/api.ts`), so `/api/*` calls hit whatever serves the SPA. In `bun run dev` that is the Vite dev server, which has no `/api/*` backend — chat therefore only works when `VITE_CONTROL_PLANE_URL` points at the Go backend. `VITE_EXECUTION_PLANE_URL` below configures a separate, optional Edge plane (Workers/Workflows/Vectorize); it is not a chat replacement.
 
 ---
 
@@ -123,6 +128,14 @@ VITE_EXECUTION_PLANE_URL=https://your-worker.workers.dev
 
 > Tip: if no files appear, the LLM must emit fenced code blocks whose info string is the file path (e.g. `` ```src/index.ts ``). Check the Go logs for parsing results.
 
+**Client-side preview hydration:** when a chat is reopened, the SPA seeds the
+preview from `GET /api/projects/:id/files` — a read-only VFS snapshot that
+never spawns a room actor (falls back to the persisted Redis `vfs:{id}` hash
+when no live room exists). Live WebSocket updates always win over this
+snapshot. No preview traffic reaches the Go server afterwards: the static
+preview is built and rendered entirely in the browser
+(`src/components/preview/PreviewPanel.tsx` → sandboxed `<iframe srcdoc>`).
+
 ### 3.3 Deploy to Cloudflare Pages
 
 1. Once files are generated, click **Deploy to Cloudflare**.
@@ -131,13 +144,15 @@ VITE_EXECUTION_PLANE_URL=https://your-worker.workers.dev
    - `deployment_started` → `deploy_progress` (0–100) → `deployment_completed { previewURL }`.
 4. The deployment UI shows the live `.pages.dev` URL.
 
-### 3.4 Fallback check (optional)
+### 3.4 Chat is not served by the edge Worker
 
-With the Go backend stopped, the dev server still runs via the legacy Worker path (if a Worker dev server is available). Verify the app degrades gracefully and logs:
+With the Go control plane stopped, the SPA still loads but chat cannot work. The retry path in `src/routes/chat/hooks/use-chat.ts` logs:
 
 ```
 Control plane unavailable; falling back to legacy session creation
 ```
+
+and then calls `apiClient.createAgentSession` (`POST /api/agent`), which targets `controlPlane.baseUrl` (`src/lib/api-client.ts:167-170` and `:347-351`) — i.e. the same Go backend that just failed. When `VITE_CONTROL_PLANE_URL` is unset the request goes to the same origin instead, where the light edge Worker answers `503 NOT_AVAILABLE` for `/api/agent*`. Treat this as a **compatibility hook, not a working fallback**: fix the control plane rather than expecting the edge to serve chat.
 
 ---
 
@@ -163,4 +178,4 @@ The `dist/client/` folder is a static SPA ready for Cloudflare Pages (includes `
 | Vector index warning at startup | Redis needs the Redisearch module (`FT.CREATE` supported) |
 | No files after generation | Ensure the model emits fenced code blocks with file-path info strings |
 | Deploy fails with auth error | Verify `CLOUDFLARE_API_TOKEN` has `Pages:Edit` permission and `CLOUDFLARE_ACCOUNT_ID` is correct |
-| Frontend falls back to legacy | Confirm `VITE_CONTROL_PLANE_URL=http://localhost:8080` is set and the Go server is running |
+| Chat logs `Control plane unavailable; falling back to legacy session creation` | Expected when the Go backend is down — the edge Worker cannot serve `/api/agent*`. Confirm `VITE_CONTROL_PLANE_URL=http://localhost:8080` is set and the Go server is running |

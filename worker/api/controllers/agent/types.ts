@@ -1,7 +1,7 @@
-import type { PreviewType } from "../../../services/sandbox/sandboxTypes";
+import type { PreviewType } from "worker/types/sandbox-types";
 import type { ImageAttachment } from '../../../types/image-attachment';
-import type { BehaviorType, ProjectType } from '../../../agents/core/types';
-import type { CredentialsPayload } from '../../../agents/inferutils/config.types';
+import type { BehaviorType, ProjectType } from 'worker/types/agent-core-types';
+import type { CredentialsPayload } from 'worker/types/infer-config.types';
 
 export const MAX_AGENT_QUERY_LENGTH = 20_000;
 

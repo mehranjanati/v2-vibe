@@ -1,0 +1,7 @@
+```public/index.html
+<h1>Shop</h1>
+```
+```public/styles.css
+body { color: red; }
+
+html {

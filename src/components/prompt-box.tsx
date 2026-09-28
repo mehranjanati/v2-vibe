@@ -162,6 +162,12 @@ export function PromptBox({
 						<form ref={formRef} onSubmit={handleSubmit}>
 							<div className="relative flex min-h-10 items-center">
 								{dragOverlay}
+								{leftActions && (
+									<div className="pl-3 pr-2 shrink-0">
+										{leftActions}
+									</div>
+								)}
+
 								{images.length > 0 && (
 									<div className="mb-2">
 										<ImageAttachmentPreview

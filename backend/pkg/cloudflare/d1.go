@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,9 @@ type D1Client struct {
 	apiToken   string
 	databaseID string
 	hc         *http.Client
+	// baseURL overrides the API root (defaults to
+	// https://api.cloudflare.com/client/v4). Set by tests.
+	baseURL string
 }
 
 // NewD1Client creates a D1 client for the given database.
@@ -27,6 +31,13 @@ func NewD1Client(accountID, apiToken, databaseID string) *D1Client {
 		databaseID: databaseID,
 		hc:         &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+// SetBaseURL overrides the Cloudflare API root (defaults to
+// https://api.cloudflare.com/client/v4). Used by tests to point the client
+// at an httptest server emulating the D1 REST API.
+func (d *D1Client) SetBaseURL(url string) {
+	d.baseURL = strings.TrimRight(url, "/")
 }
 
 type d1Request struct {
@@ -58,8 +69,11 @@ func (d *D1Client) query(ctx context.Context, sql string, args ...interface{}) (
 	if err != nil {
 		return nil, fmt.Errorf("d1: marshal request: %w", err)
 	}
-	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query",
-		d.accountID, d.databaseID)
+	base := d.baseURL
+	if base == "" {
+		base = "https://api.cloudflare.com/client/v4"
+	}
+	url := fmt.Sprintf("%s/accounts/%s/d1/database/%s/query", base, d.accountID, d.databaseID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("d1: build request: %w", err)
@@ -103,4 +117,20 @@ func (d *D1Client) Exec(ctx context.Context, sql string, args ...interface{}) (b
 		return false, err
 	}
 	return true, nil
+}
+
+// UpsertWorkflowDag upserts a validated workflow DAG (schema v2) into the
+// workflow_dags table (D1). The table is created by the worker migration
+// (worker/database/schema.ts → migrations/); a missing table is reported as
+// an error the caller logs and continues past (never fatal to generation).
+func (d *D1Client) UpsertWorkflowDag(ctx context.Context, workflowID string, schemaVersion int, dagJSON string) error {
+	const sql = "INSERT INTO workflow_dags (workflow_id, schema_version, dag_json, status, updated_at) " +
+		"VALUES (?, ?, ?, 'generated', CURRENT_TIMESTAMP) " +
+		"ON CONFLICT(workflow_id) DO UPDATE SET schema_version = excluded.schema_version, " +
+		"dag_json = excluded.dag_json, status = 'generated', updated_at = CURRENT_TIMESTAMP"
+	_, err := d.Exec(ctx, sql, workflowID, schemaVersion, dagJSON)
+	if err != nil {
+		return fmt.Errorf("d1: upsert workflow_dags: %w", err)
+	}
+	return nil
 }

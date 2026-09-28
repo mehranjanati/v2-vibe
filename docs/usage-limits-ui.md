@@ -126,13 +126,19 @@ Triggered by `checkCanSendPrompt` (pre-flight) and `getBackendLimitDialog` (on b
 
 Unlike the pre-flight limit popups, this one is **backend-error-triggered**: a user-account deploy (`target: 'user'`, think behavior) can fail with a structured `code` on the `cloudflare_deployment_error` WebSocket message (`worker/api/websocketTypes.ts`). `handle-websocket-message.ts` forwards the code via `onCloudflareDeployGate`; `chat.tsx` renders the dialog. The toast + chat message still show in all cases.
 
+**Dormant in the current architecture:** no plane emits `cloudflare_deployment_error` yet, so this popup never appears today — see the note after the table.
+
 | `code` | Emitted when | Dialog | Primary action |
 | --- | --- | --- | --- |
 | `cloudflare_not_connected` | No decrypted Cloudflare OAuth token for the user | **Connect Cloudflare to deploy** | OAuth flow (`/oauth/login?return_url=...`) |
 | `cloudflare_not_configured` | Multiple accounts connected and none selected (a sole connected account is used automatically — deploying needs no AI Gateway) | **Select a Cloudflare account** | Navigate to `/settings?config_needed=true` |
 | _(absent)_ | Any other deploy failure | None (toast only) | — |
 
-Think deploy targets are gated by the worker flag `ENABLE_USER_ACCOUNT_DEPLOY` (surfaced to the frontend as `userAccountDeploy` on `GET /api/capabilities`): when on, the think deploy button sends `target: 'user'` ("Deploy to My Account"); when off it sends `target: 'platform'` ("Deploy") and the backend publishes to the platform dispatch namespace with platform credentials — no Cloudflare connection required, so the popup never fires.
+**Current behavior — `userAccountDeploy` is hardwired to `false`:** both `GET /api/capabilities` implementations return `userAccountDeploy: false` (the light Worker in `buildLightApp()`, `worker/light/lightApp.ts`; the Go control plane in `backend/pkg/api/routes.go`) and **neither plane reads `ENABLE_USER_ACCOUNT_DEPLOY`** — the flag exists only as a declaration in `worker/types/env.d.ts` plus the `docs/setup.md` / `README.md` tables. `src/routes/chat/chat.tsx` therefore resolves `capabilities?.userAccountDeploy ?? false` to `false`: the think deploy button is labelled **Deploy** and calls `handleDeployToCloudflare(..., 'platform')`.
+
+Platform-targeted deploys run through `POST /api/projects/:id/deploy` on the Go control plane (`src/services/controlPlaneClient.ts` → `handleDeployProject` in `backend/pkg/api/routes.go` → `room.DeployRoomVFS` in `backend/pkg/engine/deploy.go`), which uploads to Cloudflare Pages with the **platform** credentials (`CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`). The user's Cloudflare connection is never consulted, so a think deploy cannot fail on a connection gate and **this popup is dormant in the current dual-plane architecture**. It becomes reachable only if a plane actually reports `userAccountDeploy: true` (configuring the env var alone is not enough) *and* starts emitting `cloudflare_deployment_error` with a `code`; today no producer exists on either plane — `CloudflareDeploymentErrorCode` (`worker/api/websocketTypes.ts`) is a protocol type consumed by clients (frontend + SDK) only, and Go deploy failures are broadcast as `deployment_started` / `deploy_progress` / `deployment_completed` / `deployment_failed`.
+
+The legacy WebSocket `deploy` message carrying `target` — the only remaining `target: 'user'` route — is a fallback in `src/routes/chat/hooks/use-chat.ts` used solely when the REST deploy request fails.
 
 ## Backend interactions
 

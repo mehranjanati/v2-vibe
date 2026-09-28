@@ -5,6 +5,12 @@ import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-or
 const REASONING_EFFORT_VALUES = ['low', 'medium', 'high'] as const;
 const PROVIDER_OVERRIDE_VALUES = ['cloudflare', 'direct'] as const;
 
+// Workflow orchestration enum values (mirror backend/pkg/engine/workflowschema.go)
+const WORKFLOW_DAG_STATUS_VALUES = ['generated', 'invalid'] as const;
+const WORKFLOW_INSTANCE_STATUS_VALUES = ['pending', 'running', 'succeeded', 'failed', 'cancelled'] as const;
+const WORKFLOW_STEP_STATUS_VALUES = ['pending', 'running', 'succeeded', 'failed', 'skipped'] as const;
+const WORKFLOW_NODE_TYPE_VALUES = ['trigger', 'http', 'db', 'ai', 'email', 'condition', 'sleep'] as const;
+
 // ========================================
 // CORE USER AND IDENTITY MANAGEMENT
 // ========================================
@@ -615,6 +621,86 @@ export const systemSettings = sqliteTable('system_settings', {
 }));
 
 // ========================================
+// WORKFLOW ORCHESTRATION (DAG + instances + step logs)
+// ========================================
+
+/**
+ * Workflow DAGs table - Canonical, validated workflow.json documents
+ * (schema v2, see backend/pkg/engine/workflowschema.go). The Go control
+ * plane upserts each generated DAG here (keyed by the source project/chat
+ * id) so the Phase-2 runtime worker can execute it. `workflow_id` is both
+ * the natural key and the ON CONFLICT target of the Go upsert.
+ */
+export const workflowDags = sqliteTable('workflow_dags', {
+    workflowId: text('workflow_id').primaryKey(), // Source chat/project id
+    schemaVersion: integer('schema_version').notNull().default(2), // WorkflowSchemaV2 = 2
+    dagJson: text('dag_json', { mode: 'json' }).notNull(),
+    status: text('status', { enum: WORKFLOW_DAG_STATUS_VALUES }).notNull().default('generated'),
+    
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    statusIdx: index('workflow_dags_status_idx').on(table.status),
+    updatedAtIdx: index('workflow_dags_updated_at_idx').on(table.updatedAt),
+}));
+
+/**
+ * Workflow Instances table - A single execution of a workflow DAG.
+ * The runtime worker creates one row per run and advances its status as
+ * steps execute (pending → running → succeeded|failed|cancelled).
+ */
+export const workflowInstances = sqliteTable('workflow_instances', {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id').notNull().references(() => workflowDags.workflowId, { onDelete: 'cascade' }),
+    status: text('status', { enum: WORKFLOW_INSTANCE_STATUS_VALUES }).notNull().default('pending'),
+    
+    // Execution payload
+    input: text('input', { mode: 'json' }),
+    output: text('output', { mode: 'json' }),
+    error: text('error'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+    
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    workflowIdx: index('workflow_instances_workflow_id_idx').on(table.workflowId),
+    statusIdx: index('workflow_instances_status_idx').on(table.status),
+    startedAtIdx: index('workflow_instances_started_at_idx').on(table.startedAt),
+}));
+
+/**
+ * Workflow Step Logs table - Per-step execution record for a workflow
+ * instance (one row per node-id + attempt). Node ids map 1:1 to Cloudflare
+ * Workflows step names at runtime.
+ */
+export const workflowStepLogs = sqliteTable('workflow_step_logs', {
+    id: text('id').primaryKey(),
+    instanceId: text('instance_id').notNull().references(() => workflowInstances.id, { onDelete: 'cascade' }),
+    stepName: text('step_name').notNull(), // Node id from the DAG
+    nodeType: text('node_type', { enum: WORKFLOW_NODE_TYPE_VALUES }),
+    status: text('status', { enum: WORKFLOW_STEP_STATUS_VALUES }).notNull().default('pending'),
+    attempt: integer('attempt').notNull().default(0),
+    
+    // Step payload
+    input: text('input', { mode: 'json' }),
+    output: text('output', { mode: 'json' }),
+    error: text('error'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+    
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    instanceIdx: index('workflow_step_logs_instance_id_idx').on(table.instanceId),
+    instanceStepIdx: index('workflow_step_logs_instance_step_idx').on(table.instanceId, table.stepName),
+    statusIdx: index('workflow_step_logs_status_idx').on(table.status),
+}));
+
+// ========================================
 // TYPE EXPORTS FOR APPLICATION USE
 // ========================================
 
@@ -673,3 +759,10 @@ export type NewUserModelProvider = typeof userModelProviders.$inferInsert;
 
 export type Star = typeof stars.$inferSelect;
 export type NewStar = typeof stars.$inferInsert;
+
+export type WorkflowDag = typeof workflowDags.$inferSelect;
+export type NewWorkflowDag = typeof workflowDags.$inferInsert;
+export type WorkflowInstance = typeof workflowInstances.$inferSelect;
+export type NewWorkflowInstance = typeof workflowInstances.$inferInsert;
+export type WorkflowStepLog = typeof workflowStepLogs.$inferSelect;
+export type NewWorkflowStepLog = typeof workflowStepLogs.$inferInsert;

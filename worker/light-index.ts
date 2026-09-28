@@ -10,16 +10,22 @@
  *   - /api/health — health check
  *
  * This worker intentionally avoids heavy dependencies (CodeGen DO,
- * ThinkAgent, SpaceDO, containers, sandbox, dispatch) so it fits within
- * the free-tier 3 MiB script size limit.
+ * ThinkAgent, SpaceDO, containers, sandbox, dispatch): that keeps startup
+ * time and CPU per request low on the Workers Free plan (10 ms CPU/request).
+ *
+ * Size note: the old "3 MB free / 10 MB paid compressed" script limit was
+ * removed on 2026-09-04; the platform now only checks the uncompressed
+ * bundle, which is 64 MiB on all plans (see docs/CF_LIMITS.md §4). The
+ * light-worker rationale is CPU/startup, not bundle size.
  *
  * Architecture: extends the shared {@link Worker} base class. This is the
- * only worker in the project, keeping the script within the free-tier
- * 3 MiB size limit.
+ * only worker in the project.
  */
 import { Worker } from './core/Worker';
 import { buildLightApp } from './light/lightApp';
 import type { LightWorkerBindings } from './types/bindings';
+import { VibeWorkflow } from './workflow/VibeWorkflow';
+export { VibeWorkflow };
 
 /**
  * Light Worker — auth (email/password, GitHub OAuth) + GitHub export.

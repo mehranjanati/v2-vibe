@@ -2,7 +2,7 @@
  * Standardized API response utilities
  */
 
-import { RateLimitError } from "../services/rate-limit/errors";
+import { RateLimitError } from "../types/rate-limit";
 import { SecurityError, SecurityErrorType } from 'shared/types/errors';
 /**
  * Standard response shape for all API endpoints

@@ -76,12 +76,24 @@ export interface HandleMessageDeps {
     setIsDebugging: React.Dispatch<React.SetStateAction<boolean>>;
     setBehaviorType: React.Dispatch<React.SetStateAction<BehaviorType>>;
     setInternalProjectType: React.Dispatch<React.SetStateAction<ProjectType>>;
-    setTemplateDetails: React.Dispatch<React.SetStateAction<TemplateDetails | null>>;
     onPresentationFileEvent?: (event: { type: 'file_generating' | 'file_chunk' | 'file_generated'; path: string; chunk?: string; contents?: string }) => void;
+    /**
+     * Virtual File System accumulator for Sandpack previews: maps a file path
+     * to its full (chunk-accumulated) contents. Optional so existing callers
+     * that don't render a Sandpack preview keep working unchanged.
+     */
+    setVfsFiles?: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     clearDeploymentTimeout?: () => void;
+    setTemplateDetails: React.Dispatch<React.SetStateAction<TemplateDetails | null>>;
 
     setBackendErrorDialog: React.Dispatch<React.SetStateAction<BackendErrorDialogState>>;
     setClarifyingQuestions?: React.Dispatch<React.SetStateAction<import('./message-helpers').ClarifyingQuestion[] | null>>;
+
+    /**
+     * B7 plan approval: set while a `plan_proposed` gate is open so the UI
+     * can show Approve/Reject actions. Cleared on verdict/generation end.
+     */
+    setPendingPlan?: React.Dispatch<React.SetStateAction<string | null>>;
     
     // Current state
     isInitialStateRestored: boolean;
@@ -267,7 +279,7 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                         );
                     }
 
-                    if (isPhasicState(state) && state.generatedPhases.length > 0 && phaseTimeline.length === 0) {
+                    if (isPhasicState(state) && state.generatedPhases?.length && phaseTimeline.length === 0) {
                         logger.debug('📋 Restoring phase timeline:', state.generatedPhases);
                         // If not actively generating, mark incomplete phases as cancelled (they were interrupted)
                         const isActivelyGenerating = state.shouldBeGenerating === true;
@@ -606,23 +618,35 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
 
 			case 'file_generating': {
 				setFiles((prev) => setFileGenerating(prev, message.filePath));
+				deps.setVfsFiles?.((prev) => ({ ...prev, [message.filePath]: '' }));
 				deps.onPresentationFileEvent?.({ type: 'file_generating', path: message.filePath });
 				break;
 			}
 
 			case 'file_chunk_generated': {
 				setFiles((prev) => appendFileChunk(prev, message.filePath, message.chunk));
+				deps.setVfsFiles?.((prev) => ({
+					...prev,
+					[message.filePath]: (prev[message.filePath] ?? '') + message.chunk,
+				}));
 				deps.onPresentationFileEvent?.({ type: 'file_chunk', path: message.filePath, chunk: message.chunk });
 				break;
 			}
 
 			case 'file_deleted': {
 				setFiles((prev) => removeFileFromArray(prev, message.filePath));
+				deps.setVfsFiles?.((prev) => {
+					if (!(message.filePath in prev)) return prev;
+					const next = { ...prev };
+					delete next[message.filePath];
+					return next;
+				});
 				break;
 			}
 
 			case 'file_generated': {
 				setFiles((prev) => setFileCompleted(prev, message.file.filePath, message.file.fileContents));
+				deps.setVfsFiles?.((prev) => ({ ...prev, [message.file.filePath]: message.file.fileContents }));
 				setPhaseTimeline((prev) => updatePhaseFileStatus(
 					prev,
 					message.file.filePath,
@@ -636,6 +660,7 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
             case 'file_regenerated': {
                 setIsRedeployReady(true);
                 setFiles((prev) => setFileCompleted(prev, message.file.filePath, message.file.fileContents));
+                deps.setVfsFiles?.((prev) => ({ ...prev, [message.file.filePath]: message.file.fileContents }));
                 setPhaseTimeline((prev) => updatePhaseFileStatus(
                     prev,
                     message.file.filePath,
@@ -647,7 +672,19 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
 
             case 'file_regenerating': {
                 setFiles((prev) => setFileGenerating(prev, message.filePath, 'File being regenerated...'));
+                deps.setVfsFiles?.((prev) => ({ ...prev, [message.filePath]: '' }));
                 setPhaseTimeline((prev) => updatePhaseFileStatus(prev, message.filePath, 'generating'));
+                break;
+            }
+
+            // B7: build plan proposed — the room is paused until the user
+            // approves. Render the plan as an assistant message and flip
+            // the UI into the approval state.
+            case 'plan_proposed': {
+                sendMessage(createAIMessage(`plan-proposed-${message.conversationId}`, message.plan));
+                deps.setPendingPlan?.(message.conversationId);
+                setIsThinking(false);
+                setIsGenerating(false);
                 break;
             }
 
@@ -655,6 +692,7 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 updateStage('code', { status: 'active' });
                 setTotalFiles(message.totalFiles);
                 setIsGenerating(true);
+                deps.setPendingPlan?.(null);
                 break;
             }
 
@@ -677,6 +715,49 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 setIsPhaseProgressActive(false);
                 setIsThinking(false);
                 setIsGenerating(false);
+                break;
+            }
+
+            // Go room engine additive events (B12/B9): the generation did
+            // not finish cleanly or was cancelled. Reset in-flight state
+            // and surface the reason, mirroring generation_complete.
+            case 'generation_interrupted':
+            case 'generation_cancelled': {
+                setIsRedeployReady(true);
+                setFiles((prev) => setAllFilesCompleted(prev));
+                setIsPhaseProgressActive(false);
+                setIsThinking(false);
+                setIsGenerating(false);
+                sendMessage(createAIMessage(`generation-${message.type === 'generation_cancelled' ? 'cancelled' : 'interrupted'}`, message.reason));
+                break;
+            }
+
+            // Phase 1 multi-agent team: coordinator/coder/reviewer executing
+            // the approved plan. Files still stream via file_* events;
+            // these cases only surface delegation + verdict in chat.
+            case 'team_started': {
+                setIsThinking(true);
+                setIsGenerating(true);
+                sendMessage(createAIMessage('team-started', 'Multi-agent team started: coordinator delegating to coder, reviewer gating.'));
+                break;
+            }
+
+            case 'subagent_activity': {
+                setMessages((prev) => appendToolEvent(prev, 'team-activity', {
+                    name: `${message.agentName || 'subagent'}:${message.toolName}`,
+                    status: 'start',
+                }));
+                break;
+            }
+
+            case 'team_completed': {
+                setIsPhaseProgressActive(false);
+                setIsThinking(false);
+                setIsGenerating(false);
+                if (message.verdict === 'error') {
+                    toast.error(message.summary || 'Team run failed');
+                }
+                sendMessage(createAIMessage('team-completed', `Team ${message.verdict}${message.summary ? `: ${message.summary}` : ''}`));
                 break;
             }
 

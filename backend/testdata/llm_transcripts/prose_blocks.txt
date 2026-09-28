@@ -1,0 +1,8 @@
+Here is a helper snippet:
+```python
+print("not a file")
+```
+The main page:
+```public/index.html
+<p>ok</p>
+```

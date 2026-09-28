@@ -159,7 +159,14 @@ export function isConversationalMessage(messageId: string): boolean {
         'core_app_complete',
     ];
     
-    return conversationalIds.includes(messageId) || messageId.startsWith('conv-');
+    return conversationalIds.includes(messageId) ||
+        messageId.startsWith('conv-') ||
+        // B7 plan-proposal bubbles use `plan-proposed-<conversationId>`.
+        // Without this prefix the plan message is silently dropped by
+        // sendMessage and the user never sees the proposed plan — only the
+        // bare Approve/Reject bar. See handle-websocket-message.ts
+        // `case 'plan_proposed'`.
+        messageId.startsWith('plan-proposed-');
 }
 
 /**

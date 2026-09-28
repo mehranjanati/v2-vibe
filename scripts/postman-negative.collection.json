@@ -1,0 +1,545 @@
+{
+  "info": {
+    "name": "V2 Vibe API - Two-Plane Smoke Tests",
+    "description": "Manual smoke-test collection for the serverless agentic architecture: Worker plane (auth/CSRF/OAuth/logout) + Control/Go plane (agent sessions, apps, health). Every request carries a 'plane: worker|control' description prefix and uses its plane base variable ({{workerUrl}} / {{controlUrl}}). Archived legacy artifact: docs/archive/v1dev-api-collection.legacy.postman_collection.json.",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// CSRF is owned by the WORKER plane. Fetch it from workerUrl only.",
+          "if (!pm.environment.get('csrf_token')) {",
+          "    var getCsrfRequest = {",
+          "        url: pm.environment.get('workerUrl') + '/api/auth/csrf-token',",
+          "        method: 'GET',",
+          "        header: { 'Content-Type': 'application/json' }",
+          "    };",
+          "    pm.sendRequest(getCsrfRequest, function (error, response) {",
+          "        if (!error && response.json() && response.json().success) {",
+          "            pm.environment.set('csrf_token', response.json().data.token);",
+          "        }",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Worker Plane",
+      "description": "plane: worker | Light Worker (Hono) routes: auth, CSRF, OAuth, logout. Base: {{workerUrl}}. Session: access_token cookie issued by the Worker.",
+      "item": [
+        {
+          "name": "Get CSRF Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/csrf-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "csrf-token"
+              ]
+            },
+            "description": "Fetch CSRF token (intentionally broken: no plane marker)"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var res = pm.response.json();",
+                  "    if (res.success && res.data && res.data.token) {",
+                  "        pm.environment.set('csrf_token', res.data.token);",
+                  "        pm.test('CSRF token saved (worker plane)', function () {",
+                  "            pm.expect(pm.environment.get('csrf_token')).to.not.be.undefined;",
+                  "        });",
+                  "    }",
+                  "}",
+                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/api/auth/register",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "plane: worker | Register a new user account on the Worker plane. Saves user_id + session_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePassword123!\",\n  \"name\": \"Test User\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var x = pm.environment.get('baseUrl');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login with Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/login",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "plane: worker | Login with email and password on the Worker plane. Saves user_id + session_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePassword123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var res = pm.response.json();",
+                  "    if (res.success && res.data && res.data.user) {",
+                  "        pm.environment.set('user_id', res.data.user.id);",
+                  "        pm.environment.set('session_id', res.data.sessionId);",
+                  "        pm.test('User logged in successfully', function () {",
+                  "            pm.expect(res.data.user.email).to.not.be.undefined;",
+                  "        });",
+                  "    }",
+                  "}",
+                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/{{unknown_var}}",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "{{unknown_var}}"
+              ]
+            },
+            "description": "plane: worker | Get current user profile (Worker cookie session)."
+          },
+          "response": []
+        },
+        {
+          "name": "OAuth - GitHub (Browser Only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/oauth/github",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "oauth",
+                "github"
+              ]
+            },
+            "description": "plane: worker | Redirects to GitHub OAuth. Copy the URL and open it in your browser (302/200)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('Open this URL in browser: ' + pm.request.url.toString());",
+                  "pm.test('OAuth redirect received', function () { pm.expect([200, 302, 301]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OAuth Helper - Get GitHub URL",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/providers",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "providers"
+              ]
+            },
+            "description": "plane: worker | Generates the Worker-plane GitHub OAuth URL in the console. Check the Console tab after running."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var workerUrl = pm.environment.get('workerUrl');",
+                  "var oauthUrl = workerUrl + '/api/auth/oauth/github';",
+                  "console.log('========================================');",
+                  "console.log('COPY THIS URL TO YOUR BROWSER (worker plane):');",
+                  "console.log(oauthUrl);",
+                  "console.log('========================================');",
+                  "pm.test('OAuth URL generated', function () { pm.expect(oauthUrl).to.include('/api/auth/oauth/github'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/logout",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "plane: worker | Logout current user session (Worker plane)."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/logout",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "plane: worker | Logout current user session (Worker plane)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Control Plane (Go)",
+      "description": "plane: control | Go control-plane (Fiber) routes: health, agent sessions, apps. Base: {{controlUrl}}. No shared session with the Worker plane (independent auth stores).",
+      "item": [
+        {
+          "name": "Health Check (Control)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/health",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "plane: control | Go control-plane liveness probe. Live route is /health (not /api/health)."
+          },
+          "response": []
+        },
+        {
+          "name": "Start Code Generation (NDJSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/api/agent",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "api",
+                "agent"
+              ]
+            },
+            "description": "plane: control | stale agent route (intentionally dead)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Create a React todo app with TypeScript and Tailwind CSS\",\n  \"agentMode\": \"smart\",\n  \"language\": \"typescript\",\n  \"frameworks\": [\"react\", \"tailwindcss\"],\n  \"selectedTemplate\": \"react-typescript\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var r = pm.response.json(); pm.environment.set('agent_id', r.data.agentId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Agent Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/api/agent/session",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "api",
+                "agent",
+                "session"
+              ]
+            },
+            "description": "plane: control | Create a new agent session. Returns {agentId, websocketUrl}. Saves agent_id."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var res = pm.response.json();",
+                  "    var aid = (res && (res.agentId || (res.data && res.data.agentId)));",
+                  "    var ws = (res && (res.websocketUrl || (res.data && res.data.websocketUrl)));",
+                  "    if (aid) { pm.environment.set('agent_id', aid); }",
+                  "    if (ws) { pm.environment.set('websocket_url', ws); }",
+                  "    pm.test('Agent session ID saved', function () { pm.expect(pm.environment.get('agent_id')).to.not.be.undefined; });",
+                  "}",
+                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Connect Agent",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/api/agent/{{agent_id}}/connect",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "api",
+                "agent",
+                "{{agent_id}}",
+                "connect"
+              ]
+            },
+            "description": "plane: control | Connect to an existing agent session (live Go route /api/agent/:id/connect)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get App Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{controlUrl}}/api/apps/{{agent_id}}",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "api",
+                "apps",
+                "{{agent_id}}"
+              ]
+            },
+            "description": "plane: control | Get app details by id. Saves app_id."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var res = pm.response.json();",
+                  "    if (res.success && res.data && res.data.id) { pm.environment.set('app_id', res.data.id); }",
+                  "}",
+                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

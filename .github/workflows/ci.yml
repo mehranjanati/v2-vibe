@@ -50,3 +50,30 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  # `ci` above only covers the TypeScript side; this job is the missing Go gate
+  # (G19/T15). `backend/e2e` is behind the `e2e` build tag, so `go test ./...`
+  # never talks to a deployed Worker or a live LLM here.
+  go-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...

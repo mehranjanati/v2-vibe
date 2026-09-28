@@ -888,6 +888,22 @@ export function buildLightApp(): Hono<LightAppEnv> {
 	app.all('/api/analytics/*', () => notAvailable());
 	app.all('/ws/*', () => notAvailable());
 
+	// Catch-all for unknown /api/* routes: return JSON 404 instead of falling
+	// through to the SPA fallback (which would return HTML). This ensures the
+	// frontend can reliably detect API errors by parsing JSON, not HTML.
+	app.all('/api/*', (c) =>
+		c.json(
+			{
+				success: false,
+				error: {
+					type: 'NOT_FOUND',
+					message: 'API route not found',
+				},
+			},
+			404,
+		),
+	);
+
 	// Fallback: serve the static frontend SPA
 	app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));
 

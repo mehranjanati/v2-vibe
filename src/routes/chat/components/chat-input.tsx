@@ -6,12 +6,20 @@ import type { ImageAttachment } from '@/api-types';
 import { type UsageSummary } from '@/hooks/use-limits';
 import { Button } from '@cloudflare/kumo';
 import { SquareIcon } from '@phosphor-icons/react';
+import { ChatBuildToggle } from '@/components/chat-build-toggle';
+import { type ChatMode, chatPlaceholder } from '../utils/chat-routing';
+
+export type { ChatMode } from '../utils/chat-routing';
 
 interface ChatInputProps {
 	// Form state
 	newMessage: string;
 	onMessageChange: (message: string) => void;
 	onSubmit: (e: FormEvent) => void;
+
+	// Mode (build vs chat) routing
+	mode: ChatMode;
+	onModeChange: (mode: ChatMode) => void;
 
 	// Image upload
 	images: ImageAttachment[];
@@ -53,6 +61,8 @@ export function ChatInput({
 	newMessage,
 	onMessageChange,
 	onSubmit,
+	mode,
+	onModeChange,
 	images,
 	onAddImages,
 	onRemoveImage,
@@ -75,9 +85,7 @@ export function ChatInput({
 		}
 	};
 
-	const placeholder = isDebugging
-		? 'Deep debugging in progress... Please abort to continue'
-		: 'Send a message';
+	const placeholder = chatPlaceholder(mode, isDebugging);
 
 	const stopButton =
 		isGenerating || isGeneratingBlueprint || isDebugging ? (
@@ -92,6 +100,17 @@ export function ChatInput({
 				icon={SquareIcon}
 			/>
 		) : undefined;
+
+	// Chat vs Build segmented toggle. Build mode routes the prompt to code
+	// generation (generate_all); Chat mode streams a conversational markdown
+	// reply (user_suggestion) without touching files.
+	const modeToggle = (
+		<ChatBuildToggle
+			value={mode}
+			onChange={onModeChange}
+			disabled={isChatDisabled}
+		/>
+	);
 
 	return (
 		<PromptBox
@@ -112,6 +131,7 @@ export function ChatInput({
 			limitsData={limitsData}
 			onConnectCloudflare={onConnectCloudflare}
 			variant="compact"
+			leftActions={modeToggle}
 			rightActions={stopButton}
 			aboveContent={aboveContent}
 			maxWords={4000}

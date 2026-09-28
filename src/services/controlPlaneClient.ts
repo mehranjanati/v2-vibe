@@ -41,6 +41,11 @@ export interface DeployResult {
 	projectId: string;
 }
 
+/** VFS payload returned by GET /api/projects/:id/files. */
+export interface ProjectFilesData {
+	files: Record<string, string>;
+}
+
 async function request<T>(
 	path: string,
 	init?: RequestInit,
@@ -84,6 +89,18 @@ export async function deployProject(
 	return request<DeployResult>(`/api/projects/${projectId}/deploy`, {
 		method: 'POST',
 	});
+}
+
+/**
+ * Fetch a project's VFS as a flat path -> contents map. Used by the chat
+ * route to hydrate the client-side preview (Sandpack / static srcdoc) when
+ * reopening a chat, before the WebSocket state replay arrives. Read-only
+ * on the server: it never spawns a room actor.
+ */
+export async function getProjectFiles(
+	projectId: string,
+): Promise<ControlPlaneResponse<ProjectFilesData>> {
+	return request<ProjectFilesData>(`/api/projects/${projectId}/files`);
 }
 
 /** Health check against the control plane. */
