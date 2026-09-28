@@ -21,7 +21,8 @@ fi
 STAGED_FILES=$(git diff --name-only --cached --diff-filter=ACMRT)
 
 # 1) Docs reference validators (only when docs or the validators themselves change)
-#    Checks docs/DEV_SPEC_P*.md file:line references and the Postman two-plane contract.
+#    Checks docs/DEV_SPEC_P*.md file:line references, the Postman two-plane contract
+#    against the live route tables, and the CF_LIMITS source / binding invariants.
 if command -v rg >/dev/null 2>&1; then
   HAS_DOCS=$(printf '%s\n' "$STAGED_FILES" | rg -q "^(docs/|scripts/validate-)" && echo 1 || echo 0)
 else

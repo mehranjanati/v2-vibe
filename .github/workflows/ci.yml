@@ -42,6 +42,11 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      # Docs gates: spec `file:line` refs, the two-plane Postman contract vs the
+      # live route tables, and the CF_LIMITS source / binding parity invariants.
+      - name: Docs checks
+        run: bun run docs:check
+
       - name: Typecheck
         run: bun run typecheck
 
