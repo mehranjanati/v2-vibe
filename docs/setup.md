@@ -4,447 +4,328 @@ Set up VibeSDK for local development and production deployment.
 
 **Make sure to read through the entire guide for important notes, and have all the required information ready before starting.**
 
-Current generated-app previews use SpaceDO, a Worker Loader binding, and Dynamic Workers. Cloudflare Artifacts is optional behind `ENABLE_ARTIFACTS`; it is not required for the default SQLite workspace filesystem. Previews do not require a sandbox container or persistent preview server.
+> **قاعده تاریخ بازبینی مستندات:** تاریخ وضعیت یا بازبینی هر فایل بیانگر آخرین بررسی همان سند در برابر کد و پلتفرم است و فایل‌ها مستقل از هم تاریخ‌گذاری می‌شوند.
+> **Status (2026-09-27):** the platform is a **dual-plane** system — a Go control plane in `backend/` (agent sessions, generation, VFS/Redis, Cloudflare Pages deploys) plus the light Worker `vibesdk-v2` (`worker/light-index.ts`). Generated-app previews render in the browser inside a sandboxed iframe, and **Deploy to Cloudflare** publishes the project VFS to Cloudflare Pages through the control plane. No preview runtime, Durable Object workspace, Artifacts namespace, sandbox container or persistent preview server is involved. See `README.md` (Architecture) and `docs/llm.md#current-architecture`.
 
 ## Prerequisites
 
 Before getting started, make sure you have:
 
 ### Required
-- **Node.js** (v18 or later)
-- **Cloudflare account** with API access  
-- **Cloudflare API Token** with appropriate permissions
+
+- **Bun** — the repository runs through Bun and `bun.lock` is the tracked lockfile.
+- **Cloudflare account** with an API token (permissions table below).
+- **Redis 7 with the RediSearch module** and **Go 1.25.5+** — the Go control plane in `backend/` owns chat, generation and deploys, and the app cannot chat without it (see `docs/LOCAL_DEV.md`).
 
 ### Recommended
-- **Bun**
-- **Custom domain** configured in Cloudflare (for production deployment)
 
-### For Production Features
-- **Workers Paid Plan** (for remote Cloudflare resources)
-- **Workers for Platforms** subscription (for app deployment features)
-- **Advanced Certificate Manager** (if using first-level subdomains)
+- **Docker**, if you prefer `docker compose up -d redis backend` over starting Redis and Go by hand.
+- **Custom domain** for the light Worker — a `*.workers.dev` URL works without one.
 
-## Quick Start
+### API token permissions used by the v2 flows
 
-The fastest way to get VibeSDK running is with our automated setup script:
+| Flow | Permission |
+|---|---|
+| `bun run deploy` (light Worker `vibesdk-v2`) | Workers Scripts:Edit |
+| KV binding `VibecoderStore` | Workers KV Storage:Edit |
+| `bun run db:migrate:remote` (D1 `v2-vibe`) | D1:Edit |
+| Generated-app deploys (`POST /api/projects/:id/deploy` → Cloudflare Pages) | Cloudflare Pages:Edit |
+| `bun run cf-typegen` and wrangler bookkeeping | Account Settings:Read |
+| Only when routing models through AI Gateway | AI Gateway:Read, AI Gateway:Edit, AI Gateway:Run |
+
+> **No longer needed:** Workers for Platforms, Containers, Cloudchamber, Browser Rendering and R2
+> permissions belonged to the retired sandbox/container preview path and the Artifacts-backed
+> workspace; both were removed with the dual-plane migration (see the Architecture section of
+> `README.md`).
+
+## Quick start
+
+The live deploy config is `wrangler.v2.jsonc` (Worker `vibesdk-v2`); this tree has **no**
+`wrangler.jsonc`. Either run the interactive bootstrap (`bun run setup`, read-only first with
+`bun run setup --check`) or configure both planes directly:
 
 ```bash
-# Bun is recommended. Install it first if needed.
-curl -fsSL https://bun.sh/install | bash
-# Then install dependencies and run setup
+# 1. Dependencies + local variables
 bun install
-bun run setup
+cp .dev.vars.example .dev.vars     # then fill in the keys listed under "Configuration values"
+
+# 2. D1 schema for the light Worker (database `v2-vibe`)
+bun run db:generate
+bun run db:migrate:remote          # needs CLOUDFLARE_API_TOKEN with D1:Edit
+
+# 3. Regenerate binding types
+bun run cf-typegen
+
+# 4. Redis + the Go control plane (chat, generation, deploys)
+docker compose up -d redis backend # or: redis-server, then: cd backend && go run ./cmd
+
+# 5. SPA + light Worker, pointed at the control plane
+VITE_CONTROL_PLANE_URL=http://localhost:8080 bun run dev
+
+# 6. Optional: deploy the light Worker
+bun run deploy                     # reads .prod.vars and wrangler.v2.jsonc
 ```
 
-This interactive script will guide you through the entire setup process, including:
+Open `http://localhost:5173`.
 
-- **Package manager setup** (installs Bun automatically for better performance)
-- **Cloudflare credentials** collection (Account ID and API Token)
-- **Domain configuration** (custom domain or localhost for development)
-- **Remote setup** (optional production deployment configuration)
-- **AI Gateway configuration** (Cloudflare AI Gateway recommended)
-- **API key collection** (OpenAI, Anthropic, Google AI Studio, etc.)
-- **OAuth setup** (Google, GitHub login - optional)
-- **Resource creation** (KV namespaces, D1 databases, R2 buckets, AI Gateway)
-- **File generation** (`.dev.vars` and optionally `.prod.vars`)
-- **Configuration updates** (`wrangler.jsonc` and `vite.config.ts`)
-- **Database setup** (schema generation and migrations)
-- **Template deployment** (example app templates to R2)
-- **Readiness report** (comprehensive status and next steps)
+> ℹ️ **`bun run setup` is dual-plane aware (docs-audit task T14).** It resolves `wrangler.v2.jsonc`
+> (falling back to a legacy `wrangler.jsonc`), reuses the KV and D1 resources by the ids already
+> declared in that config, verifies or creates what is missing, writes `.dev.vars` / `.prod.vars`, and
+> only fills in the ids of resources it had to create — the committed routes, `vars` and
+> `workers_dev` are never rewritten. V1-only steps (R2 templates, dispatch namespaces, the sandbox
+> Dockerfile) are skipped automatically because the v2 config has no such bindings.
+>
+> **Check first, then run:** `bun run setup --check` prints the resolved config and the resources the
+> run would manage, with no prompts, no Cloudflare calls and no writes (same as
+> `VIBESDK_SETUP_CHECK=1`). The manual steps above remain the alternative when you want full control.
+> The V1 prompt flow is archived in `docs/archive/setup-legacy.md`.
 
-## What You'll Need During Setup
+## Configuration values
 
-The setup script will ask you for the following information:
+Three places hold configuration; these are the values the live planes actually read.
 
-### Cloudflare Account Information
+### `.dev.vars` - light Worker (local)
 
-1. **Account ID**: Found in your Cloudflare dashboard sidebar
-2. **API Token**: In you Cloudflare dashboard under "My Profile" > "API Tokens", create a token (Using the "Edit Cloudflare Workers" template is recommended) with the following configurations:
-   - Your Account - Workers KV Storage:Edit, Workers Scripts:Edit, Account Settings:Read, Workers Tail:Read, Workers R2 Storage:Edit, Cloudflare Pages:Edit, Workers Builds Configuration:Edit, Workers Agents Configuration:Edit, Workers Observability:Edit, Containers:Edit, D1:Edit, AI Gateway:Read, AI Gateway:Edit, AI Gateway:Run, Cloudchamber:Edit, Browser Rendering:Edit
-   - All zones - Workers Routes:Edit
-   - All users - User Details:Read, Memberships:Read
+| Key | Purpose |
+|---|---|
+| `JWT_SECRET` | Signs session tokens (`worker/light/lightApp.ts`) |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Deploy and D1 access (`bun run deploy`, `bun run db:migrate:remote`) |
+| `GITHUB_EXPORTER_CLIENT_ID`, `GITHUB_EXPORTER_CLIENT_SECRET` | GitHub login and GitHub export; unset means `/api/auth/providers` reports `github: false` and only email/password is offered |
+| `CONTROL_PLANE_URL` | Optional control-plane base URL for the Worker (`VITE_CONTROL_PLANE_URL` is what the SPA reads) |
+| `CUSTOM_DOMAIN` | Optional custom domain used for CORS/origin checks |
 
-   **If using the `Edit Cloudflare Workers` template, make sure to add the missing permissions above manually.**
+Run `bun run cf-typegen` after changing bindings so `worker-configuration.d.ts` matches `wrangler.v2.jsonc`.
 
-   **Important**: Some features like D1 databases and R2 may require a paid Cloudflare plan.
+### Repo-root `.env` - control plane and tooling
 
-### Domain Configuration
+`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` and `CLOUDFLARE_API_TOKEN` are the single source of truth for
+the Go control plane and the D1 scripts. Fill the token with `bun run d1:token` (it pulls the fresh
+OAuth token from wrangler, validates it with a read-only `SELECT 1`, and rewrites `.env`).
+`backend/cmd/main.go` loads `.env`, `../.env` and `backend/.env`, so `go run ./cmd` and
+`docker compose up -d backend` both pick it up.
 
-**With Custom Domain:**
-```bash
-Enter your custom domain (or press Enter to skip): myapp.com
-✅ Custom domain set: myapp.com
-Use remote Cloudflare resources (KV, D1, R2, etc.)? (Y/n): 
-Configure for production deployment? (Y/n): 
-```
+### `backend/` - control plane variables
 
-**Without Custom Domain:**
-```bash
-Enter your custom domain (or press Enter to skip): [press Enter]
-⚠️  No custom domain provided.
-   • Remote Cloudflare resources: Not available
-   • Production deployment: Not available
-   • Only local development will be configured
+| Key | Purpose |
+|---|---|
+| `REDIS_URL` | Redis endpoint (default `localhost:6379`) |
+| `AI_GATEWAY_URL` | OpenAI-compatible base URL; when empty with `CLOUDFLARE_ACCOUNT_ID` set, the client targets Workers AI |
+| `AI_GATEWAY_API_KEY` | Bearer token for the gateway (falls back to `CLOUDFLARE_API_TOKEN`) |
+| `DEFAULT_MODEL` | Fallback model when a role has no explicit model |
+| `PORT` | API port (default `8080`) |
 
-Continue with local-only setup? (Y/n): 
-```
+### Domain and network
 
-### AI Gateway Configuration
+No wildcard DNS, tunnel, Advanced Certificate Manager or dispatch-namespace setup is required:
+previews render in the browser and deployed apps get their own `.pages.dev` URL. Mapping a custom
+domain to the light Worker is optional and done on the Worker itself.
 
-**Cloudflare AI Gateway (Recommended)**
-- **Automatic token setup**: When selected, `CLOUDFLARE_AI_GATEWAY_TOKEN` is automatically set to your API token
-- **No manual configuration**: The script handles all AI Gateway authentication
-- **Better performance**: Caching, rate limiting, and monitoring included
+The V1 prompt flow (custom-domain prompts, R2 buckets, dispatch namespaces, provider-key prompts that
+the removed `wrangler.jsonc` layout used) is archived in `docs/archive/setup-legacy.md`.
 
-**Custom OpenAI URL (Alternative)**
-- For users with existing OpenAI-compatible endpoints
-- Requires manual model configuration in `worker/agents/inferutils/config.ts`
+### AI provider configuration
 
-### AI Provider Selection
+Model choice is per role, not per app: each role (coordinator, planner, coder, reviewer) has one model
+and one prompt file in `backend/skills/`, wired by `backend/pkg/skills/registry.go`. Point the control
+plane at any OpenAI-compatible endpoint:
 
-The setup script offers multiple AI providers with intelligent multi-selection:
+- **Cloudflare AI Gateway (recommended)** - set `AI_GATEWAY_URL` to
+  `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/` plus `AI_GATEWAY_API_KEY` (a static token
+  with Workers AI permission). Never use the short-lived `wrangler login` OAuth token: it expires and
+  the gateway answers HTTP 401.
+- **Workers AI directly** - leave `AI_GATEWAY_URL` empty with `CLOUDFLARE_ACCOUNT_ID` set; the client
+  targets `https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1`.
+- **Another provider** - any OpenAI-compatible `chat/completions` streaming endpoint works; set
+  `DEFAULT_MODEL` (and per-role models) to identifiers that endpoint accepts.
 
-**Available Providers:**
-1. **OpenAI** (for GPT models)
-2. **Anthropic** (for Claude models)  
-3. **Google AI Studio** (for Gemini models) - **Default & Recommended**
-4. **Cerebras** (for open source models)
-5. **OpenRouter** (for various models)
-6. **Custom provider** (for any other provider)
+`CLOUDFLARE_AI_GATEWAY` in `wrangler.v2.jsonc` is the light Worker's declared gateway name; the Go
+control plane does not read it.
 
-**Provider Selection:**
-- Select multiple providers with comma-separated numbers (e.g., `1,2,3`)
-- Each selected provider will prompt for its API key
-- Custom providers automatically generate `PROVIDER_NAME_API_KEY` variables
-- Custom providers are automatically added to `worker-configuration.d.ts`
+### OAuth and login
 
-### Important Model Configuration Notes
+The light Worker wires exactly two sign-in paths (`worker/light/lightApp.ts:368`):
 
-**Google AI Studio (Recommended):**
-- Default model configurations use Gemini models
-- No additional `worker/agents/inferutils/config.ts` editing required
-- Best compatibility - This is the model used in the official deployment at https://build.cloudflare.dev
-- You can get a free API key from https://aistudio.google.com/
+- **Email/password** - always available, backed by D1 users and sessions.
+- **GitHub** - available as soon as `GITHUB_EXPORTER_CLIENT_ID` / `GITHUB_EXPORTER_CLIENT_SECRET` are
+  set; the same credentials power GitHub export (`POST /api/github-app/export`).
 
-**Other Providers:**
-- **Strong warning**: You MUST edit `worker/agents/inferutils/config.ts` 
-- Change default model configurations from Gemini to your selected providers
-- Model format: `<provider-name>/<model-name>` (e.g., `openai/gpt-4`, `anthropic/claude-3.5-sonnet`)
-- Review fallback model configurations
-
-**Without AI Gateway:**
-- **Manual config.ts editing required** for all model configurations
-- Model names must follow `<provider-name>/<model-name>` format
-
-### OAuth Configuration
-
-The script will also ask for OAuth credentials:
-
-- **Google OAuth**: For user authentication and login (not AI Studio access)
-- **GitHub OAuth**: For user authentication and login
-- **GitHub Export OAuth**: For exporting generated apps to GitHub repositories (separate from login OAuth)
-
-**If you don't provide OAuth credentials, by default at login, you will only be able to use email-based registration/login.**
-
-### Login with Cloudflare
-
-You can let users sign in with their Cloudflare account. The same consent also
-connects their Cloudflare AI Gateway, so generations can run on their own credits
-("Use my AI Gateway" toggle in settings).
-
-**1. Create an OAuth client**
-
-Create an OAuth client in the Cloudflare dashboard:
-<https://dash.cloudflare.com/?to=/:account/oauth-clients>
-
-Configure these **redirect URLs** on the client (replace the origin with your
-deployment's URL; for local development this is `http://localhost:5173`):
-
-- `https://your-domain.com/api/auth/callback/cloudflare` — "Login with Cloudflare"
-- `https://your-domain.com/auth/callback` — connect AI Gateway (from settings)
-
-Grant the client these **scopes** (Cloudflare uses dotted identifiers, not OIDC
-`email`/`profile`):
-
-```
-openid user-details.read ai.read ai.write aig.read aig.run aig.write offline_access
-```
-
-The scopes and the Cloudflare OAuth endpoint URLs are hardcoded in the worker
-(`worker/services/oauth/cloudflare-connect.ts`) and are not configurable — just make
-sure the OAuth client is authorized for all of these scopes, or the authorization
-request fails with `invalid_scope`.
-
-**2. Set the environment variables**
-
-Add the client credentials to `.dev.vars` (and `.prod.vars` for production):
-
-```bash
-CLOUDFLARE_OAUTH_CLIENT_ID="<your-oauth-client-id>"        # required for Login with Cloudflare
-CLOUDFLARE_OAUTH_CLIENT_SECRET="<your-oauth-client-secret>"
-CF_OAUTH_ENCRYPTION_KEY="<32-byte base64 key>"             # required for AI Gateway; encrypts the token cookie
-```
-
-Set `ENABLE_CLOUDFLARE_LIMITS="true"` in the Cloudflare dashboard for production, or in `.dev.vars` for local development.
-
-The **"Login with Cloudflare" button** appears as soon as `CLOUDFLARE_OAUTH_CLIENT_ID`
-and `CLOUDFLARE_OAUTH_CLIENT_SECRET` are set — identity login needs nothing else.
-
-The **AI Gateway connect/auto-connect** (running generations on the user's own
-credits) additionally requires the dashboard-managed `ENABLE_CLOUDFLARE_LIMITS="true"` and
-`CF_OAUTH_ENCRYPTION_KEY` (generate with `openssl rand -base64 32`). If the key is
-missing, the gateway feature is disabled (same as leaving `ENABLE_CLOUDFLARE_LIMITS`
-unset) and login simply skips the gateway auto-connect — users fall back to the free
-tier and can connect later.
+Google and Cloudflare ("Login with Cloudflare") sign-in are **not wired** in the dual-plane tree:
+`/api/auth/providers` returns `google: false` and `cloudflare: false`, and neither plane reads
+`GOOGLE_CLIENT_*`, `CLOUDFLARE_OAUTH_*` or `CF_OAUTH_ENCRYPTION_KEY`. The V1 instructions for that flow
+(OAuth client scopes, redirect URLs, `ENABLE_CLOUDFLARE_LIMITS`) are archived in
+`docs/archive/setup-legacy.md`, and the matching rows of the toggle table below are marked
+"declared only".
 
 ### Generated-app preview requirements
 
-Generated-app previews use the `SPACE_DO` and `LOADER` bindings. Add the `ARTIFACTS` binding for Artifacts-backed spaces. Docker is not required for the current Think/SpaceDO preview path. `SandboxDockerfile` and container setup remain only for legacy tooling.
+Generated-app previews need **no Worker binding at all**: the SPA builds and renders them in the browser from the room VFS, and `GET /api/capabilities` reports `requiresSandbox: false`. The light Worker's real bindings are `ASSETS`, `DB` (D1), `VibecoderStore` (KV), `AI` and `WORKFLOWS` — see `wrangler.v2.jsonc` and `docs/architecture-diagrams.md`. Deploying a generated app requires the Go control plane plus `Pages:Edit` on `CLOUDFLARE_API_TOKEN`; Docker is only needed to run Redis and the control plane locally (`docker-compose.yml`).
 
 ### Dashboard-managed feature toggles
 
-Feature settings are intentionally omitted from the committed wrangler `vars`. For deployed environments, set them in the Cloudflare dashboard; `keep_vars: true` preserves their values when `wrangler deploy` runs. For local development, set them in `.dev.vars`. Do not add these settings back to `wrangler.jsonc` or `wrangler.staging.jsonc`.
+Feature settings are intentionally omitted from the committed wrangler `vars`. For deployed environments, set them in the Cloudflare dashboard so the committed config stays environment-neutral; for local development, set them in `.dev.vars`. Do not add these settings back to `wrangler.v2.jsonc`.
+
+> **Read-status note (verified 2026-09-27):** in the current tree the live planes read only `DB`, `ASSETS`, `VibecoderStore`, `JWT_SECRET`, `GITHUB_EXPORTER_CLIENT_ID` / `GITHUB_EXPORTER_CLIENT_SECRET` and `CONTROL_PLANE_URL` (light Worker — `worker/light/lightApp.ts`) plus the control plane's own variables (`REDIS_URL`, `AI_GATEWAY_URL`, `AI_GATEWAY_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`). The flags in the table below are declared in `worker/types/env.d.ts` (some are still written into `.dev.vars` by `bun run setup`), but **none of them is read by a live plane yet**, so setting them currently changes nothing. Repeat with `grep -rn "<FLAG>" worker/ src/ backend/`. Treat the table as the intended contract for upcoming work, not as live behavior.
 
 | Variable | Effect | Unset default | Notes |
 | --- | --- | --- | --- |
-| `ENABLE_ARTIFACTS` | Uses Artifacts-backed spaces | Off | Requires the `ARTIFACTS` binding. |
-| `ENABLE_READ_REPLICAS` | Enables D1 read replicas | Off | Set to `"true"` to enable. |
-| `ENABLE_EMAIL_AUTH` | Enables email/password authentication | On | Set to `"false"` to make the deployment OAuth-only. |
-| `ENABLE_CLOUDFLARE_LIMITS` | Enables AI Gateway connect | Off | Requires `CF_OAUTH_ENCRYPTION_KEY`; set to `"true"` to enable. |
-| `ENABLE_USER_ACCOUNT_DEPLOY` | Deploys Think apps to the user's Cloudflare account | Off | Set to `"true"` to enable. |
-| `ALLOWED_EMAIL` | Restricts sign-in to one email address | Off | Set the allowed address; empty or unset disables the allowlist. |
-| `ALLOCATION_STRATEGY` | Selects the legacy sandbox allocation strategy | Default strategy | Managed in the dashboard rather than through production secrets. |
-| `USE_CLOUDFLARE_IMAGES` | Enables Cloudflare Images uploads | Off | Set a non-empty value to enable. |
-| `USE_TUNNEL_FOR_PREVIEW` | Uses a tunnel for local previews | Off | Dev-only; set in `.dev.vars`, not the production dashboard. |
+| `ENABLE_ARTIFACTS` | **Legacy — not read by any plane** | — | The Artifacts-backed workspace it used to enable was removed with the dual-plane migration. The flag is not even declared in `worker/types/env.d.ts`, and `grep -rn ENABLE_ARTIFACTS worker/ src/ backend/` returns nothing. |
+| `ENABLE_READ_REPLICAS` | Enables D1 read replicas | Off | Declared only (`worker/types/env.d.ts`); no reader in the live planes. |
+| `ENABLE_EMAIL_AUTH` | Enables email/password authentication | On | Declared only — `GET /api/auth/providers` currently reports `email: true` unconditionally (`worker/light/lightApp.ts:368`), so setting `"false"` does not make the deployment OAuth-only yet. |
+| `ENABLE_CLOUDFLARE_LIMITS` | Enables AI Gateway connect | Off | Declared only; no reader in the live planes. |
+| `ENABLE_USER_ACCOUNT_DEPLOY` | Deploys Think apps to the user's Cloudflare account (**reserved — not read by any plane**) | Off | Setting `"true"` **currently has no effect**: both `GET /api/capabilities` implementations return `userAccountDeploy: false` and Think deploys always use the platform path (see `docs/usage-limits-ui.md`). |
+| `ALLOWED_EMAIL` | Restricts sign-in to one email address | Off | Declared only; no reader in the live planes. |
+| `ALLOCATION_STRATEGY` | Selects the legacy sandbox allocation strategy | Default strategy | Declared only (`worker/types/env.d.ts`); the sandbox allocation code path it belonged to is gone. |
+| `USE_CLOUDFLARE_IMAGES` | Enables Cloudflare Images uploads | Off | Declared only; no reader in the live planes. |
+| `USE_TUNNEL_FOR_PREVIEW` | Uses a tunnel for local previews | Off | Dev-only; set in `.dev.vars`, not the production dashboard. Declared only — local previews run in the browser. |
 
-Existing deployments retain previously configured dashboard values when this configuration is deployed. New deployments must explicitly set `ENABLE_READ_REPLICAS="true"` or `ENABLE_CLOUDFLARE_LIMITS="true"` in the dashboard to preserve the former committed defaults.
+Existing deployments retain previously configured dashboard values when this configuration is deployed — but per the read-status note above, none of these flags currently changes behavior in the live planes.
 
-## Manual Setup (Alternative)
+## Manual resource setup
 
-If you prefer to set up manually:
+If you prefer to create or verify the Cloudflare resources by hand:
 
-### 1. Create `.dev.vars` file
+1. **`.dev.vars`** - `cp .dev.vars.example .dev.vars` and fill in the keys from "Configuration values"
+   (at minimum `JWT_SECRET`; add `GITHUB_EXPORTER_*` for GitHub login).
+2. **D1 database** - the light Worker expects the database `v2-vibe` (binding `DB`); its id is already in
+   `wrangler.v2.jsonc`. Verify it, then migrate:
 
-Copy `.dev.vars.example` to `.dev.vars` and fill in your values:
+    ```bash
+    bunx wrangler d1 list                     # confirm db `v2-vibe` (id matches wrangler.v2.jsonc)
+    bun run db:generate && bun run db:migrate:remote
+    ```
 
-```bash
-cp .dev.vars.example .dev.vars
-```
+3. **KV namespace** - binding `VibecoderStore`, id also in `wrangler.v2.jsonc`. Recreate it only when you
+   switch accounts, then paste the new id into the config:
 
-### 2. Configure Required Variables
+    ```bash
+    bunx wrangler kv namespace create VibecoderStore
+    ```
 
-```bash
-# Essential
-CLOUDFLARE_API_TOKEN="your-api-token"
-CLOUDFLARE_ACCOUNT_ID="your-account-id"
+4. **No R2 bucket and no dispatch namespace.** The R2 `TEMPLATES_BUCKET` binding was removed (the light
+   Worker never reads it) and there is no Workers-for-Platforms dispatch path to configure.
+5. **Repo-root `.env`** - `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`, `CLOUDFLARE_API_TOKEN`
+   (`bun run d1:token` refreshes and validates the token).
 
-# Security
-JWT_SECRET="generated-secret"
-
-# Domain (optional)
-CUSTOM_DOMAIN="your-domain.com"
-```
-
-### 3. Create Cloudflare Resources
-
-Create required resources in your Cloudflare account:
-- KV Namespace for `VibecoderStore`
-- D1 Database named `vibesdk-db`
-- R2 Bucket named `vibesdk-templates`
-
-### 4. Update `wrangler.jsonc`
-
-Update resource IDs in `wrangler.jsonc` with the IDs from step 3.
-
-## Starting Development
-
-After setup is complete:
+## Starting development
 
 ```bash
-# Set up database
-bun run db:migrate:local
-
-# Start development server
-bun run dev
+bun run db:migrate:local   # apply the D1 migrations to the local (miniflare) database
+bun run dev                # SPA + light Worker on http://localhost:5173
 ```
 
-Visit your app at `http://localhost:5173`
+Chat, generation and deploys live in the Go control plane, so start it as well (Redis plus
+`go run ./cmd`, or `docker compose up -d redis backend`) and point the SPA at it with
+`VITE_CONTROL_PLANE_URL=http://localhost:8080`; otherwise the light Worker answers
+`503 NOT_AVAILABLE` for `/api/agent*`, `/api/projects/*` and `/ws/*`.
 
-**Important Note**: If you didn't specifiy any oauth credentials during setup, You would need to register an account for the first time. 
+**Note**: without OAuth credentials you must register an account with email/password the first time.
+
+**Note**: `bun run db:migrate:local` needs workerd, which refuses to start on macOS < 13.5 - run it on
+Linux/CI, or use the read-only remote equivalent
+(`bun --bun wrangler d1 execute v2-vibe --remote --config wrangler.v2.jsonc --command "SELECT 1"`).
 
 ## Troubleshooting
 
 ### Common Issues
 
-**D1 Database "Unauthorized" Error**: This usually means:
-- Your API token lacks "D1:Edit" permissions
-- Your account doesn't have access to D1 (may require paid plan)
-- You've exceeded your D1 database quota
-- **Solution**: Update your API token permissions or upgrade your Cloudflare plan
+**D1 "Unauthorized" or migration errors**:
+- Your API token lacks `D1:Edit`
+- `CLOUDFLARE_ACCOUNT_ID` / `D1_DATABASE_ID` in the repo-root `.env` belong to another account
+- **Fix**: `bun run d1:token` (validates with a read-only `SELECT 1`), or paste a static
+  `Account -> D1 -> Edit` token into `.env`
 
-**Permission Errors**: Ensure your API token has all required permissions listed above.
+**Permission errors**: re-check the permission table in Prerequisites - Workers Scripts, Workers KV
+Storage, D1, Cloudflare Pages and Account Settings:Read, plus AI Gateway only when you use a gateway.
 
-**Domain Not Found**: Make sure your domain is:
-- Added to Cloudflare
-- DNS is properly configured
-- API token has zone permissions
+**Domain not found**: only relevant when you map a custom domain to the light Worker - the domain must
+live in the same Cloudflare account and the token needs zone access for it.
 
-**Resource Creation Failed**: Check that your account has:
-- Available KV namespace quota (10 on free plan)
-- D1 database quota (may require paid plan)
-- R2 bucket quota (may require paid plan)
-- Appropriate plan level for requested features
+**No files after generation**: the model must emit fenced code blocks whose info string is the file path
+(for example a fence opened with `src/index.ts`).
 
-**R2 Bucket "Unauthorized" Error**: This usually means:
-- Your API token lacks "R2:Edit" permissions
-- Your account doesn't have access to R2 (may require paid plan)
-- You've exceeded your R2 bucket quota
-- **Solution**: Update your API token permissions or upgrade your Cloudflare plan
+**`AI_GATEWAY_URL is not configured`**: set it in the control plane's environment, or leave it empty with
+`CLOUDFLARE_ACCOUNT_ID` set to use Workers AI directly.
 
-**AI Configuration Issues**:
-- **"AI Gateway token already configured" but token not in .dev.vars**: Re-run setup, this was a bug that's now fixed
-- **Models not working with custom providers**: Edit `worker/agents/inferutils/config.ts` to change default model configurations
-- **Custom provider not recognized**: Check that the provider was added to `worker-configuration.d.ts`
-- **AI Gateway creation failed**: Ensure your API token has AI Gateway permissions
+**Vector index warning at startup**: Redis needs the RediSearch module (`FT.CREATE`); `docker-compose.yml`
+uses `redis/redis-stack-server`.
 
-**Dynamic Worker Preview Issues**:
-- Confirm the `SPACE_DO` and `LOADER` bindings are configured; confirm `ARTIFACTS` only when `ENABLE_ARTIFACTS="true"`.
-- Check the branch deployment and signed preview URL.
+**Models not behaving as expected**: change the per-role model/prompt in `backend/skills/` (registry
+`backend/pkg/skills/registry.go`) or set `DEFAULT_MODEL` in the control plane's environment. The V1
+`worker/agents/inferutils/config.ts` file no longer exists.
+
+**Preview issues**:
+- Previews are built in the browser from the room VFS: confirm the control plane is reachable (`VITE_CONTROL_PLANE_URL`) and that the room socket (`/ws/:id`) connected.
+- A blank or partial preview usually means a missing referenced asset — the control plane gap-fills referenced-but-missing files and re-sends them.
 - Use `bun run dev:browser` when local browser-console inspection is needed.
 
-**Deploy to Cloudflare Button Issues (Chat Interface)**:
-- **"Deploy button not working locally"**: Chat interface deploy button requires custom domain, initial deployment, and remote dispatch bindings
-- **"Dispatch namespace not found"**: Deploy your VibeSDK project to Cloudflare at least once first
-- **"Deploy fails with authentication error"**: Ensure your custom domain is properly configured and deployed
-- **Note**: This refers to deploying generated apps from the chat interface, not GitHub repository deployments
+**"Deploy to Cloudflare" button issues (chat interface)**:
+- **The button does nothing locally**: The route is served by the Go control plane (`POST /api/projects/:id/deploy`) — start it and point the SPA at it with `VITE_CONTROL_PLANE_URL`; the light Worker answers `503 NOT_AVAILABLE` there.
+- **Deploy fails with an authentication error**: Check `CLOUDFLARE_ACCOUNT_ID` and that `CLOUDFLARE_API_TOKEN` has `Pages:Edit` (repo-root `.env`).
+- **Note**: This deploys generated apps from the chat interface to Cloudflare Pages; it is unrelated to the GitHub repository deploy button.
 
-**Legacy Corporate Container Setup**:
-The following certificate setup applies only when intentionally running legacy Docker-based tooling:
+### Getting help
 
-1. **Copy your corporate root CA certificate** to the project root (don't commit to git!)
-2. **Edit SandboxDockerfile** to include your certificate:
+1. Work through the items above, then `docs/LOCAL_DEV.md` for the control-plane side.
+2. Review the Cloudflare Workers, D1 and Pages documentation.
+3. Re-verify the prerequisites and the API-token permission table.
+4. On a clean checkout, `bun run typecheck`, `bun run test` and `bun run docs:check` should still pass — include the failing command in a GitHub issue.
 
-```dockerfile
-# Add your company's Root CA certificate for corporate network access
-COPY your-root-ca.pem /usr/local/share/ca-certificates/your-root-ca.crt
-RUN update-ca-certificates
+## Production deployment
 
-# Set SSL environment variables for cloudflared and other tools
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/your-root-ca.crt
-ENV CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
-```
+Deploy the two planes separately:
 
-**⚠️ Security Warning**: Never commit corporate CA certificates to public repositories. Use `.gitignore` to exclude certificate files and only use this for local development.
+1. **Light Worker** - put production values in `.prod.vars` (same keys as `.dev.vars`) and run
+   `bun run deploy`; it runs `wrangler deploy --config wrangler.v2.jsonc` for the Worker `vibesdk-v2`.
+2. **Go control plane + Redis** - build and run the Go service (`cd backend && go build ./...`, or the
+   image from `backend/Dockerfile`) next to a Redis instance with RediSearch, and build the SPA with
+   `VITE_CONTROL_PLANE_URL` pointing at its public URL.
+3. **D1 schema** - `bun run db:migrate:remote` against the production `v2-vibe` database.
 
-### Getting Help
+`bun run deploy` neither typechecks nor applies migrations: run `bun run typecheck`, `bun run test` and
+the migration command explicitly.
 
-1. Check the setup report for specific issues and suggestions
-2. Review the Cloudflare Workers documentation
-3. Ensure all prerequisites are met
+## Next steps
 
-## Production Deployment
+1. **Start developing** with `bun run dev` plus the control plane.
+2. **Visit** `http://localhost:5173`.
+3. **Generate** your first application.
+4. **Deploy** a generated app to Cloudflare Pages from the chat interface, or the platform itself with
+   `bun run deploy`.
 
-If you configured remote deployment during setup, you'll have a `.prod.vars` file ready for production. Deploy with:
-
-```bash
-bun run deploy
-```
-
-This will:
-- Build the application
-- Update Cloudflare resources 
-- Deploy to Cloudflare Workers
-- Apply database migrations
-- Configure custom domain routing (if specified)
-
-### Production-Only Setup
-
-If you only set up for local development initially, you can configure production later:
-
-1. **Run setup again** and choose "yes" for remote deployment configuration
-2. **Provide production domain** when prompted
-3. **Deploy** using `bun run deploy`
-
-### Manual Production Setup
-
-Alternatively, create `.prod.vars` manually based on `.dev.vars` but with:
-- Production domain in `CUSTOM_DOMAIN`
-- Production API keys and secrets
-- `ENVIRONMENT="prod"`
-
-## Next Steps
-
-Once setup is complete:
-
-1. **Start developing** with `bun run dev`
-2. **Visit** `http://localhost:5173` to access VibeSDK
-3. **Try generating** your first AI-powered application
-4. **Deploy to production** when ready with `bun run deploy`
-
-## File Structure After Setup
-
-The setup script creates and modifies these files:
+## Files that matter after setup
 
 ```
 vibesdk/
-├── .dev.vars              # Local development environment variables
-├── .prod.vars             # Production environment variables (if configured)
-├── wrangler.jsonc         # Updated with resource IDs and domain
-├── vite.config.ts         # Updated for remote/local bindings
-├── migrations/            # Database migration files
-└── templates/             # Template repository (downloaded)
+├── .dev.vars                  # Local Worker vars/secrets (git-ignored)
+├── .prod.vars                 # Production Worker vars/secrets (git-ignored)
+├── .env                       # Repo-root Cloudflare + D1 credentials (git-ignored)
+├── wrangler.v2.jsonc          # Live deploy config (Worker `vibesdk-v2`, bindings, vars)
+├── wrangler.test.jsonc        # Config used by the Workers-pool test suite
+├── worker-configuration.d.ts  # Generated binding types (`bun run cf-typegen`)
+├── backend/                   # Go control plane (Redis, VFS, generation, Pages deploys)
+├── migrations/                # D1 migrations (database `v2-vibe`)
+└── src/                       # React SPA (built to dist/client)
 ```
-
-## Summary
-
-The VibeSDK setup script provides a comprehensive, intelligent configuration experience:
-
-### **Key Features:**
-- **Simplified domain setup** - One-time domain configuration with clear feature implications
-- **Intelligent AI provider selection** - Multi-provider support with automatic configuration
-- **AI Gateway automation** - Automatic token setup and configuration
-- **Custom provider support** - Dynamic API key generation and worker configuration updates  
-- **Production-ready** - Both local development and production deployment configuration
-- **User-friendly defaults** - Y/n prompts with clear default indicators
-
-### **What Gets Configured:**
-- Cloudflare resources (KV, D1, R2, AI Gateway, dispatch namespaces)
-- Environment variables (.dev.vars and .prod.vars)
-- Worker configuration (wrangler.jsonc, worker-configuration.d.ts)
-- Database setup and migrations
-- Template deployment
-- ARM64 compatibility
-
-The setup script handles everything from basic Cloudflare resource creation to advanced AI provider configuration, making it easy to get started regardless of your Cloudflare plan or AI provider preferences.
-
-For any issues during setup, check the troubleshooting section above or refer to the comprehensive status report the script provides at the end.
 
 ## Important Caveats & Known Issues
 
 ### **Legacy tunnel and container configuration**
 
-`USE_TUNNEL_FOR_PREVIEW`, `SandboxDockerfile`, and container instance settings belong to the retired sandbox preview path. Current generated-app previews run as Dynamic Workers loaded by SpaceDO. Do not troubleshoot the current preview path as a Docker or cloudflared tunnel unless you are intentionally running legacy tooling.
+`USE_TUNNEL_FOR_PREVIEW`, `SandboxDockerfile` and container instance settings belong to the retired sandbox preview path (the `SandboxDockerfile` itself no longer exists in this repo). Current generated-app previews render in the browser from the room VFS — see the status note at the top of this guide and the Architecture section of `README.md`. Do not troubleshoot the current preview path as a Docker or cloudflared tunnel.
 
-### **"Deploy to Cloudflare" Button Limitations (Chat Interface)**
+### **"Deploy to Cloudflare" requirements (chat interface)**
 
-The "Deploy to Cloudflare" button in the chat interface (for generated apps) has specific requirements for local development:
+The "Deploy to Cloudflare" button in the chat interface publishes a generated app to Cloudflare Pages through the Go control plane:
 
-> **Note**: This refers to the deployment button within the VibeSDK platform's chat interface, not the GitHub repository deploy button.
+> **Note**: This refers to the deployment button inside the VibeSDK chat interface, not the GitHub repository deploy button.
 
 **Requirements**:
-1. **Custom domain** must be properly configured during setup
-2. **Initial deployment** - Project must be deployed at least once to your Cloudflare account
-3. **Remote dispatch bindings** - `wrangler.jsonc` must have remote dispatch namespace enabled
-4. **Dispatch worker** - A dispatch worker must be running in your account
+1. **A running control plane** — `POST /api/projects/:id/deploy` is a control-plane route; locally that means Redis plus the Go service (`docker compose up -d redis backend`) with `VITE_CONTROL_PLANE_URL` pointing at it.
+2. **Cloudflare credentials for Pages** — `CLOUDFLARE_ACCOUNT_ID` plus a `CLOUDFLARE_API_TOKEN` with `Pages:Edit` (repo-root `.env`).
+3. **A generated project** — the room VFS must contain files; the deploy publishes that VFS as the app.
 
-**Why These Requirements?**
-- The deploy feature uses Cloudflare's dispatch namespace system
-- Dispatch requires a running worker in your account to handle deployment requests
-- Local-only development isn't yet supported for this in vibesdk
+**Why**: each deploy creates its own Cloudflare Pages project and streams `deployment_started` → `deploy_progress` → `deployment_completed { previewURL }` back over the room socket. No dispatch namespace, wildcard custom domain or sandbox container is involved.
 
-**Current Status**: Making "Deploy to Cloudflare" work completely in local-only mode is not yet implemented.
+### **Generated-app preview and deploy troubleshooting**
 
-### **Dynamic Worker preview troubleshooting**
-
-For current previews, verify the SpaceDO Durable Object binding, Worker Loader binding, branch deployment, and signed preview URL. Verify the Artifacts namespace only when `ENABLE_ARTIFACTS="true"`. Build failures originate in `@cloudflare/worker-bundler`; application runtime failures should be inspected through browser console logs. If an issue persists, open a GitHub issue with the setup report and deployment error.
+Current previews render in the browser from the room VFS (`src/components/preview/PreviewPanel.tsx`), so verify that the control plane is reachable (`VITE_CONTROL_PLANE_URL`), that `GET /api/projects/:id/files` returns the project files, and that the room socket is connected. A **Deploy to Cloudflare** failure is a Cloudflare Pages problem on the control plane: check `CLOUDFLARE_ACCOUNT_ID`, a token with `Pages:Edit`, and the Go logs for the `deployment_failed` reason. If an issue persists, open a GitHub issue with the failing command and the deployment error.

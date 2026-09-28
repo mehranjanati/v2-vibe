@@ -1,354 +1,80 @@
-# Legacy V1 Dev API Postman Collection
+# V2 Vibe API Postman Collection — Two-Plane Smoke Tests
 
-> This collection documents the legacy V1 Dev/phasic API surface and has not been migrated to the current Think behavior. Verify routes and payloads against `worker/api/routes/` before using it for current integrations.
+> Active collection: `docs/v1dev-api-collection.postman_collection.json` (v2.0.0, **12 requests in 2 plane folders**) + environment `docs/v1dev-environment.postman_environment.json`.
+> Sources of truth: `backend/pkg/api/routes.go` (Go control plane) and `worker/light/lightApp.ts` (light Worker). Last verified: **2026-09-24**.
+> Legacy artifact (29 requests, single `{{baseUrl}}`): archived at `docs/archive/v1dev-api-collection.legacy.postman_collection.json` + `docs/archive/v1dev-environment.legacy.postman_environment.json` — **historical only, do not use for smoke tests**.
 
-The collection remains available for compatibility testing of supported legacy endpoints, OAuth setup, and CSRF behavior.
+## 1. Topology: two planes, no shared base URL
 
-## 📋 Overview
+There is **no valid single shared base URL**. Worker and Control/Go are distinct planes:
 
-This collection includes **100+ API endpoints** organized into logical groups:
+| Plane | Base variable | Serves | Session/auth |
+|---|---|---|---|
+| **Worker** (light Worker, Hono) | `{{workerUrl}}` — local `http://localhost:5173` (`bun run dev`); production: your `*.workers.dev` host | auth (`/api/auth/*`), CSRF, providers, OAuth GitHub, logout, `/api/apps/public`, `/api/status`, `/api/capabilities`, `/api/limits/usage`, GitHub export | `access_token` HttpOnly cookie + KV session (`session:token:*`), issued by the Worker itself |
+| **Control/Go** (Fiber backend) | `{{controlUrl}}` — local `http://localhost:8080`; production: your Go backend host | `/health`, `/api/agent` (NDJSON), `/api/agent/session`, `/api/agent/:id/connect`, `/api/apps*`, `/api/user/apps`, `/api/projects/:id/*`, `/api/workflows/*`, `/ws/:id`, `/api/auth/*` stubs (PG-backed register/login, dev csrf-token stub) | Independent PG-backed session (`sessionId` in response body); **no shared session with the Worker** |
 
-- 🔐 **Authentication** - OAuth, email auth, session management (16 endpoints)
-- 🤖 **Agent & Code Generation** - AI-powered webapp creation (5 endpoints) 
-- 📱 **Apps Management** - CRUD operations, public feed, favorites (10 endpoints)
-- 👤 **User Management** - Profile, apps with pagination (2 endpoints)
-- 📊 **Analytics & Stats** - User stats, AI Gateway analytics (4 endpoints)
-- 🤖 **Model Configuration** - AI model settings, BYOK providers (8 endpoints)
-- 🏢 **Custom Model Providers** - OpenAI-compatible API management (6 endpoints)
-- 🔐 **Secrets Management** - API keys, credentials with templates (5 endpoints)
-- 🐙 **GitHub Integration** - Repository export, OAuth (2 endpoints)
+### R2 answer — cross-plane auth/session dependency
 
-## 🚀 Quick Setup
+**Answer: the two planes do NOT share session state.** The Worker stores sessions in KV (`session:token:<token>` → userId, `worker/light/lightApp.ts:319-366`); Go register/login are backed by Postgres (`backend/pkg/api/auth_pg.go`) and return a bare `sessionId` with no cookie, and no Go handler reads the Worker cookie (grep of `backend/pkg/api/*.go` shows no `Cookie`/`Authorization` session check). The only cross-plane coupling is file flow: the Worker fetches generated files from Go (`GET /api/projects/:id/files`) for GitHub export — it does not forward user session.
 
-### 1. Import Collection & Environment
+**Required execution order for a smoke run:** (1) run the **Worker Plane** folder first (CSRF → register/login → profile → OAuth helper → logout) to prove Worker auth; (2) then run the **Control Plane** folder (health → `POST /api/agent` → session → connect → app details) against the Go backend. Control requests must NOT depend on the Worker cookie, and the collection prerequest fetches CSRF from `workerUrl` only.
 
-1. **Import Collection**: 
-   - Open Postman → Import → Upload `v1dev-api-collection.postman_collection.json`
+## 2. Folders and plane markers
 
-2. **Import Environment**: 
-   - Import → Upload `v1dev-environment.postman_environment.json`
-   
-3. **Select Environment**: 
-   - Choose "V1 Dev Environment" from the environment dropdown
+| Folder | Plane | Requests |
+|---|---|---|
+| Worker Plane | `worker` | Get CSRF Token, Register User, Login with Email, Get User Profile, OAuth - GitHub (Browser Only), OAuth Helper - Get GitHub URL, Logout (7) |
+| Control Plane (Go) | `control` | Health Check (Control), Start Code Generation (NDJSON), Create Agent Session, Connect Agent, Get App Details (5) |
 
-### 2. Configure Base URL
+Every active request carries an explicit plane marker as a structured description prefix (`plane: worker` or `plane: control`) — folder names alone are not the contract. The validator cross-checks the marker against the URL base variable (`{{workerUrl}}` vs `{{controlUrl}}`).
 
-Update the `baseUrl` environment variable:
+## 3. NDJSON agent_id extraction rule (R1)
 
-- **Production**: `https://your-production-domain.com`
-- **Local Development**: `http://localhost:8787` (Wrangler dev server)
+`POST /api/agent` (`backend/pkg/api/routes.go:116-134`) returns **NDJSON, not the `{success, data.agentId}` envelope**: exactly one JSON object per line with `Content-Type: application/x-ndjson`, currently a single line `{"agentId": "<uuid>", "websocketUrl": "ws://<host>/ws/<uuid>", ...}`.
 
-### 3. OAuth Setup in Postman
+The collection test script implements this rule:
 
-⚠️ **IMPORTANT**: OAuth endpoints redirect to external providers (Google/GitHub) and cannot be tested directly in Postman.
+1. `pm.response.text().split('\n')` into lines;
+2. `JSON.parse` each non-empty line inside `try/catch` (non-JSON lines are logged and skipped);
+3. take the **last valid event containing `agentId`** and save it to `agent_id` (plus `websocketUrl` → `websocket_url`);
+4. fail loudly (`Agent ID present in NDJSON response`) with the raw body in the Postman console if no line yields `agentId`.
 
-#### 🌐 Recommended Approach: OAuth Helper Requests
+**Assumption:** the response is newline-delimited JSON with the result event carrying `agentId`. If Go ever emits multi-line progress events before the result, this rule still holds (last `agentId` wins); if the contract changes shape, update the script + this README together.
 
-1. **Use the OAuth Helper requests**:
-   - Run "🌐 OAuth Helper - Get Google URL" 
-   - Check the **Console tab** in Postman for the OAuth URL
-   - Copy the URL and open it in your browser
+`POST /api/agent/session` returns plain JSON `{agentId, websocketUrl}`; its script reads both top-level and `data.*` shapes.
 
-2. **Complete authentication in browser**:
-   - Follow the OAuth flow in your browser
-   - After successful auth, you'll be redirected back to your app
-   - Session cookies are now set for your domain
+## 4. Import instructions (only known consumer is manual import)
 
-3. **Return to Postman**:
-   - Session cookies will work automatically for same-domain requests
-   - Test with "Get User Profile" to verify authentication
+1. Postman → **Environments** → Import → `docs/v1dev-environment.postman_environment.json` **first**.
+2. Then **Collections** → Import → `docs/v1dev-api-collection.postman_collection.json`.
+3. Select the `V2 Vibe Two-Plane Environment` environment (top-right).
+4. Set values: `workerUrl` (local default `http://localhost:5173`; production: your Worker host) and `controlUrl` (local default `http://localhost:8080`; production: your Go host). Chain variables (`csrf_token`, `user_id`, `session_id`, `agent_id`, `websocket_url`, `app_id`) start empty and are auto-populated.
+5. Run **Worker Plane** top-to-bottom, then **Control Plane** top-to-bottom. OAuth GitHub is browser-only: run the helper, copy the console URL into a browser.
 
-#### Alternative: Manual URL Construction
+> `baseUrl` and `localUrl` were **removed** from the active environment. If an old environment still defines them, delete it and re-import. Placeholders only — no production domain is invented here.
 
-If helpers don't work, manually construct URLs:
-- **Google OAuth**: `{{baseUrl}}/api/auth/oauth/google`  
-- **GitHub OAuth**: `{{baseUrl}}/api/auth/oauth/github`
-- Open these URLs directly in your browser
+## 5. Validator + negative self-test
 
-#### Why Direct OAuth Requests Show HTML
+- Route contract manifest: `scripts/postman-route-contract.json` (live routes per plane + `dead_on_both_planes`, derived from Phase-1 source verification). Update it deliberately when routes change.
+- Validator: `node scripts/validate-postman.mjs` — checks `workerUrl`/`controlUrl` exist, `baseUrl`/`localUrl` absent, every request has a plane marker consistent with its base variable, no dead routes, no unresolved variables, NDJSON parsing present for `POST /api/agent`, `app_id` chaining present, collection prerequest is Worker-aware, no duplicate/conflicting definitions. Exits non-zero on any violation.
+- Negative self-test: `node scripts/validate-postman-negative.mjs` — runs the validator against `scripts/postman-negative.{collection,environment}.json` fixtures (one of each violation class) and asserts non-zero exit.
 
-- OAuth endpoints return HTTP redirects (302) to provider websites
-- Postman shows the redirect HTML instead of following it
-- This is normal behavior - OAuth requires browser-based flows
+## 6. What was removed (and why)
 
-### 4. CSRF Token Automation
+Active set shrank **29 → 12**. Removed from active (preserved in `docs/archive/`): `GET /api/health` (live is `/health`), `GET /api/agent/:id` + `/preview` (live is `/api/agent/:id/connect`), `.../ws` (live is `GET /ws/:id`), star/fork, `PUT /api/user/profile`, user analytics, `/api/stats`, all `/api/model-configs*`, all `/api/secrets*`, Google OAuth + its helpers (GitHub OAuth kept, Worker-only). None are live on either plane per the sources of truth above.
 
-The collection automatically handles CSRF tokens:
+Also out of scope (unchanged): `POST /api/ws-ticket` (referenced by `sdk/src/http.ts`, implemented nowhere) — not added, not worked around.
 
-- Pre-request scripts fetch CSRF tokens when needed
-- Tokens are stored in the `csrf_token` environment variable
-- All state-changing requests include the token automatically
+## 7. Ownership table (verified 2026-09-24؛ مسیر کامل `file:line`ها: ۲۰۲۶-۰۹-۲۵ — T8)
 
-## 🔑 Authentication Methods
-
-### 1. Email Authentication
-```json
-POST /api/auth/register
-{
-  "email": "user@example.com",
-  "password": "SecurePassword123!",
-  "name": "Test User"
-}
-
-POST /api/auth/login
-{
-  "email": "user@example.com", 
-  "password": "SecurePassword123!"
-}
-```
-
-### 2. OAuth Authentication
-- **Google OAuth**: `GET /api/auth/oauth/google`
-- **GitHub OAuth**: `GET /api/auth/oauth/github`
-
-### 3. Session-Based Authentication
-- Uses secure HTTP-only cookies
-- Sessions are automatically maintained across requests
-- CSRF protection via `X-CSRF-Token` header
-
-## 📱 Core API Workflows
-
-### 1. Create a New App with AI
-
-```bash
-# 1. Login or use OAuth
-POST /api/auth/login
-
-# 2. Start code generation
-POST /api/agent
-{
-  "query": "Create a React todo app with TypeScript and Tailwind CSS",
-  "agentMode": "smart",
-  "language": "typescript", 
-  "frameworks": ["react", "tailwindcss"],
-  "selectedTemplate": "react-typescript"
-}
-
-# 3. Connect to WebSocket for real-time updates
-GET /api/agent/{agentId}/ws (WebSocket)
-
-# 4. Deploy preview when ready
-GET /api/agent/{agentId}/preview
-```
-
-### 2. Browse and Interact with Apps
-
-```bash
-# Get public apps (no auth required)
-GET /api/apps/public?page=1&limit=20&sort=stars&order=desc
-
-# Get app details (no auth required)
-GET /api/apps/{appId}
-
-# Star an app (requires auth)
-POST /api/apps/{appId}/star
-
-# Fork an app (requires auth) 
-POST /api/apps/{appId}/fork
-```
-
-### 3. Configure AI Models
-
-```bash
-# Get available models and providers
-GET /api/model-configs/byok-providers
-
-# Update model configuration for specific agent action
-PUT /api/model-configs/planner
-{
-  "modelName": "claude-3-5-sonnet-20241022",
-  "maxTokens": 4096,
-  "temperature": 0.7,
-  "reasoningEffort": "medium"
-}
-
-# Test model configuration
-POST /api/model-configs/test
-{
-  "agentActionName": "planner",
-  "useUserKeys": true
-}
-```
-
-### 4. Manage API Keys and Secrets
-
-```bash
-# Get secret templates
-GET /api/secrets/templates
-
-# Store an API key
-POST /api/secrets
-{
-  "templateId": "openai_api_key",
-  "name": "My OpenAI API Key",
-  "envVarName": "OPENAI_API_KEY",
-  "value": "sk-your-api-key-here"
-}
-
-# Create custom model provider  
-POST /api/user/providers
-{
-  "name": "My Custom OpenAI Provider",
-  "baseUrl": "https://api.openai.com/v1",
-  "apiKey": "sk-your-key",
-  "models": [...]
-}
-```
-
-## 🔧 Advanced Features
-
-### Environment Variables
-The collection uses these automatically managed variables:
-
-| Variable | Description | Auto-populated |
-|----------|-------------|----------------|
-| `csrf_token` | CSRF protection token | ✅ |
-| `user_id` | Current user ID | ✅ |
-| `session_id` | Current session ID | ✅ |
-| `agent_id` | Current agent/app ID | ✅ |
-| `app_id` | Current app ID | ✅ |
-| `provider_id` | Model provider ID | Manual |
-| `secret_id` | Secret ID | Manual |
-
-### Request Automation
-
-- **CSRF Tokens**: Automatically fetched and included
-- **Session Management**: Cookies handled transparently  
-- **Variable Population**: IDs extracted from responses
-- **Error Handling**: Test scripts validate responses
-
-### WebSocket Testing
-
-For WebSocket endpoints like agent communication:
-
-1. Use a WebSocket client (wscat, Postman WebSocket, etc.)
-2. Connect to: `ws://localhost:8787/api/agent/{agentId}/ws`
-3. Include authentication cookies
-4. Send/receive real-time messages during code generation
-
-## 🛠️ Development Setup
-
-### Local Development
-
-1. **Start Wrangler Dev Server**:
-   ```bash
-   cd /path/to/vibesdk
-   bun run dev
-   ```
-
-2. **Update Environment**:
-   - Set `baseUrl` to `http://localhost:8787`
-   - Ensure `.dev.vars` contains required environment variables
-
-3. **Test Authentication**:
-   - OAuth may require ngrok for localhost callback URLs
-   - Email auth works directly with localhost
-
-### Production Testing
-
-1. Update `baseUrl` to your production domain
-2. Ensure OAuth apps are configured with correct callback URLs
-3. Test with real OAuth credentials
-
-## 📚 API Documentation
-
-### Authentication Levels
-
-- **Public**: No authentication required
-- **Authenticated**: Requires valid session
-- **Owner Only**: Requires ownership of the resource
-
-### Common Parameters
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `page` | Page number for pagination | `1` |
-| `limit` | Items per page | `20` |
-| `sort` | Sort field | `createdAt`, `stars` |
-| `order` | Sort order | `asc`, `desc` |
-| `period` | Time period filter | `today`, `week`, `month`, `all` |
-| `search` | Search query | `"todo app"` |
-
-### Response Format
-
-All API responses follow this structure:
-
-```json
-{
-  "success": true,
-  "data": { ... },
-  "message": "Optional message",
-  "pagination": {  // For paginated responses
-    "page": 1,
-    "limit": 20, 
-    "total": 100,
-    "totalPages": 5
-  }
-}
-```
-
-### Error Responses
-
-```json
-{
-  "success": false,
-  "error": "Error message",
-  "code": "ERROR_CODE",
-  "details": { ... }  // Optional additional details
-}
-```
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **CSRF Token Errors**:
-   - Ensure pre-request scripts are enabled
-   - Manually run "Get CSRF Token" request
-   - Check that `X-CSRF-Token` header is included in POST/PUT/DELETE requests
-
-2. **Authentication Issues**:
-   - Verify cookies are enabled in Postman
-   - Check that OAuth callback URLs match your configuration
-   - Ensure session hasn't expired (check "Get User Profile")
-
-3. **WebSocket Connection Issues**:
-   - WebSockets require active session authentication
-   - Use external WebSocket client if Postman WebSocket support is limited
-   - Verify agent ownership for WebSocket connections
-
-4. **Local Development Issues**:
-   - Ensure Vite is running (`bun run dev`)
-   - Check that `.dev.vars` contains required environment variables
-   - Verify D1 migrations are applied (`bun run db:migrate:local`)
-
-### Getting Help
-
-1. **Check API Response**: Look at response body for detailed error messages
-2. **Verify Environment**: Ensure correct `baseUrl` is set
-3. **Test Authentication**: Run "Check Auth Status" to verify session
-4. **Review Logs**: Check browser DevTools or Wrangler logs for additional context
-
-## 🎯 Testing Workflows
-
-### Complete User Journey
-
-1. **Register/Login** → Authentication working
-2. **Create App** → AI generation working
-3. **Browse Public Apps** → Public feed working
-4. **Star/Fork App** → Social features working
-5. **Configure Models** → AI customization working
-6. **Manage Secrets** → Security features working
-7. **Export to GitHub** → Integration working
-
-### Quick Health Check
-
-Run these requests to verify the system:
-
-1. `GET /api/auth/providers` - System status
-2. `GET /api/apps/public` - Public API working
-3. `POST /api/auth/login` - Authentication working
-4. `GET /api/model-configs` - AI system working
-5. `GET /api/stats` - Analytics working
-
-This collection provides comprehensive coverage of all V1 Dev APIs with proper authentication, error handling, and real-world usage examples. Perfect for development, testing, and integration work!
+| Endpoint (active) | Plane | Source |
+|---|---|---|
+| `GET /api/auth/csrf-token` | Worker (+ Go dev stub) | `worker/light/lightApp.ts:188`, `backend/pkg/api/routes.go:61` |
+| `POST /api/auth/register`, `POST /api/auth/login` | Worker (D1/KV); Go has parallel PG handlers | `worker/light/lightApp.ts:198,258`, `backend/pkg/api/auth_pg.go:98,158` |
+| `GET /api/auth/profile`, `GET /api/auth/providers` | Worker (+ Go stubs) | `worker/light/lightApp.ts:336,368`, `backend/pkg/api/routes.go:67,70` |
+| `POST /api/auth/logout` | Worker only | `worker/light/lightApp.ts:319` |
+| `GET /api/auth/oauth/github` | Worker only | `worker/light/lightApp.ts:391` |
+| `GET /health` | Control/Go (Worker answers `/api/status`, not `/health`) | `backend/pkg/api/routes.go:49` |
+| `POST /api/agent` (NDJSON) | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:116` |
+| `POST /api/agent/session`, `GET /api/agent/:id/connect` | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:296,299` |
+| `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:253`, `worker/light/lightApp.ts:797` |
