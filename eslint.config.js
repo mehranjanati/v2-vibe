@@ -9,6 +9,9 @@ export default tseslint.config(
 	{
 		ignores: [
 			'dist',
+			// Wrangler build artifacts (bundled Worker output under .wrangler/tmp)
+			// are machine-generated and linting them drowns real findings (G9).
+			'.wrangler/**',
 			'wrangler-configuration.d.ts',
 			'test-diff-formatters/**',
 			'cf-git/**',

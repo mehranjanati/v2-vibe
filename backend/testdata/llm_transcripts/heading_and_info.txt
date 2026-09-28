@@ -1,0 +1,16 @@
+Intro prose ignored.
+```public/index.html
+<!DOCTYPE html>
+<html><head><link rel="stylesheet" href="styles.css"></head>
+<body><h1>Hotel</h1><script src="js/main.js"></script></body></html>
+```
+```public/styles.css
+body { margin: 0; font-family: sans-serif; }
+```
+### public/js/main.js
+```js
+console.log("app boot");
+```
+```workflow.json
+{"nodes":[{"id":"n1","type":"trigger","label":"Start","params":{},"position":{"x":0,"y":0}}],"edges":[]}
+```

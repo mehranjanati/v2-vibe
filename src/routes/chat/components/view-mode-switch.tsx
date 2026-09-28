@@ -1,6 +1,6 @@
 import { cn } from '@cloudflare/kumo';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Eye, Code, FileText, Presentation, Database } from 'lucide-react';
+import { Eye, Code, FileText, Presentation, Database, GitBranch } from 'lucide-react';
 import { featureRegistry } from '@/features';
 import type { ProjectType } from '@/api-types';
 
@@ -16,12 +16,12 @@ export function ViewModeSwitch({
 	previewAvailable = false,
 	showTooltip = false,
 	hasDocumentation = false,
-	previewUrl,
 	projectType,
 	databaseAvailable = false,
+	workflowAvailable = false,
 }: {
-	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database'
-	onChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database') => void;
+	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow'
+	onChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow') => void;
 	previewAvailable: boolean;
 	showTooltip: boolean;
 	hasDocumentation: boolean;
@@ -29,6 +29,8 @@ export function ViewModeSwitch({
 	projectType?: ProjectType;
 	/** When true, the read-only DB viewer tab is shown. Wired only for think-behavior apps. */
 	databaseAvailable?: boolean;
+	/** When true, the Backend Logic (workflow DAG) tab is shown. */
+	workflowAvailable?: boolean;
 }) {
 	// Get feature definition to determine icon and label
 	const featureDefinition = projectType ? featureRegistry.getDefinition(projectType) : null;
@@ -59,8 +61,9 @@ export function ViewModeSwitch({
 				)}
 			</AnimatePresence>
 
-			{/* Preview button - show when app has preview URL */}
-			{previewUrl && (
+			{/* Preview button - show when a preview is available (server URL
+			    OR client-side Sandpack preview with generated files) */}
+			{previewAvailable && (
 				<button
 					onClick={() => onChange('preview')}
 					className={cn(
@@ -87,6 +90,23 @@ export function ViewModeSwitch({
 			>
 				<Code className="size-4" />
 			</button>
+
+			{/* Backend Logic (workflow DAG) button - shown when the generated
+			    app contains a workflow.json file. */}
+			{workflowAvailable && (
+				<button
+					onClick={() => onChange('workflow')}
+					className={cn(
+						'p-1 flex items-center justify-between h-full rounded-md transition-colors',
+						view === 'workflow'
+							? 'bg-bg-4 text-text-primary'
+							: 'text-text-50/70 hover:text-text-primary hover:bg-brand',
+					)}
+					title="Backend Logic"
+				>
+					<GitBranch className="size-4" />
+				</button>
+			)}
 
 			{/* Docs button - show when documentation exists */}
 			{hasDocumentation && (

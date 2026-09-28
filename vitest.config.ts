@@ -18,8 +18,6 @@ export default defineWorkersConfig({
         ssr: {
           enabled: true,
           include: [
-            '@cloudflare/containers',
-            '@cloudflare/sandbox',
             '@babel/traverse',
             '@babel/types',
           ],
@@ -41,10 +39,7 @@ export default defineWorkersConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/.git/**',
-      '**/worker/api/routes/**',
       '**/test/worker-entry.ts',
-      '**/container/monitor-cli.test.ts',
-      '**/cf-git/**',
       '**/sdk/test/**', // SDK tests run with bun test, not vitest
       ...(runIntegrationTests ? [] : ['**/sdk/test/integration/**']),
     ],

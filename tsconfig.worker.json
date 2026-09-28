@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"composite": true,
 		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
-		"types": ["@cloudflare/workers-types", "./worker-configuration.d.ts", "vite/client", "jest"],
+		"types": ["@cloudflare/workers-types", "./worker-configuration.d.ts", "vite/client", "jest", "node"],
 		"lib": ["ES2023"]
 	},
 	"include": ["./worker-configuration.d.ts", "./shared", "./worker", "./worker/types", "./test/worker-entry.ts"],

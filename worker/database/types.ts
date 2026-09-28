@@ -3,7 +3,7 @@
  */
 
 import * as schema from './schema';
-import type { ModelConfig } from '../agents/inferutils/config.types';
+import type { ModelConfig } from 'worker/types/infer-config.types';
 
 // ========================================
 // CORE SHARED INTERFACES

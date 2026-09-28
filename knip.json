@@ -4,9 +4,8 @@
     ".": {
       "entry": [
         "src/main.tsx",
-        "worker/index.ts",
+        "worker/light-index.ts",
         "scripts/**/*.ts",
-        "container/**/*.ts",
         "debug-tools/**/*.{ts,py}"
       ],
       "project": [

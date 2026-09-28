@@ -1,9 +1,9 @@
-import type { Blueprint, CodeReviewOutputType, FileConceptType, FileOutputType } from "../agents/schemas";
-import type { AgentState } from "../agents/core/state";
-import type { ConversationState } from "../agents/inferutils/common";
-import type { CodeIssue, RuntimeError, StaticAnalysisResponse, TemplateDetails } from "../services/sandbox/sandboxTypes";
-import type { CodeFixResult } from "../services/code-fixer";
-import { IssueReport } from "../agents/domain/values/IssueReport";
+import type { Blueprint, CodeReviewOutputType, FileConceptType, FileOutputType } from "worker/types/agent-schemas";
+import type { AgentState } from "worker/types/agent-state";
+import type { ConversationState } from "worker/types/infer-common";
+import type { CodeIssue, RuntimeError, StaticAnalysisResponse, TemplateDetails } from "worker/types/sandbox-types";
+import type { CodeFixResult } from "worker/types/code-fix-types";
+import { IssueReport } from "worker/types/IssueReport";
 import type { RateLimitExceededError } from 'shared/types/errors';
 
 type ErrorMessage = {
@@ -85,6 +85,65 @@ type GenerationCompleteMessage = {
 	type: 'generation_complete';
 	instanceId?: string;
 	previewURL?: string;
+};
+
+// Additive messages from the Go room engine (see
+// backend/docs/EINO_ALIGNMENT_PLAN.md B12/B9). generation_interrupted:
+// generation ended with salvaged/partial files; generation_cancelled: the
+// user or room shutdown cancelled an in-flight generation.
+type GenerationInterruptedMessage = {
+	type: 'generation_interrupted';
+	reason: string;
+};
+
+type GenerationCancelledMessage = {
+	type: 'generation_cancelled';
+	reason: string;
+};
+
+// B7 human-in-the-loop: the Go room engine proposed a build plan and is
+// paused until the client replies with plan_approved / plan_rejected.
+type PlanProposedMessage = {
+	type: 'plan_proposed';
+	conversationId: string;
+	plan: string;
+};
+
+// TeamStartedMessage mirrors backend/pkg/models/websocket.go TeamStarted:
+// the coordinator/coder/reviewer team began executing the approved plan.
+type TeamStartedMessage = {
+	type: 'team_started';
+};
+
+// SubAgentActivityMessage mirrors backend/pkg/models/websocket.go
+// SubAgentActivity: transparent delegation trace (render-only).
+type SubAgentActivityMessage = {
+	type: 'subagent_activity';
+	agentName: string;
+	toolName: string;
+};
+
+// TeamCompletedMessage mirrors backend/pkg/models/websocket.go
+// TeamCompleted: verdict is approve | request_changes | done | error.
+type TeamCompletedMessage = {
+	type: 'team_completed';
+	verdict: string;
+	summary?: string;
+};
+
+// R3 dual-model pipeline: the machine-readable plan arrays (subtasks +
+// steps) for structured frontend rendering, broadcast right before the
+// plan_proposed gate. Mirrors backend/pkg/models/websocket.go.
+type PlanStructureMessage = {
+	type: 'plan_structure';
+	goal?: string;
+	subtasks: string[];
+	steps: {
+		action: 'create' | 'modify' | 'delete';
+		file_path: string;
+		description: string;
+		associated_subtask_index: number;
+	}[];
 };
 
 export type DeploymentStartedMessage = {
@@ -603,6 +662,13 @@ export type WebSocketMessage =
 	| FileDeletedMessage
 	| FileRegeneratedMessage
 	| GenerationCompleteMessage
+	| GenerationInterruptedMessage
+	| GenerationCancelledMessage
+	| PlanProposedMessage
+	| PlanStructureMessage
+	| TeamStartedMessage
+	| SubAgentActivityMessage
+	| TeamCompletedMessage
 	| DeploymentStartedMessage
 	| DeploymentCompletedMessage
 	| DeploymentFailedMessage

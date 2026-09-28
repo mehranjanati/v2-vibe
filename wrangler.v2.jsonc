@@ -2,15 +2,20 @@
  * V2 vibe - Fresh deploy config for a lightweight Worker.
  *
  * Deploys a NEW Worker (vibesdk-v2) from a minimal entry point that only
- * serves the frontend + auth/OAuth routes. This keeps the script under the
- * free-tier 3 MiB size limit by avoiding heavy dependencies (CodeGen DO,
- * ThinkAgent, SpaceDO, containers, sandbox, dispatch).
+ * serves the frontend + auth/OAuth routes. The dependency set stays minimal
+ * to keep startup time and CPU per request low on the Workers Free plan
+ * (10 ms CPU/request). Note: the old "3 MB free / 10 MB paid compressed"
+ * script limit was removed on 2026-09-04 — the platform now checks 64 MiB of
+ * uncompressed bundle on all plans (see docs/CF_LIMITS.md §4). Avoided heavy
+ * deps: CodeGen DO, ThinkAgent, SpaceDO, containers, sandbox, dispatch.
  *
  * Bindings:
- *   - D1 → v2-vibe   (78a4275a-a78e-46e5-9adf-74566fbafd6b)
- *   - KV  → vibeos   (01a4941872b942d4b7429c4b43c484ad)
+ *   - D1 → v2-vibe   (374acf0b-5a29-4e1a-8b71-dc0e7178f4bd)
+ *   - KV  → VibecoderStore (56d249930a4447ee92493a7ff061a3ae)
  *   - R2  → vibesdk-templates
  *   - AI binding (free)
+ *   - Workflows → vibesdk-v2-workflows (class: VibeWorkflow, the DAG schema
+ *     v2 interpreter backed by the workflow_* D1 tables)
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -32,25 +37,29 @@
 		{
 			"binding": "DB",
 			"database_name": "v2-vibe",
-			"database_id": "78a4275a-a78e-46e5-9adf-74566fbafd6b"
+			"database_id": "374acf0b-5a29-4e1a-8b71-dc0e7178f4bd"
 		}
 	],
 	"kv_namespaces": [
 		{
 			"binding": "VibecoderStore",
-			"id": "01a4941872b942d4b7429c4b43c484ad"
+			"id": "56d249930a4447ee92493a7ff061a3ae"
 		}
 	],
-	"r2_buckets": [
+	// NOTE: R2 binding removed — TEMPLATES_BUCKET is never accessed at
+	// runtime by the light worker, and R2 is not yet enabled on this
+	// account (error 10042). Re-add when R2 is enabled in the dashboard.
+	"workflows": [
 		{
-			"binding": "TEMPLATES_BUCKET",
-			"bucket_name": "vibesdk-templates"
+			"binding": "WORKFLOWS",
+			"name": "vibesdk-v2-workflows",
+			"class_name": "VibeWorkflow"
 		}
 	],
 	"vars": {
 		"TEMPLATES_REPOSITORY": "https://github.com/cloudflare/vibesdk-templates",
 		"CLOUDFLARE_AI_GATEWAY": "v2-vibe",
-		"CUSTOM_DOMAIN": "vibesdk-v2.elbaan.workers.dev",
+		"CUSTOM_DOMAIN": "vibesdk-v2.apjkala25.workers.dev",
 		"CONTROL_PLANE_URL": "http://localhost:8080"
 	},
 	"workers_dev": true,

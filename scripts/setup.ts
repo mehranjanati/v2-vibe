@@ -3,7 +3,7 @@
 import { execSync } from 'child_process';
 import { randomBytes } from 'crypto';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { parse, modify, applyEdits } from 'jsonc-parser';
 import Cloudflare from 'cloudflare';
@@ -13,6 +13,23 @@ import { createInterface } from 'readline';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '..');
+
+const V2_WRANGLER_CONFIG = 'wrangler.v2.jsonc';
+const LEGACY_WRANGLER_CONFIG = 'wrangler.jsonc';
+
+/**
+ * Resolves the wrangler config the setup script drives: the dual-plane
+ * `wrangler.v2.jsonc` first, then a legacy `wrangler.jsonc` (V1 trees).
+ */
+export function resolveWranglerConfigPath(root: string = PROJECT_ROOT): string {
+	const v2Path = join(root, V2_WRANGLER_CONFIG);
+	if (existsSync(v2Path)) return v2Path;
+	const legacyPath = join(root, LEGACY_WRANGLER_CONFIG);
+	if (existsSync(legacyPath)) return legacyPath;
+	throw new Error(
+		`No wrangler config found in ${root} (expected ${V2_WRANGLER_CONFIG} or ${LEGACY_WRANGLER_CONFIG})`
+	);
+}
 
 interface SetupConfig {
 	accountId: string;
@@ -104,6 +121,45 @@ class SetupManager {
 			console.error('   3. Try running the script again or set up manually');
 			console.error('\n📚 See docs/setup.md for manual setup instructions');
 			process.exit(1);
+		} finally {
+			this.readline.close();
+		}
+	}
+
+	/**
+	 * Read-only readiness check (`bun run setup --check`, or `VIBESDK_SETUP_CHECK=1`):
+	 * resolves the wrangler config, prints the resources a real run would manage, and never
+	 * prompts, calls Cloudflare or writes a file. Safe to run in CI.
+	 */
+	async check(): Promise<void> {
+		try {
+			const wranglerPath = resolveWranglerConfigPath();
+			const isV2 = this.isV2Config;
+			const config = this.parseWranglerConfig();
+			const list = (items: any[] | undefined, format: (item: any) => string): string =>
+				items && items.length > 0 ? items.map(format).join(', ') : 'none';
+
+			console.log(`✅ Setup check (read-only) — config: ${wranglerPath}`);
+			console.log(`   mode: ${isV2 ? 'dual-plane (wrangler.v2.jsonc)' : 'legacy (wrangler.jsonc)'}`);
+			console.log(
+				`   KV namespaces: ${list(config.kv_namespaces, (ns: any) => `${ns.binding}${ns.id ? ` [${ns.id}]` : ''}`)}`
+			);
+			console.log(
+				`   D1 databases: ${list(config.d1_databases, (db: any) => `${db.binding} -> ${db.database_name ?? db.database_id ?? 'unnamed'}`)}`
+			);
+			console.log(`   R2 buckets: ${list(config.r2_buckets, (bucket: any) => bucket.binding)}`);
+			console.log(
+				`   dispatch namespaces: ${list(config.dispatch_namespaces, (ns: any) => ns.namespace)}`
+			);
+			console.log(`   worker: ${config.name ?? 'unset'} · entry: ${config.main ?? 'unset'}`);
+			console.log(
+				'   a normal run then: package manager check → credential/domain prompts → KV + D1 verification → .dev.vars (+ .prod.vars) → missing resource ids → db:generate + migrations → readiness report'
+			);
+			if (isV2) {
+				console.log(
+					'   note: wrangler.v2.jsonc keeps its committed routes/vars/workers_dev; only ids of resources the run had to create are written.'
+				);
+			}
 		} finally {
 			this.readline.close();
 		}
@@ -561,7 +617,7 @@ class SetupManager {
 				resources.kvNamespaces.push(this.createLocalResource(kv.binding, 'local'));
 			} else {
 				try {
-					const kvInfo = await this.ensureKVNamespace(kv.binding);
+					const kvInfo = await this.ensureKVNamespace(kv.binding, kv.id);
 					resources.kvNamespaces.push({
 						name: kvInfo.title,
 						id: kvInfo.id,
@@ -669,13 +725,18 @@ class SetupManager {
 		}
 	}
 
-	private async ensureKVNamespace(binding: string): Promise<{ id: string; title: string }> {
-		const namespaceName = `vibesdk-${binding.toLowerCase()}-local`;
+	private async ensureKVNamespace(
+		binding: string,
+		declaredId?: string
+	): Promise<{ id: string; title: string }> {
+		// The committed v2 config names the namespace after the binding (`VibecoderStore`);
+		// the legacy layout generated a `vibesdk-<binding>-local` title instead.
+		const namespaceName = this.isV2Config ? binding : `vibesdk-${binding.toLowerCase()}-local`;
 
 		try {
 			// Check if namespace exists using direct API call
 			const response = await fetch(
-				`https://api.cloudflare.com/client/v4/accounts/${this.config.accountId}/storage/kv/namespaces`,
+				`https://api.cloudflare.com/client/v4/accounts/${this.config.accountId}/storage/kv/namespaces?per_page=100`,
 				{
 					headers: {
 						'Authorization': `Bearer ${this.config.apiToken}`,
@@ -687,6 +748,16 @@ class SetupManager {
 			if (response.ok) {
 				const data = await response.json();
 				if (data.success && data.result) {
+					// An id already declared in the config wins: never recreate (or rename) it.
+					if (declaredId) {
+						const declared = data.result.find((ns: any) => ns.id === declaredId);
+						if (declared) {
+							console.log(`✅ KV namespace '${declared.title}' already exists (id from the wrangler config)`);
+							return { id: declared.id, title: declared.title };
+						}
+						console.warn(`⚠️  KV namespace id ${declaredId} from the wrangler config was not found in this account`);
+					}
+
 					const existingNamespace = data.result.find((ns: any) => ns.title === namespaceName);
 					if (existingNamespace) {
 						console.log(`✅ KV namespace '${namespaceName}' already exists`);
@@ -1131,13 +1202,17 @@ class SetupManager {
 	}
 
 	private parseWranglerConfig(): any {
-		const wranglerPath = join(PROJECT_ROOT, 'wrangler.jsonc');
-		if (!existsSync(wranglerPath)) {
-			throw new Error('wrangler.jsonc not found in project root');
-		}
-
-		const content = readFileSync(wranglerPath, 'utf-8');
+		const content = readFileSync(resolveWranglerConfigPath(), 'utf-8');
 		return parse(content);
+	}
+
+	/**
+	 * True when the script drives the dual-plane `wrangler.v2.jsonc` config. The committed v2
+	 * config already declares the Worker, bindings and vars, so the script only fills in missing
+	 * resource ids and never rewrites routes/vars/workers_dev.
+	 */
+	private get isV2Config(): boolean {
+		return resolveWranglerConfigPath().endsWith(V2_WRANGLER_CONFIG);
 	}
 
 	private static readonly FALLBACK_WORKER_VARS = new Set([
@@ -1416,26 +1491,27 @@ class SetupManager {
 	}
 
 	private async updateWranglerConfig(resources: ResourceInfo): Promise<void> {
-		console.log('🔧 Updating wrangler.jsonc configuration...');
+		const isV2 = this.isV2Config;
+		console.log(`🔧 Updating ${isV2 ? V2_WRANGLER_CONFIG : LEGACY_WRANGLER_CONFIG} configuration...`);
 
-		const wranglerPath = join(PROJECT_ROOT, 'wrangler.jsonc');
+		const wranglerPath = resolveWranglerConfigPath();
 		const content = readFileSync(wranglerPath, 'utf-8');
 		let updatedContent = content;
 
-		// Update KV namespace IDs and remote flags
+		// Update KV namespace IDs (plus the legacy `remote` dev flag when the tree still uses it)
 		for (const kv of resources.kvNamespaces) {
 			const kvPath = ['kv_namespaces'];
 			const kvNamespaces = parse(content).kv_namespaces || [];
+			let changed = false;
 			const updatedKvNamespaces = kvNamespaces.map((ns: any) => {
-				if (ns.binding === kv.binding) {
-					return {
-						...ns,
-						id: kv.id,
-						remote: kv.accessible  // Set remote based on accessibility
-					};
-				}
-				return ns;
+				if (ns.binding !== kv.binding) return ns;
+				const next = isV2 ? { ...ns, id: kv.id } : { ...ns, id: kv.id, remote: kv.accessible };
+				if (JSON.stringify(next) !== JSON.stringify(ns)) changed = true;
+				return next;
 			});
+
+			// Leave the committed config byte-identical when the declared ids already match.
+			if (!changed) continue;
 
 			const edits = modify(updatedContent, kvPath, updatedKvNamespaces, {
 				formattingOptions: { insertSpaces: true, tabSize: 4 }
@@ -1443,20 +1519,22 @@ class SetupManager {
 			updatedContent = applyEdits(updatedContent, edits);
 		}
 
-		// Update D1 database IDs and remote flags
+		// Update D1 database IDs (plus the legacy `remote` dev flag when the tree still uses it)
 		for (const db of resources.d1Databases) {
 			const dbPath = ['d1_databases'];
 			const databases = parse(updatedContent).d1_databases || [];
+			let changed = false;
 			const updatedDatabases = databases.map((database: any) => {
-				if (database.binding === db.binding) {
-					return {
-						...database,
-						database_id: db.id,
-						remote: db.accessible  // Set remote based on accessibility
-					};
-				}
-				return database;
+				if (database.binding !== db.binding) return database;
+				const next = isV2
+					? { ...database, database_id: db.id }
+					: { ...database, database_id: db.id, remote: db.accessible };
+				if (JSON.stringify(next) !== JSON.stringify(database)) changed = true;
+				return next;
 			});
+
+			// Leave the committed config byte-identical when the declared ids already match.
+			if (!changed) continue;
 
 			const edits = modify(updatedContent, dbPath, updatedDatabases, {
 				formattingOptions: { insertSpaces: true, tabSize: 4 }
@@ -1513,7 +1591,11 @@ class SetupManager {
 			? this.config.prodDomain
 			: (this.config.customDomain !== 'localhost:5173' ? this.config.customDomain : null);
 
-		if (wranglerDomain) {
+		if (isV2) {
+			// The committed dual-plane config already declares the Worker, routes and vars: a
+			// setup run only fills in ids of resources it had to create.
+			console.log('ℹ️  wrangler.v2.jsonc: routes, vars and workers_dev are managed by the committed config and were left untouched');
+		} else if (wranglerDomain) {
 			// Update CUSTOM_DOMAIN in vars with production or custom domain
 			const varsEdits = modify(updatedContent, ['vars', 'CUSTOM_DOMAIN'], wranglerDomain, {
 				formattingOptions: { insertSpaces: true, tabSize: 4 }
@@ -1930,7 +2012,7 @@ class SetupManager {
 		);
 
 		if (!templatesBucket) {
-			console.log('ℹ️  No TEMPLATES_BUCKET found in wrangler.jsonc - skipping templates deployment');
+			console.log('ℹ️  No TEMPLATES_BUCKET found in the wrangler config - skipping templates deployment');
 			return;
 		}
 
@@ -2116,10 +2198,20 @@ class SetupManager {
 // Main execution
 async function main() {
 	const setup = new SetupManager();
+	if (process.argv.includes('--check') || process.env.VIBESDK_SETUP_CHECK === '1') {
+		await setup.check();
+		return;
+	}
 	await setup.setup();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run only when invoked directly. `fileURLToPath` also copes with paths that contain spaces
+// (e.g. `~/V2 vibe`), where `import.meta.url === \`file://${process.argv[1]}\`` never matched and
+// the script silently did nothing.
+const isDirectInvocation =
+	typeof process.argv[1] === 'string' && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+
+if (isDirectInvocation) {
 	main().catch((error) => {
 		console.error('Setup failed:', error);
 		process.exit(1);

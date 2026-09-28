@@ -56,6 +56,7 @@ export function useChat({
 	projectType = 'app',
 	behaviorType: explicitBehaviorType,
 	autoStart = true,
+	initialMode = 'build',
 	onDebugMessage,
 	onTerminalMessage,
 	onCloudflareDeployGate,
@@ -73,6 +74,13 @@ export function useChat({
 	 * gesture before it runs, preventing zero-click prompt injection.
 	 */
 	autoStart?: boolean;
+	/**
+	 * Initial intent routing for the first prompt. When 'chat' (user selected
+	 * Chat mode on the home page / input), a brand-new session does NOT auto
+	 * fire `generate_all` on open — the user's first message is routed as a
+	 * conversational `user_suggestion` instead, so no code is generated.
+	 */
+	initialMode?: 'build' | 'chat';
 	onDebugMessage?: (type: 'error' | 'warning' | 'info' | 'websocket', message: string, details?: string, source?: string, messageType?: string, rawMessage?: unknown) => void;
 	onTerminalMessage?: (log: { id: string; content: string; type: 'command' | 'stdout' | 'stderr' | 'info' | 'error' | 'warn' | 'debug'; timestamp: number; source?: string }) => void;
 	onCloudflareDeployGate?: (code: CloudflareDeploymentErrorCode) => void;
@@ -145,6 +153,7 @@ export function useChat({
 	const [phaseTimeline, setPhaseTimeline] = useState<PhaseTimelineItem[]>([]);
 
 	const [files, setFiles] = useState<FileType[]>([]);
+	const [vfsFiles, setVfsFiles] = useState<Record<string, string>>({});
 
 	const [totalFiles, setTotalFiles] = useState<number>();
 
@@ -168,6 +177,9 @@ export function useChat({
 	// const [lastDeploymentPhaseCount, setLastDeploymentPhaseCount] = useState(0);
 	const [isGenerationPaused, setIsGenerationPaused] = useState(false);
 	const [isGenerating, setIsGenerating] = useState(false);
+
+	// B7 plan approval: conversationId of a plan awaiting user verdict.
+	const [pendingPlan, setPendingPlan] = useState<string | null>(null);
 
 	// Phase progress visual indicator (used to apply subtle throb on chat)
 	const [isPhaseProgressActive, setIsPhaseProgressActive] = useState(false);
@@ -264,6 +276,8 @@ export function useChat({
 			createWebSocketMessageHandler({
 			// State setters
 			setFiles,
+			setVfsFiles,
+
 			setPhaseTimeline,
 			setProjectStages,
 			setMessages,
@@ -290,6 +304,7 @@ export function useChat({
 			setTemplateDetails,
 			setBackendErrorDialog,
 			setClarifyingQuestions,
+			setPendingPlan,
 			// Current state
 			isInitialStateRestored,
 			blueprint,
@@ -404,11 +419,27 @@ export function useChat({
 					// Always request conversation state explicitly (running/full history)
 					sendWebSocketMessage(ws, 'get_conversation_state');
 
-					// Request file generation for new chats only
+					// New chats: build mode fires code generation; chat mode
+					// sends the initial prompt as a conversational reply so the
+					// user's question is actually answered (and no code is
+					// generated).
 					if (!disableGenerate && urlChatId === 'new') {
-						logger.debug('🔄 Starting code generation for new chat');
-						setIsGenerating(true);
-						sendWebSocketMessage(ws, 'generate_all');
+						if (initialMode === 'chat') {
+							if (userQuery) {
+								logger.debug('💬 Sending initial chat message');
+								sendWebSocketMessage(ws, 'user_suggestion', {
+									message: userQuery,
+								});
+							}
+						} else {
+							logger.debug('🔄 Starting code generation for new chat with prompt:', userQuery);
+							setIsGenerating(true);
+							// The backend has no server-side memory of the URL query
+							// prompt — it MUST be sent explicitly, otherwise the
+							// backend falls back to its generic "simple web app"
+							// default prompt.
+							sendWebSocketMessage(ws, 'generate_all', { message: userQuery || '' });
+						}
 					}
 				});
 
@@ -452,7 +483,7 @@ export function useChat({
 				handleConnectionFailureRef.current?.(wsUrl, disableGenerate, 'Connection setup failed');
 			}
 		},
-		[maxRetries, handleWebSocketMessage, urlChatId],
+		[maxRetries, handleWebSocketMessage, urlChatId, initialMode, userQuery],
 	);
 
 	// Handle connection failures with exponential backoff retry
@@ -889,6 +920,7 @@ export function useChat({
 		chatId,
 		query,
 		files,
+		vfsFiles,
 		blueprint,
 		previewUrl,
 		isGeneratingBlueprint,
@@ -901,6 +933,9 @@ export function useChat({
 		projectStages,
 		phaseTimeline,
 		isThinking,
+		// B7 plan approval gate
+		pendingPlan,
+		setPendingPlan,
 		onCompleteBootstrap,
 		// Deployment and generation control
 		isDeploying,

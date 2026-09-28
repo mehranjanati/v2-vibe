@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   redis:
     # redis-stack bundles the RediSearch module needed by the vector index.
@@ -7,7 +5,9 @@ services:
     # remove the module flag from the command below.
     image: redis/redis-stack-server:7.2.0-v17
     container_name: vibesdk-redis
-    command: ["redis-server", "--loadmodule", "/opt/redis-stack/lib/redisearch.so"]
+    # protected-mode no is required: the backend connects over the internal
+    # (private) compose network, not loopback — protected mode would DENY it.
+    command: ["redis-server", "--loadmodule", "/opt/redis-stack/lib/redisearch.so", "--protected-mode", "no"]
     # Host port 6380 maps to container 6379 to avoid clashing with the
     # system redis-server / other Docker containers already on host:6379.
     # The backend connects over the internal compose network as `redis:6379`.
@@ -35,7 +35,7 @@ services:
       # Pull non-secret config from repo .env if present; secrets stay in .env
       AI_GATEWAY_URL: ${AI_GATEWAY_URL:-}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-@cf/meta/llama-3.1-8b-instruct}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-@cf/qwen/qwen2.5-coder-32b-instruct}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_PAGES_PROJECT: ${CLOUDFLARE_PAGES_PROJECT:-}
@@ -46,8 +46,10 @@ services:
       PG_PASSWORD: ${PG_PASSWORD:-password}
       PG_DATABASE: ${PG_DATABASE:-chatwoot_dev}
       PG_SSLMODE: ${PG_SSLMODE:-disable}
-      # Cloudflare D1 database ID (from wrangler.jsonc d1_databases[0].database_id)
-      D1_DATABASE_ID: ${D1_DATABASE_ID:-78a4275a-a78e-46e5-9adf-74566fbafd6b}
+      # Cloudflare D1 database ID — must be set in .env and match
+      # wrangler.v2.jsonc d1_databases[0].database_id. No default on purpose:
+      # a wrong id silently points the control plane at another database.
+      D1_DATABASE_ID: ${D1_DATABASE_ID:-}
     ports:
       - "8080:8080"
     restart: unless-stopped

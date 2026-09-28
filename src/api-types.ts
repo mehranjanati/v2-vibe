@@ -71,12 +71,12 @@ export type {
   ViewDefinition,
   PlatformCapabilities,
   PlatformCapabilitiesConfig,
-} from 'worker/agents/core/features/types';
+} from 'worker/types/agent-features';
 
 export {
   DEFAULT_FEATURE_DEFINITIONS,
   getBehaviorTypeForProject,
-} from 'worker/agents/core/features';
+} from 'worker/types/agent-features';
 
 // Model Config API Types
 export type {
@@ -137,7 +137,7 @@ export type {
 // Template Types
 export type {
   TemplateDetails,
-} from 'worker/services/sandbox/sandboxTypes';
+} from 'worker/types/sandbox-types';
 
 // WebSocket Types
 export type {
@@ -173,27 +173,27 @@ export type {
   CodeReviewOutputType,
   FileConceptType,
   FileOutputType as GeneratedFile,
-} from 'worker/agents/schemas';
+} from 'worker/types/agent-schemas';
 
 export type {
   AgentState,
   PhasicState
-} from 'worker/agents/core/state';
+} from 'worker/types/agent-state';
 
 export type {
   BehaviorType,
   ProjectType
-} from 'worker/agents/core/types';
-export { isAgenticLikeBehavior } from 'worker/agents/core/types';
+} from 'worker/types/agent-core-types';
+export { isAgenticLikeBehavior } from 'worker/types/agent-core-types';
 
 export type {
   ConversationMessage,
-} from 'worker/agents/inferutils/common';
+} from 'worker/types/infer-common';
 
 export type { 
   RuntimeError,
   StaticAnalysisResponse 
-} from 'worker/services/sandbox/sandboxTypes';
+} from 'worker/types/sandbox-types';
 
 // Config/Inference Types
 export type { 
@@ -202,9 +202,9 @@ export type {
   ModelConfig,
   ReasoningEffortType as ReasoningEffort,
   ProviderOverrideType as ProviderOverride
-} from 'worker/agents/inferutils/config.types';
+} from 'worker/types/infer-config.types';
 
-export type { RateLimitError } from "worker/services/rate-limit/errors";
+export type { RateLimitError } from "worker/types/rate-limit";
 export type { AgentPreviewResponse, CodeGenArgs } from 'worker/api/controllers/agent/types';
 export { MAX_AGENT_QUERY_LENGTH } from 'worker/api/controllers/agent/types';
 
@@ -220,7 +220,7 @@ export type {
 export type { RateLimitErrorResponse } from 'worker/api/responses';
 export { RateLimitExceededError, SecurityError, SecurityErrorType } from '../shared/types/errors.js';
 
-export type { AIModels } from 'worker/agents/inferutils/config.types';
+export type { AIModels } from 'worker/types/infer-config.types';
 // Model selection types
 export type ModelSelectionMode = 'platform' | 'byok' | 'custom';
 
@@ -331,4 +331,4 @@ export interface ApiKeysData {
 export type {
     GitHubExportOptions,
     GitHubExportResult,
-} from 'worker/services/github/types';
+} from 'worker/types/github-types';

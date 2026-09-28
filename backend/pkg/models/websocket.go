@@ -34,6 +34,13 @@ type FileGenerated struct {
 	File *FileEntry `json:"file"`
 }
 
+// FileDeleted mirrors `file_deleted` (FileDeletedMessage): the file was
+// removed from the VFS (dual-model pipeline delete steps).
+type FileDeleted struct {
+	Type     string `json:"type"`
+	FilePath string `json:"filePath"`
+}
+
 // FileGenerating mirrors `file_generating` (FileGeneratingMessage).
 type FileGenerating struct {
 	Type        string `json:"type"`
@@ -53,6 +60,53 @@ type GenerationComplete struct {
 	Type       string `json:"type"`
 	InstanceID string `json:"instanceId,omitempty"`
 	PreviewURL string `json:"previewURL,omitempty"`
+}
+
+// GenerationInterrupted is an additive event (B12) signalling the
+// generation did NOT finish cleanly: some files may be partial
+// (stream-salvaged) or missing. reason is a short human string, e.g.
+// "stream error" or "token limit reached after retries".
+type GenerationInterrupted struct {
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
+// GenerationCancelled is an additive event (B9) emitted when the user (or
+// room shutdown) cancelled an in-flight generation. Streamed files up to
+// the cancellation point remain in the VFS.
+type GenerationCancelled struct {
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
+// PlanProposed is an additive event (B7, human-in-the-loop): the build
+// plan is ready and the room pauses until the client replies with
+// plan_approved (proceed) or plan_rejected (abort). conversationId is the
+// chat conversation the plan streamed into.
+type PlanProposed struct {
+	Type           string `json:"type"`
+	ConversationID string `json:"conversationId"`
+	Plan           string `json:"plan"`
+}
+
+// PlanStructure is an additive event (R3 dual-model pipeline): the
+// machine-readable plan arrays for structured frontend rendering — the
+// coarse subtasks plus the ordered per-file steps with their actions. It
+// is broadcast right after the plan is validated, before plan_proposed.
+type PlanStructure struct {
+	Type     string              `json:"type"` // "plan_structure"
+	Goal     string              `json:"goal,omitempty"`
+	Subtasks []string            `json:"subtasks"`
+	Steps    []PlanStructureStep `json:"steps"`
+}
+
+// PlanStructureStep is one executable file instruction in a PlanStructure.
+// The JSON keys mirror the ExecutionPlan wire contract (backend/agent).
+type PlanStructureStep struct {
+	Action                 string `json:"action"` // "create", "modify", "delete"
+	FilePath               string `json:"file_path"`
+	Description            string `json:"description"`
+	AssociatedSubtaskIndex int    `json:"associated_subtask_index"`
 }
 
 // DeploymentStarted mirrors `deployment_started` (DeploymentStartedMessage).
@@ -97,12 +151,49 @@ type CloudflareDeploymentCompleted struct {
 	WorkersURL    string `json:"workersUrl,omitempty"`
 }
 
+// TeamStarted mirrors `team_started`: the multi-agent team
+// (coordinator/coder/reviewer) began executing the approved plan.
+type TeamStarted struct {
+	Type string `json:"type"`
+}
+
+// SubAgentActivity mirrors `subagent_activity`: a transparent delegation
+// trace — which sub-agent called which tool. Render-only, never touches
+// the VFS.
+type SubAgentActivity struct {
+	Type      string `json:"type"`
+	AgentName string `json:"agentName"`
+	ToolName  string `json:"toolName"`
+}
+
+// TeamCompleted mirrors `team_completed`: the team finished. Verdict is
+// one of "approve", "request_changes", "done" (no explicit verdict) or
+// "error" (see Summary).
+type TeamCompleted struct {
+	Type    string `json:"type"`
+	Verdict string `json:"verdict"`
+	Summary string `json:"summary,omitempty"`
+}
+
 // ErrorEvent mirrors `error` (ErrorMessage).
 type ErrorEvent struct {
 	Type        string `json:"type"`
 	Error       string `json:"error"`
 	Code        string `json:"code,omitempty"`
 	ShowAsPopup bool   `json:"showAsPopup,omitempty"`
+}
+
+// ConversationResponse mirrors `conversation_response`
+// (ConversationResponseMessage) — a streamed conversational reply. It is
+// emitted once per LLM delta with IsStreaming=true; a final (non-streaming)
+// event closes the turn so the frontend finalizes the assistant message.
+// Unlike file generation events, it never touches shouldBeGenerating nor the
+// VFS — it only renders as markdown in the chat thread.
+type ConversationResponse struct {
+	Type           string `json:"type"`
+	Message        string `json:"message"`
+	ConversationID string `json:"conversationId,omitempty"`
+	IsStreaming    bool   `json:"isStreaming,omitempty"`
 }
 
 // ---------- Client -> Server messages ----------

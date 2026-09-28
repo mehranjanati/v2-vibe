@@ -2,7 +2,8 @@
  * Worker Bindings Model
  *
  * The light worker is the only worker in this project. It binds a minimal
- * set of Cloudflare resources (D1, KV, R2, AI, ASSETS, control-plane URL).
+ * set of Cloudflare resources (D1, KV, R2, AI, ASSETS, Workflows,
+ * control-plane URL).
  *
  * This module models:
  *   - `BaseBindings`        : shared core bindings the worker needs.
@@ -15,13 +16,22 @@ export interface BaseBindings {
 	// Core storage + runtime
 	DB: D1Database;
 	VibecoderStore: KVNamespace;
-	TEMPLATES_BUCKET: R2Bucket;
+	// Optional: R2 is not enabled on all accounts (error 10042); the light
+	// worker never accesses it at runtime, so the binding may be absent.
+	TEMPLATES_BUCKET?: R2Bucket;
 	ASSETS: Fetcher;
 	AI: Ai;
+	/**
+	 * Workflows orchestration binding — used to create/inspect DAG instances.
+	 * The bound workflow is backed by the {@link VibeWorkflow} entrypoint class
+	 * (exported from `worker/light-index.ts`), which interprets DAG schema v2
+	 * documents persisted in D1 (`worker/workflow/VibeWorkflow.ts`).
+	 */
+	WORKFLOWS: Workflow;
 }
 
 /**
- * Light Worker bindings — the free-tier, 3 MiB-safe worker that serves the
+ * Light Worker bindings — the minimal edge worker that serves the
  * SPA plus auth (email/password, GitHub OAuth) and GitHub export flows.
  * It intentionally has NO Durable Objects, dispatcher, containers, or
  * browser bindings.

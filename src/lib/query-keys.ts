@@ -99,4 +99,11 @@ export const queryKeys = {
 				] as const,
 		},
 	},
+	/** Control-plane projects: VFS hydration for the client-side preview. */
+	projects: {
+		all: ['projects'] as const,
+		filesAll: () => [...queryKeys.projects.all, 'files'] as const,
+		files: (projectId: string) =>
+			[...queryKeys.projects.filesAll(), projectId] as const,
+	},
 };

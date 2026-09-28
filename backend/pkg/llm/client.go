@@ -10,19 +10,30 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// Config holds the LLM / AI Gateway connection settings, sourced from
-// environment variables (AI_GATEWAY_URL, AI_GATEWAY_API_KEY, DEFAULT_MODEL).
+// Config holds the LLM / AI connection settings, sourced from environment
+// variables. It supports two providers:
+//
+//   - AI Gateway  : set AI_GATEWAY_URL to
+//     https://gateway.ai.cloudflare.com/v1/<account>/<gateway>
+//   - Workers AI  : leave AI_GATEWAY_URL empty and set CLOUDFLARE_ACCOUNT_ID.
+//     The client then uses Workers AI's OpenAI-compatible endpoint
+//     https://api.cloudflare.com/client/v4/accounts/<id>/ai/v1 (no gateway).
 type Config struct {
-	// GatewayURL is the base URL of the AI Gateway / OpenAI-compatible
-	// endpoint, e.g. https://gateway.ai.cloudflare.com/v1/<account>/<gateway>.
+	// GatewayURL is the base URL of the LLM provider. When empty and an
+	// account ID is available, NewConfigFromEnv fills it with the Workers AI
+	// OpenAI-compatible base URL. The client appends "/chat/completions".
 	GatewayURL string
-	// APIKey is the bearer token for the gateway.
+	// APIKey is the bearer token used for the request (gateway token for
+	// AI Gateway, a Cloudflare API token for Workers AI).
 	APIKey string
-	// Model is the default model identifier, e.g. "@cf/meta/llama-3.1-8b-instruct".
+	// Model is the default model identifier when DEFAULT_MODEL is unset.
+	// @cf/meta/llama-3.3-70b-instruct-fp8-fast is a widely-available general
+	// chat model on Workers AI; the older llama-3.1-8b is deprecated (410).
 	Model string
 	// Timeout bounds the entire streaming request.
 	Timeout time.Duration
@@ -31,11 +42,27 @@ type Config struct {
 }
 
 // NewConfigFromEnv builds a Config from environment variables.
+//
+// If AI_GATEWAY_URL is set it is used verbatim (AI Gateway mode). Otherwise,
+// when CLOUDFLARE_ACCOUNT_ID is present, it falls back to Workers AI's
+// OpenAI-compatible endpoint so the backend works with no AI Gateway at all.
 func NewConfigFromEnv() Config {
+	gateway := getEnv("AI_GATEWAY_URL", "")
+	accountID := getEnv("CLOUDFLARE_ACCOUNT_ID", "")
+	if gateway == "" && accountID != "" {
+		gateway = "https://api.cloudflare.com/client/v4/accounts/" + accountID + "/ai/v1"
+	}
+
+	apiKey := getEnv("AI_GATEWAY_API_KEY", "")
+	if apiKey == "" {
+		// Workers AI authenticates with a Cloudflare API token.
+		apiKey = getEnv("CLOUDFLARE_API_TOKEN", "")
+	}
+
 	return Config{
-		GatewayURL: getEnv("AI_GATEWAY_URL", ""),
-		APIKey:     getEnv("AI_GATEWAY_API_KEY", ""),
-		Model:      getEnv("DEFAULT_MODEL", "@cf/meta/llama-3.1-8b-instruct"),
+		GatewayURL: gateway,
+		APIKey:     apiKey,
+		Model:      getEnv("DEFAULT_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
 		Timeout:    5 * time.Minute,
 	}
 }
@@ -71,6 +98,10 @@ type StreamChunk struct {
 	Content string
 	// Done is true when the stream has finished (data: [DONE]).
 	Done bool
+	// FinishReason is the terminal finish_reason of the last choice
+	// ("stop", "length", "tool_calls", ...). Set on the final Done chunk.
+	// "length" means the output was truncated by the token limit.
+	FinishReason string
 	// Err is set when the stream fails mid-flight.
 	Err error
 }
@@ -95,7 +126,7 @@ func NewClient(cfg Config) *Client {
 // must consume the channel; cancellation is via ctx.
 func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
 	if c.cfg.GatewayURL == "" {
-		return nil, errors.New("llm: AI_GATEWAY_URL is not configured")
+		return nil, errors.New("llm: no provider configured (set AI_GATEWAY_URL or CLOUDFLARE_ACCOUNT_ID)")
 	}
 	if req.Model == "" {
 		req.Model = c.cfg.Model
@@ -122,6 +153,43 @@ func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan Stream
 	if err != nil {
 		return nil, fmt.Errorf("llm: request: %w", err)
 	}
+	// Retry on 429 (rate limit) with exponential backoff. The LLM provider
+	// may throttle bursty traffic; a short wait usually succeeds.
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		retryAfter := 2 * time.Second
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			if secs, err := strconv.Atoi(ra); err == nil {
+				retryAfter = time.Duration(secs) * time.Second
+			}
+		}
+		for attempt := 0; attempt < 3; attempt++ {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryAfter):
+			}
+			// Re-create the request (body was consumed).
+			httpReq, err = http.NewRequestWithContext(ctx, "POST", c.cfg.GatewayURL+"/chat/completions", bytes.NewReader(body))
+			if err != nil {
+				return nil, fmt.Errorf("llm: retry request: %w", err)
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("Accept", "text/event-stream")
+			if c.cfg.APIKey != "" {
+				httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+			}
+			resp, err = c.hc.Do(httpReq)
+			if err != nil {
+				return nil, fmt.Errorf("llm: retry request: %w", err)
+			}
+			if resp.StatusCode != http.StatusTooManyRequests {
+				break
+			}
+			resp.Body.Close()
+			retryAfter *= 2 // exponential backoff: 2s, 4s, 8s
+		}
+	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		return nil, fmt.Errorf("llm: unexpected status %d", resp.StatusCode)
@@ -141,6 +209,8 @@ func (c *Client) readSSE(ctx context.Context, body io.ReadCloser, ch chan<- Stre
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var data strings.Builder
+	finishReason := ""
+	doneSent := false
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -149,7 +219,8 @@ func (c *Client) readSSE(ctx context.Context, body io.ReadCloser, ch chan<- Stre
 		if strings.HasPrefix(line, "data:") {
 			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 			if payload == "[DONE]" {
-				ch <- StreamChunk{Done: true}
+				doneSent = true
+				ch <- StreamChunk{Done: true, FinishReason: finishReason}
 				return
 			}
 			data.WriteString(payload)
@@ -158,7 +229,7 @@ func (c *Client) readSSE(ctx context.Context, body io.ReadCloser, ch chan<- Stre
 
 		// Blank line = end of event. Flush accumulated data.
 		if line == "" && data.Len() > 0 {
-			if !c.emitChunk(ctx, data.String(), ch) {
+			if !c.emitChunk(ctx, data.String(), ch, &finishReason) {
 				return
 			}
 			data.Reset()
@@ -167,12 +238,34 @@ func (c *Client) readSSE(ctx context.Context, body io.ReadCloser, ch chan<- Stre
 
 	// Flush any trailing data without a terminating blank line.
 	if data.Len() > 0 {
-		if !c.emitChunk(ctx, data.String(), ch) {
+		if !c.emitChunk(ctx, data.String(), ch, &finishReason) {
 			return
 		}
 	}
 
+	// Clean body close WITHOUT a [DONE] marker: the provider ended the
+	// stream prematurely — same as a dropped connection.
+	if !doneSent && scanner.Err() == nil {
+		select {
+		case ch <- StreamChunk{Err: &ConnectionLostError{Err: io.ErrUnexpectedEOF}}:
+		case <-ctx.Done():
+		}
+		return
+	}
+
 	if err := scanner.Err(); err != nil {
+		// A premature body close (Workers AI drops long streams under
+		// load) is a recoverable condition, not a hard failure: surface
+		// it as ConnectionLostError so callers can retry an empty
+		// attempt or keep the partial output. Plain io.EOF means the
+		// server ended the body without a [DONE] marker — same thing.
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			select {
+			case ch <- StreamChunk{Err: &ConnectionLostError{Err: err}}:
+			case <-ctx.Done():
+			}
+			return
+		}
 		select {
 		case ch <- StreamChunk{Err: fmt.Errorf("llm: read stream: %w", err)}:
 		case <-ctx.Done():
@@ -180,14 +273,42 @@ func (c *Client) readSSE(ctx context.Context, body io.ReadCloser, ch chan<- Stre
 	}
 }
 
+// ConnectionLostError marks a stream whose HTTP body ended prematurely
+// (unexpected EOF) — the model output was cut off mid-flight by the
+// provider, not by a client bug.
+type ConnectionLostError struct {
+	Err error
+}
+
+func (e *ConnectionLostError) Error() string {
+	return "llm: connection lost mid-stream: " + e.Err.Error()
+}
+
+func (e *ConnectionLostError) Unwrap() error { return e.Err }
+
+// IsConnectionLost reports whether err was caused by the provider closing
+// the stream body prematurely.
+func IsConnectionLost(err error) bool {
+	var cl *ConnectionLostError
+	return errors.As(err, &cl)
+}
+
 // emitChunk parses one SSE data payload and pushes its content delta.
-// Returns false if the stream should stop (context cancelled or error).
-func (c *Client) emitChunk(ctx context.Context, payload string, ch chan<- StreamChunk) bool {
+// finishReason is updated when the payload carries choices[0].finish_reason
+// (usually the final chunk). Returns false if the stream should stop
+// (context cancelled or error).
+func (c *Client) emitChunk(ctx context.Context, payload string, ch chan<- StreamChunk, finishReason *string) bool {
 	var obj struct {
 		Choices []struct {
 			Delta struct {
-				Content string `json:"content"`
+				// Workers AI streams single numeric tokens as bare JSON
+				// numbers ("content":8, not "content":"8"). A plain
+				// string field here fails to unmarshal the WHOLE payload
+				// and silently drops every digit of the generated code —
+				// so decode raw and coerce below.
+				Content json.RawMessage `json:"content"`
 			} `json:"delta"`
+			FinishReason *string `json:"finish_reason"`
 		} `json:"choices"`
 		Error *struct {
 			Message string `json:"message"`
@@ -206,7 +327,10 @@ func (c *Client) emitChunk(ctx context.Context, payload string, ch chan<- Stream
 		return false
 	}
 	if len(obj.Choices) > 0 {
-		content := obj.Choices[0].Delta.Content
+		if obj.Choices[0].FinishReason != nil {
+			*finishReason = *obj.Choices[0].FinishReason
+		}
+		content := coerceDeltaContent(obj.Choices[0].Delta.Content)
 		if content == "" {
 			return true
 		}
@@ -217,4 +341,24 @@ func (c *Client) emitChunk(ctx context.Context, payload string, ch chan<- Stream
 		}
 	}
 	return true
+}
+
+// coerceDeltaContent converts a raw JSON "content" value into plain text.
+// Workers AI emits numeric tokens as bare JSON numbers ("content":8); such
+// a value decodes to its literal text ("8"). Proper JSON strings decode
+// normally, and null/empty yields "".
+func coerceDeltaContent(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return ""
+	}
+	if raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return ""
+		}
+		return s
+	}
+	// Bare number (or other scalar): its literal JSON text IS the token.
+	return string(raw)
 }

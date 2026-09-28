@@ -55,6 +55,7 @@ import {
 import type { ChatMessage } from './utils/message-helpers';
 import { featureRegistry, useFeature } from '@/features';
 import { useFileContentStream } from './hooks/use-file-content-stream';
+import { useProjectFiles } from '@/hooks/use-project-files';
 import { logger } from '@/utils/logger';
 import {
 	useApp,
@@ -67,6 +68,7 @@ import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useImageUpload } from '@/hooks/use-image-upload';
 import { useDragDrop } from '@/hooks/use-drag-drop';
 import { sendWebSocketMessage } from './utils/websocket-helpers';
+import { buildOutboundChatMessage } from './utils/chat-routing';
 import {
 	RollbackContext,
 	type RollbackHandler,
@@ -79,7 +81,7 @@ import {
 import { mergeFiles } from '@/utils/file-helpers';
 import { ChatModals } from './components/chat-modals';
 import { MainContentPanel } from './components/main-content-panel';
-import { ChatInput } from './components/chat-input';
+import { ChatInput, type ChatMode } from './components/chat-input';
 import { ClarifyingQuestionsPopup } from './components/clarifying-questions-popup';
 import { useLimitsContext } from '@/contexts/limits-context';
 import {
@@ -125,6 +127,7 @@ function ChatSession() {
 	const urlBehaviorType = searchParams.get(
 		'behaviorType',
 	) as BehaviorType | null;
+	const urlMode = (searchParams.get('mode') ?? 'build') as ChatMode;
 
 	// Only auto-start a brand-new session when it originated from in-app
 	// navigation (e.g. the home prompt box sets `fromPrompt`). Sessions opened
@@ -134,6 +137,12 @@ function ChatSession() {
 		(location.state as { fromPrompt?: boolean } | null)?.fromPrompt ===
 		true;
 	const autoStart = urlChatId !== 'new' || startedFromInApp;
+
+	// Intent routing: 'build' emits generate_all (app generation/modification);
+	// 'chat' emits user_suggestion (conversational markdown reply, no files).
+	// Initialized from the URL (`mode=`), which the home page sets based on the
+	// user's Build/Chat selection before navigating.
+	const [chatMode, setChatMode] = useState<ChatMode>(urlMode);
 
 	// Extract images from URL params if present
 	const userImages = useMemo(() => {
@@ -219,10 +228,14 @@ function ChatSession() {
 		sendUserMessage,
 		blueprint,
 		previewUrl,
+		vfsFiles,
 		clearEdit,
 		projectStages,
 		phaseTimeline,
 		isThinking,
+		// B7 plan approval gate
+		pendingPlan,
+		setPendingPlan,
 		// Deployment and generation control
 		isDeploying,
 		cloudflareDeploymentUrl,
@@ -263,6 +276,7 @@ function ChatSession() {
 		projectType: urlProjectType as ProjectType,
 		behaviorType: urlBehaviorType ?? undefined,
 		autoStart,
+		initialMode: chatMode,
 		onDebugMessage: addDebugMessage,
 		onCloudflareDeployGate: handleCloudflareDeployGate,
 	});
@@ -338,6 +352,7 @@ function ChatSession() {
 		| 'terminal'
 		| 'presentation'
 		| 'database'
+		| 'workflow'
 	>('editor');
 
 	// Terminal state
@@ -612,6 +627,12 @@ function ChatSession() {
 		},
 	);
 
+	// Client-side preview hydration: seed the VFS from the control plane
+	// (GET /api/projects/:id/files) when reopening a chat so the preview
+	// has content before the WebSocket replay arrives. Live WS updates
+	// always win over this snapshot (lowest merge precedence).
+	const { data: hydratedFiles } = useProjectFiles(chatId);
+
 	// Merge streamed bootstrap files with generated files
 	const allFiles = useMemo(() => {
 		let result: FileType[];
@@ -656,7 +677,8 @@ function ChatSession() {
 				| 'docs'
 				| 'blueprint'
 				| 'presentation'
-				| 'database',
+				| 'database'
+				| 'workflow',
 		) => {
 			setView(mode);
 		},
@@ -668,6 +690,17 @@ function ChatSession() {
 		sendWebSocketMessage(websocket, 'clear_conversation');
 		setIsResetDialogOpen(false);
 	}, [websocket]);
+
+	// B7 plan approval: resolve the plan gate. The Go room resumes the
+	// generation on approve and aborts it on reject.
+	const handlePlanVerdict = useCallback(
+		(approved: boolean) => {
+			if (!websocket) return;
+			sendWebSocketMessage(websocket, approved ? 'plan_approved' : 'plan_rejected');
+			setPendingPlan(null);
+		},
+		[websocket, setPendingPlan],
+	);
 
 	// Rollback is think-only. Disabled (null) for other behaviors so the tool
 	// cards hide the control. Blocks while a turn/deploy is in flight.
@@ -795,11 +828,14 @@ function ChatSession() {
 		);
 	}, [contentDetection]);
 
-	// Preview available based on projectType and content
+	// Preview available based on projectType and content.
+	// Sandpack (client-side Nodebox) preview also counts: it needs no
+	// previewUrl — only accumulated VFS files from the WebSocket stream.
 	const previewAvailable = useMemo(() => {
 		if (hasDocumentation || !!previewUrl) return true;
-		return false;
-	}, [hasDocumentation, previewUrl]);
+		if (Object.keys(vfsFiles).length > 0) return true;
+		return files.length > 0;
+	}, [hasDocumentation, previewUrl, vfsFiles, files.length]);
 
 	const showMainView = useMemo(() => {
 		// For agentic/think mode: show preview panel when files exist or preview URL exists
@@ -1004,11 +1040,16 @@ function ChatSession() {
 				return;
 			}
 
-			// When generation is active, send as conversational AI suggestion
-			sendWebSocketMessage(websocket, 'user_suggestion', {
-				message: newMessage,
-				images: images.length > 0 ? images : undefined,
-			});
+			// Route the prompt by intent: build mode regenerates/derives app
+			// code (generate_all with the prompt); chat mode streams a
+			// conversational markdown reply (user_suggestion) without
+			// touching files.
+			const { type, data } = buildOutboundChatMessage(
+				chatMode,
+				newMessage,
+				images,
+			);
+			sendWebSocketMessage(websocket, type, data);
 			sendUserMessage(newMessage);
 			setNewMessage('');
 			// Clear images after sending
@@ -1021,6 +1062,7 @@ function ChatSession() {
 		[
 			newMessage,
 			websocket,
+			chatMode,
 			sendUserMessage,
 			isChatDisabled,
 			scrollToBottom,
@@ -1361,6 +1403,8 @@ function ChatSession() {
 							newMessage={newMessage}
 							onMessageChange={setNewMessage}
 							onSubmit={onNewMessage}
+							mode={chatMode}
+							onModeChange={setChatMode}
 							images={images}
 							onAddImages={addImages}
 							onRemoveImage={removeImage}
@@ -1379,15 +1423,40 @@ function ChatSession() {
 								window.location.href = `/oauth/login?return_url=${encodeURIComponent(window.location.href)}`;
 							}}
 							aboveContent={
-								<ClarifyingQuestionsPopup
-									questions={clarifyingQuestions ?? []}
-									open={
-										clarifyingQuestions !== null &&
-										clarifyingQuestions.length > 0
-									}
-									onSubmit={submitClarifyingAnswers}
-									onDismiss={dismissClarifyingQuestions}
-								/>
+								<>
+									{/* B7: plan approval actions — shown while
+									    the room is paused on a proposed plan. */}
+									{pendingPlan && (
+										<div className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+											<span className="flex-1 truncate text-xs text-text-muted">
+												Approve the build plan to start generating code.
+											</span>
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => handlePlanVerdict(false)}
+											>
+												Reject
+											</Button>
+											<Button
+												variant="primary"
+												size="sm"
+												onClick={() => handlePlanVerdict(true)}
+											>
+												Approve plan
+											</Button>
+										</div>
+									)}
+									<ClarifyingQuestionsPopup
+										questions={clarifyingQuestions ?? []}
+										open={
+											clarifyingQuestions !== null &&
+											clarifyingQuestions.length > 0
+										}
+										onSubmit={submitClarifyingAnswers}
+										onDismiss={dismissClarifyingQuestions}
+									/>
+								</>
 							}
 						/>
 					</motion.div>
@@ -1408,6 +1477,8 @@ function ChatSession() {
 									contentDetection={contentDetection}
 									projectType={projectType}
 									previewUrl={previewUrl}
+								vfsFiles={vfsFiles}
+								hydratedFiles={hydratedFiles}
 									previewAvailable={previewAvailable}
 									showTooltip={showTooltip}
 									shouldRefreshPreview={shouldRefreshPreview}

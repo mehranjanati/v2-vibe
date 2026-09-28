@@ -36,6 +36,7 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 			"https://production.vibeos-dda.pages.dev",
 			"https://*.vibeos-dda.pages.dev",
 			"https://vibesdk-v2.mehranjannati.workers.dev",
+			"https://vibesdk-v2.apjkala25.workers.dev",
 		}, ","),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Requested-With, X-Session-Token, X-CSRF-Token",
@@ -48,6 +49,9 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "rooms": hub.RoomCount()})
 	})
+
+	// Dev-only debug endpoints (transcript replay). See debug_routes.go.
+	registerDebugRoutes(app, hub)
 
 	// ---- Placeholder endpoints so the React SPA can load ----
 	// The Go control plane implements the core agent/session/deploy/ws
@@ -304,6 +308,12 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// REST: export a project's VFS to a GitHub repository (push files).
 	app.Post("/api/projects/:id/github-export", handleGitHubExport(hub))
 
+	// REST: trigger a workflow run (validates the DAG, records the run,
+	// starts the Cloudflare Workflow execution) and inspect a workflow's
+	// runs + per-step logs. See workflows.go.
+	app.Post("/api/workflows/trigger", handleWorkflowTrigger(hub))
+	app.Get("/api/workflows/:workflowId", handleWorkflowGet(hub))
+
 	// WebSocket: real-time agent channel.
 	app.Get("/ws/:id", websocket.New(handleWebSocket(hub)))
 }
@@ -362,9 +372,10 @@ func handleConnectAgent(hub *engine.EngineHub) fiber.Handler {
 }
 
 // handleGetProjectFiles implements GET /api/projects/:id/files. It returns
-// the room's VFS as a flat map of file path -> file contents so the light
-// Worker (Edge) can push the generated project to GitHub without needing
-// access to the Go backend's Redis store.
+// the project's VFS as a flat map of file path -> file contents. Callers:
+// the light Worker (Edge) pushes generated files to GitHub, and the React
+// SPA hydrates the client-side preview when reopening a chat. Read-only:
+// it never creates or starts a room (see EngineHub.GetVFSReadOnly).
 func handleGetProjectFiles(hub *engine.EngineHub) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		projectID := c.Params("id")
@@ -372,18 +383,10 @@ func handleGetProjectFiles(hub *engine.EngineHub) fiber.Handler {
 			return fiber.NewError(fiber.StatusBadRequest, "missing project id")
 		}
 
-		room := hub.GetOrCreateRoom(projectID)
-		vfs := room.GetVFS()
-		if len(vfs) == 0 {
-			return c.JSON(fiber.Map{
-				"success": true,
-				"data":    fiber.Map{"files": map[string]string{}},
-			})
-		}
-
-		files := make(map[string]string, len(vfs))
-		for path, entry := range vfs {
-			files[path] = entry.FileContents
+		files, err := hub.GetVFSReadOnly(projectID)
+		if err != nil {
+			log.Printf("[api] failed to read VFS for project %s: %v", projectID, err)
+			return fiber.NewError(fiber.StatusInternalServerError, "failed to read project files")
 		}
 
 		return c.JSON(fiber.Map{
@@ -511,15 +514,17 @@ func handleWebSocket(hub *engine.EngineHub) func(*websocket.Conn) {
 		defer room.UnregisterClient(client)
 
 		// --- Connection lifecycle handshake ---
+		// Both payloads go to the CONNECTING client only (B2): broadcasting
+		// them fans duplicate state into every other open tab.
 
 		// 1. cf_agent_state: current agent state snapshot.
-		room.BroadcastMessage(models.CFAgentStateEvent{
+		room.SendClient(client, models.CFAgentStateEvent{
 			Type:  "cf_agent_state",
 			State: room.BuildAgentState(),
 		})
 
 		// 2. agent_connected: full state + template details + preview URL.
-		room.BroadcastMessage(models.AgentConnectedEvent{
+		room.SendClient(client, models.AgentConnectedEvent{
 			Type:            "agent_connected",
 			State:           room.BuildAgentState(),
 			TemplateDetails: &models.TemplateDetail{},
@@ -539,33 +544,66 @@ func handleWebSocket(hub *engine.EngineHub) func(*websocket.Conn) {
 				continue
 			}
 
-			handleClientMessage(room, clientMsg)
+			handleClientMessage(room, client, clientMsg)
 		}
 	}
 }
 
-// handleClientMessage routes inbound client messages to room actions.
-func handleClientMessage(room *engine.ProjectRoom, msg models.ClientMessage) {
+// handleClientMessage routes inbound client messages to room actions. The
+// sending client is threaded through so request-scoped replies (B2:
+// get_conversation_state) go back only to the requesting tab.
+func handleClientMessage(room *engine.ProjectRoom, client *engine.Client, msg models.ClientMessage) {
 	switch msg.Type {
 	case "get_conversation_state":
 		// The frontend requests state on open; we already pushed it during
 		// the handshake, but re-send to satisfy the explicit request.
-		room.BroadcastMessage(models.CFAgentStateEvent{
+		room.SendClient(client, models.CFAgentStateEvent{
 			Type:  "cf_agent_state",
 			State: room.BuildAgentState(),
 		})
 
 	case "generate_all":
 		// Kick off asynchronous LLM code generation. The prompt is taken
-		// from the message body if present, else a default.
+		// from the message body if present. When empty (reconnect resume:
+		// the frontend resends generate_all without a message), re-use the
+		// room's last stored prompt so the SAME app is regenerated — the
+		// generic default below is only for genuinely promptless requests.
 		prompt := msg.Message
+		if prompt == "" {
+			prompt = room.LastPrompt()
+		}
 		if prompt == "" {
 			prompt = "Build a simple web application."
 		}
 		room.StartGeneration(prompt)
 
-	case "stop_generation", "resume_generation", "preview",
-		"clear_conversation", "rollback_to_commit", "user_suggestion",
+	case "user_suggestion":
+		// Conversational chat: stream a plain-markdown reply without
+		// generating files or touching shouldBeGenerating.
+		prompt := msg.Message
+		if prompt == "" {
+			log.Printf("[room:%s] user_suggestion with empty message; ignoring", room.ChatID())
+			break
+		}
+		room.StartConversation(prompt)
+
+	case "stop_generation":
+		// B9: cancel the in-flight generation. The generation goroutine
+		// notices the cancelled ctx and emits generation_cancelled.
+		room.CancelGeneration()
+		log.Printf("[room:%s] stop_generation handled", room.ChatID())
+
+	case "plan_approved":
+		// B7: client approved the proposed build plan.
+		room.ApprovePlan()
+
+	case "plan_rejected":
+		// B7: client rejected the proposed build plan; generation aborts
+		// without touching the VFS.
+		room.RejectPlan()
+
+	case "resume_generation", "preview",
+		"clear_conversation", "rollback_to_commit",
 		"capture_screenshot", "deploy":
 		// Recognized but not yet implemented in Phase 2; log for visibility.
 		log.Printf("[room:%s] received message type %q (not yet handled)", room.ChatID(), msg.Type)

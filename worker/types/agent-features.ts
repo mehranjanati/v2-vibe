@@ -5,7 +5,7 @@
  * (app, presentation, general) and are consumed by both backend and frontend.
  */
 
-import type { ProjectType, BehaviorType, ExportOptions } from '../types';
+import type { ProjectType, BehaviorType, ExportOptions } from './agent-core-types';
 
 export interface PlatformCapabilitiesConfig {
 	features: {

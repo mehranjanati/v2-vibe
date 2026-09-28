@@ -1,4 +1,4 @@
-import { type RefObject, type ReactNode, Suspense, useState, useCallback } from 'react';
+import { type RefObject, type ReactNode, Suspense, useState, useCallback, useMemo } from 'react';
 import { WebSocket } from 'partysocket';
 import { MonacoEditor } from '../../../components/monaco-editor/lazy-monaco-editor';
 import { motion } from 'framer-motion';
@@ -7,7 +7,10 @@ import { Blueprint } from './blueprint';
 import { FileExplorer } from './file-explorer';
 import { PreviewIframe } from './preview-iframe';
 import { PreviewCompatBanner } from './preview-compat-banner';
+import { PreviewPanel } from '../../../components/preview/PreviewPanel';
+import { resolveTemplate } from '../../../components/preview/preview-normalize';
 import { MarkdownDocsPreview } from './markdown-docs-preview';
+import { WorkflowVisualizer } from '../../../components/workflow/WorkflowVisualizer';
 import { ViewContainer } from './view-container';
 import { ViewHeader } from './view-header';
 import { PreviewHeaderActions } from './preview-header-actions';
@@ -22,8 +25,8 @@ import type { Edit } from '../hooks/use-chat';
 
 interface MainContentPanelProps {
 	// View state
-	view: 'editor' | 'preview' | 'docs' | 'blueprint' | 'terminal' | 'presentation' | 'database';
-	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database') => void;
+	view: 'editor' | 'preview' | 'docs' | 'blueprint' | 'terminal' | 'presentation' | 'database' | 'workflow';
+	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow') => void;
 
 	// Content detection
 	hasDocumentation: boolean;
@@ -32,6 +35,14 @@ interface MainContentPanelProps {
 	// Preview state
 	projectType: ProjectType;
 	previewUrl?: string;
+	/** Client-side VFS (WebSocket-accumulated) powering the Sandpack preview. */
+	vfsFiles: Record<string, string>;
+	/**
+	 * VFS snapshot hydrated from the control plane (GET /api/projects/:id/files)
+	 * when reopening a chat. Lowest merge precedence: live `vfsFiles` (WS)
+	 * and restored `allFiles` always win over this snapshot.
+	 */
+	hydratedFiles?: Record<string, string>;
 	previewAvailable: boolean;
 	showTooltip: boolean;
 	shouldRefreshPreview: boolean;
@@ -85,6 +96,8 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		contentDetection,
 		projectType,
 		previewUrl,
+		vfsFiles,
+		hydratedFiles,
 		previewAvailable,
 		showTooltip,
 		shouldRefreshPreview,
@@ -118,8 +131,15 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		setFeatureStateInternal(prev => ({ ...prev, [key]: value }));
 	}, []);
 
+	const workflowAvailable = useMemo(() => {
+		// workflow.json may arrive via the live VFS stream or via restored
+		// file lists (agent_connected / file_generated).
+		if (vfsFiles['workflow.json'] !== undefined) return true;
+		return allFiles.some((f) => f.filePath === 'workflow.json');
+	}, [vfsFiles, allFiles]);
+
 	const commonHeaderProps = {
-		view: view as 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database',
+		view: view as 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow',
 		onViewChange,
 		previewAvailable,
 		showTooltip,
@@ -127,6 +147,7 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		previewUrl,
 		projectType,
 		databaseAvailable,
+		workflowAvailable,
 	};
 
 	const renderViewWithHeader = (
@@ -165,8 +186,44 @@ export function MainContentPanel(props: MainContentPanelProps) {
 	};
 
 	const renderPreviewView = () => {
+		// No server-side preview URL → fall back to the client-side Sandpack
+		// (Nodebox) preview driven by the WebSocket-accumulated VFS. This is
+		// the primary preview path in the dual-plane (Go control plane) setup,
+		// where no Cloudflare sandbox/dispatcher preview URL is produced.
 		if (!previewUrl) {
-			return null;
+			// Client-side Sandpack (Nodebox) preview. Feed it from THREE
+			// sources, lowest precedence first: `hydratedFiles` (control-plane
+			// VFS snapshot fetched on chat reopen), `allFiles` (restored /
+			// agent_connected file lists) and `vfsFiles` (live WebSocket
+			// stream, always wins) — so previews also work when reopening an
+			// existing chat, not only while files stream in live.
+			const sandpackFiles: Record<string, string> = { ...hydratedFiles };
+			for (const f of allFiles) {
+				if (f.filePath && f.fileContents && sandpackFiles[f.filePath] === undefined) {
+					sandpackFiles[f.filePath] = f.fileContents;
+				}
+			}
+			for (const [filePath, contents] of Object.entries(vfsFiles)) {
+				sandpackFiles[filePath] = contents;
+			}
+			if (Object.keys(sandpackFiles).length === 0) {
+				return null;
+			}
+			// Resolve the Sandpack template from the template metadata when
+			// present, else the safe default — resolveTemplate also maps pure
+			// static projects (public/ + no root package.json) to 'static' so
+			// they render in the lightweight srcdoc iframe without booting
+			// Nodebox (A2). Never hardcode "node" here.
+			const previewTemplate = resolveTemplate(templateDetails?.name ?? 'node', sandpackFiles);
+			return (
+				<div className="flex-1 min-h-0 flex flex-col">
+					<PreviewPanel
+						files={sandpackFiles}
+						template={previewTemplate}
+						className="flex-1 min-h-0"
+					/>
+				</div>
+			);
 		}
 
 		// Get feature capabilities to determine preview behavior
@@ -398,6 +455,21 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		);
 	};
 
+	const renderWorkflowView = () => {
+		if (!workflowAvailable) return null;
+		// Same merge logic as the preview: live VFS stream + restored files.
+		const mergedFiles: Record<string, string> = { ...vfsFiles };
+		for (const f of allFiles) {
+			if (f.filePath && f.fileContents && mergedFiles[f.filePath] === undefined) {
+				mergedFiles[f.filePath] = f.fileContents;
+			}
+		}
+		return renderViewWithHeader(
+			<span className="text-sm font-mono text-text-50/70">Backend Logic</span>,
+			<WorkflowVisualizer files={mergedFiles} className="flex-1 min-h-0" />,
+		);
+	};
+
 	const renderView = () => {
 		switch (view) {
 			case 'docs':
@@ -411,6 +483,8 @@ export function MainContentPanel(props: MainContentPanelProps) {
 				return renderEditorView();
 			case 'database':
 				return renderDatabaseView();
+			case 'workflow':
+				return renderWorkflowView();
 			default:
 				return null;
 		}

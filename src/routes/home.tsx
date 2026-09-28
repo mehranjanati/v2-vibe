@@ -23,6 +23,8 @@ import { useDragDrop } from '@/hooks/use-drag-drop';
 import { toast } from 'sonner';
 import { useLimitsContext } from '@/contexts/limits-context';
 import { checkCanSendPrompt } from '@/utils/usage-limit-checker';
+import { ChatBuildToggle } from '@/components/chat-build-toggle';
+import type { ChatMode } from '@/routes/chat/utils/chat-routing';
 import { PromptBox } from '@/components/prompt-box';
 import { InfoIcon, PaperPlaneTiltIcon } from '@phosphor-icons/react';
 
@@ -32,6 +34,7 @@ export default function Home() {
 	const [projectMode, setProjectMode] = useState<ProjectType>('app');
 	const behaviorMode: Extract<BehaviorType, 'think' | 'phasic'> = 'think';
 	const [query, setQuery] = useState('');
+	const [chatMode, setChatMode] = useState<ChatMode>('build');
 	const { user } = useAuth();
 	const { isLoadingCapabilities, capabilities, getEnabledFeatures } =
 		useFeature();
@@ -145,7 +148,7 @@ export default function Home() {
 			images.length > 0
 				? `&images=${encodeURIComponent(JSON.stringify(images))}`
 				: '';
-		const intendedUrl = `/chat/new?query=${encodedQuery}&projectType=${encodedMode}${behaviorParam}${imageParam}`;
+		const intendedUrl = `/chat/new?query=${encodedQuery}&projectType=${encodedMode}${behaviorParam}&mode=${chatMode}${imageParam}`;
 
 		if (
 			!requireAuth({
@@ -239,13 +242,19 @@ export default function Home() {
 								)
 							}
 							leftActions={
-								showModeSelector ? (
-									<ProjectModeSelector
-										value={projectMode}
-										onChange={setProjectMode}
-										modes={modeOptions}
+								<div className="flex items-center gap-2">
+									{showModeSelector ? (
+										<ProjectModeSelector
+											value={projectMode}
+											onChange={setProjectMode}
+											modes={modeOptions}
+										/>
+									) : undefined}
+									<ChatBuildToggle
+										value={chatMode}
+										onChange={setChatMode}
 									/>
-								) : undefined
+								</div>
 							}
 						/>
 					</motion.div>

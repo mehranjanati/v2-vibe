@@ -1,0 +1,126 @@
+{
+  "$comment": "Architecture roadmap for the AI-engine rebuild of the Go control plane (backend/). Model identifiers verified against the official Cloudflare Workers AI model catalog (developers.cloudflare.com/workers-ai/models/). Skill prompts live in backend/skills/ and are injected verbatim as the system message of the matching model.",
+  "name": "vibesdk-go-ai-engine",
+  "version": "0.2.0",
+  "updated": "2026-09-08",
+  "owner": "backend",
+  "related_docs": [
+    "backend/docs/EINO_ALIGNMENT_PLAN.md"
+  ],
+  "ai_gateway": {
+    "provider": "cloudflare",
+    "protocol": "openai-compatible (POST /chat/completions, SSE streaming)",
+    "base_url_template": "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{GATEWAY_ID}",
+    "workers_ai_fallback_base_url": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+    "env": {
+      "AI_GATEWAY_URL": "AI Gateway base URL; when empty the client falls back to the Workers AI endpoint above (see backend/pkg/llm/client.go)",
+      "AI_GATEWAY_API_KEY": "static Cloudflare API token with Workers AI (+ AI Gateway) permissions; never the short-lived wrangler OAuth token",
+      "DEFAULT_MODEL": "default chat model id; docker-compose.yml defaults it to @cf/qwen/qwen2.5-coder-32b-instruct"
+    },
+    "features": ["caching", "rate_limiting", "logs", "realtime_logpush"],
+    "streaming": {
+      "transport": "sse",
+      "finish_reason_required": true,
+      "tolerance": "malformed chunks (numeric content deltas from Workers AI) are tolerated upstream by the tolerant model wrapper"
+    }
+  },
+  "models": {
+    "planner": {
+      "role": "planner",
+      "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "provider": "workers-ai",
+      "context_window_tokens": 24000,
+      "function_calling": true,
+      "skill_prompt": "backend/skills/01_planner.md",
+      "output": "strict JSON plan: thought_process (CoT) + subtasks + executable steps",
+      "parameters": {
+        "temperature": 0.2,
+        "max_tokens": 8192,
+        "_note": "defaults, tunable per environment"
+      },
+      "notes": "Analyzes the current VFS first; CoT and subtasks are mandatory before any file is planned; the entire response must be one raw JSON object."
+    },
+    "coder": {
+      "role": "coder",
+      "model": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "provider": "workers-ai",
+      "context_window_tokens": 32768,
+      "function_calling": false,
+      "skill_prompt": "backend/skills/02_coder.md",
+      "output": "raw file content only (no markdown fences, no prose, no placeholders)",
+      "parameters": {
+        "temperature": 0.1,
+        "max_tokens": 8192,
+        "_note": "defaults, tunable per environment"
+      },
+      "notes": "One file task per call; emits the complete production-ready content of the requested file."
+    }
+  },
+  "pipeline": {
+    "stages": [
+      {
+        "stage": 1,
+        "name": "vfs_snapshot",
+        "component": "ProjectRoom VFS (Redis hash vfs:{chatId}) passed to the planner as the current state"
+      },
+      {
+        "stage": 2,
+        "name": "plan",
+        "model": "planner",
+        "output": "plan JSON",
+        "gate": "user approval (plan_proposed / plan_approved events)"
+      },
+      {
+        "stage": 3,
+        "name": "generate",
+        "model": "coder",
+        "per": "step",
+        "writes": "vfs_write tool -> file_generating / file_generated WS events"
+      },
+      {
+        "stage": 4,
+        "name": "deploy",
+        "component": "Cloudflare Pages (backend/pkg/cloudflare/pages.go)"
+      }
+    ],
+    "fallback": "single-model fence-streaming path (backend/pkg/engine/prompts.go + runGeneration in room.go)"
+  },
+  "phases": [
+    {
+      "id": "R1",
+      "title": "Skill prompts extracted to backend/skills/",
+      "status": "done",
+      "files": [
+        "backend/skills/01_planner.md",
+        "backend/skills/02_coder.md"
+      ],
+      "acceptance": "Planner prompt mandates VFS analysis -> thought_process -> subtasks -> steps with JSON-only output; Coder prompt forbids fences and prose."
+    },
+    {
+      "id": "R2",
+      "title": "Model registry + skills loader in Go (load .md system prompt per role)",
+      "status": "done",
+      "files": [
+        "backend/pkg/skills/registry.go",
+        "backend/pkg/skills/load.go",
+        "backend/pkg/skills/skills_test.go",
+        "backend/cmd/main.go",
+        "backend/Dockerfile",
+        "backend/.env.example"
+      ],
+      "acceptance": "go vet ./... && go test ./... green; prompts loaded from backend/skills/ at startup with a clear error if a skill file is missing; SKILLS_DIR pins the directory (container path /app/skills)."
+    },
+    {
+      "id": "R3",
+      "title": "Wire the dual-model pipeline: planner JSON -> per-step coder calls with vfs_write",
+      "status": "todo",
+      "acceptance": "A greenfield fixture produces a working static app end-to-end; plan approval gate still enforced."
+    },
+    {
+      "id": "R4",
+      "title": "AI Gateway observability and per-role settings (caching / rate limiting / logs)",
+      "status": "todo",
+      "acceptance": "Gateway logs distinguish planner vs coder requests; rate limits applied per role."
+    }
+  ]
+}

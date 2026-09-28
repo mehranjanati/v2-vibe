@@ -160,3 +160,52 @@ func TestStubResponsesAreValidJSON(t *testing.T) {
 		})
 	}
 }
+
+// TestGetProjectFilesReadOnly pins the read-only hydration contract of
+// GET /api/projects/:id/files: unknown projects answer 200 with an empty
+// files map WITHOUT spawning a room actor, and an existing room's
+// in-memory VFS is served.
+func TestGetProjectFilesReadOnly(t *testing.T) {
+	app := fiber.New()
+	hub := engine.NewEngineHub(nil, nil, nil)
+	RegisterRoutes(app, hub)
+
+	// Cold path: unknown project, no room may be spawned.
+	status, body := performJSON(t, app, http.MethodGet, "/api/projects/does-not-exist/files")
+	if status != http.StatusOK {
+		t.Fatalf("expected 200 for unknown project, got %d", status)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data to be an object, got %T", body["data"])
+	}
+	files, ok := data["files"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data.files to be an object, got %T", data["files"])
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected empty files map, got %v", files)
+	}
+	if got := hub.RoomCount(); got != 0 {
+		t.Fatalf("expected no room to be spawned for a read-only GET, got %d rooms", got)
+	}
+
+	// Warm path: an existing room's in-memory VFS is served.
+	room := hub.GetOrCreateRoom("files-warm")
+	room.UpsertFile("public/index.html", "<h1>hi</h1>")
+	status, body = performJSON(t, app, http.MethodGet, "/api/projects/files-warm/files")
+	if status != http.StatusOK {
+		t.Fatalf("expected 200 for warm project, got %d", status)
+	}
+	data, ok = body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data to be an object, got %T", body["data"])
+	}
+	files, ok = data["files"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data.files to be an object, got %T", data["files"])
+	}
+	if files["public/index.html"] != "<h1>hi</h1>" {
+		t.Fatalf("expected in-memory VFS contents, got %v", files)
+	}
+}

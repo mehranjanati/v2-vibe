@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,9 @@ type Client struct {
 	accountID string
 	apiToken  string
 	hc        *http.Client
+	// baseURL overrides the API root (defaults to
+	// https://api.cloudflare.com/client/v4). Set by tests.
+	baseURL string
 }
 
 // NewClient creates a Cloudflare API client.
@@ -35,6 +39,21 @@ func NewClient(accountID, apiToken string) *Client {
 		apiToken:  apiToken,
 		hc:        &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+// SetBaseURL overrides the Cloudflare API root (defaults to
+// https://api.cloudflare.com/client/v4). Used by tests to point the client
+// at an httptest server emulating the API.
+func (c *Client) SetBaseURL(url string) {
+	c.baseURL = strings.TrimRight(url, "/")
+}
+
+// apiBaseURL returns the effective API root with no trailing slash.
+func (c *Client) apiBaseURL() string {
+	if c.baseURL == "" {
+		return "https://api.cloudflare.com/client/v4"
+	}
+	return c.baseURL
 }
 
 // UploadToPages deploys a VFS snapshot to Cloudflare Pages via the

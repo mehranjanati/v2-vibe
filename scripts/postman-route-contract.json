@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "_comment": "T3 route contract manifest (T3/R4). Reviewed source of truth: backend/pkg/api/routes.go + worker/light/lightApp.ts (2026-09-24). The validator reads this file; update it deliberately when routes change, never bypass with ad-hoc validator edits.",
+  "generated_from": [
+    "backend/pkg/api/routes.go",
+    "worker/light/lightApp.ts"
+  ],
+  "last_verified": "2026-09-24",
+  "worker": {
+    "live": [
+      "GET /health",
+      "GET /api/status",
+      "GET /api/capabilities",
+      "GET /api/apps/public",
+      "GET /api/auth/csrf-token",
+      "POST /api/auth/register",
+      "POST /api/auth/login",
+      "POST /api/auth/logout",
+      "GET /api/auth/profile",
+      "GET /api/auth/providers",
+      "GET /api/auth/sessions",
+      "GET /api/auth/api-keys",
+      "GET /api/auth/identities",
+      "GET /api/auth/oauth/github",
+      "GET /api/auth/github/callback",
+      "POST /api/github-app/export",
+      "GET /api/github-app/authorize",
+      "GET /api/github-app/callback",
+      "POST /api/github-app/check-remote",
+      "GET /api/apps",
+      "GET /api/apps/favorites",
+      "GET /api/limits/usage"
+    ],
+    "not_available_503": [
+      "/api/agent",
+      "/api/agent/*",
+      "/api/projects/*",
+      "/api/user/*",
+      "/api/stats/*",
+      "/api/model-configs",
+      "/api/model-configs/*",
+      "/api/secrets/*",
+      "/api/vault/*",
+      "/api/cloudflare/*",
+      "/api/github-exporter/*",
+      "/api/analytics/*",
+      "/ws/*"
+    ]
+  },
+  "control": {
+    "live": [
+      "GET /health",
+      "GET /api/auth/csrf-token",
+      "GET /api/auth/profile",
+      "GET /api/auth/providers",
+      "POST /api/auth/register",
+      "POST /api/auth/login",
+      "POST /api/auth/verify-email",
+      "GET /api/limits/usage",
+      "POST /api/agent",
+      "GET /api/status",
+      "GET /api/capabilities",
+      "GET /api/apps/public",
+      "GET /api/user/apps",
+      "GET /api/apps",
+      "GET /api/apps/recent",
+      "GET /api/apps/favorites",
+      "GET /api/apps/:id",
+      "POST /api/agent/session",
+      "GET /api/agent/:id/connect",
+      "POST /api/projects/:id/deploy",
+      "GET /api/projects/:id/files",
+      "POST /api/projects/:id/github-export",
+      "POST /api/workflows/trigger",
+      "GET /api/workflows/:workflowId",
+      "GET /ws/:id",
+      "POST /api/debug/replay"
+    ]
+  },
+  "dead_on_both_planes": [
+    "GET /api/health",
+    "GET /api/agent/:id",
+    "GET /api/agent/:id/preview",
+    "GET /api/agent/:id/ws",
+    "POST /api/apps/:id/star",
+    "POST /api/apps/:id/fork",
+    "PUT /api/user/profile",
+    "GET /api/user/:id/analytics",
+    "GET /api/stats",
+    "GET /api/model-configs",
+    "GET /api/model-configs/byok-providers",
+    "PUT /api/model-configs/planner",
+    "GET /api/secrets",
+    "GET /api/secrets/templates",
+    "POST /api/secrets",
+    "GET /api/auth/oauth/google"
+  ],
+  "requiredEnv": [
+    "workerUrl",
+    "controlUrl"
+  ],
+  "deprecatedEnv": [
+    "baseUrl",
+    "localUrl"
+  ]
+}

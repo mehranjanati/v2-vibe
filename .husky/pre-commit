@@ -20,7 +20,22 @@ fi
 # Determine staged files (only what will be committed)
 STAGED_FILES=$(git diff --name-only --cached --diff-filter=ACMRT)
 
-# 1) Typecheck (only when TS/TSX is staged)
+# 1) Docs reference validators (only when docs or the validators themselves change)
+#    Checks docs/DEV_SPEC_P*.md file:line references and the Postman two-plane contract.
+if command -v rg >/dev/null 2>&1; then
+  HAS_DOCS=$(printf '%s\n' "$STAGED_FILES" | rg -q "^(docs/|scripts/validate-)" && echo 1 || echo 0)
+else
+  HAS_DOCS=$(printf '%s\n' "$STAGED_FILES" | grep -Eq "^(docs/|scripts/validate-)" && echo 1 || echo 0)
+fi
+
+if [ "$HAS_DOCS" = "1" ]; then
+  echo "[pre-commit] Running docs:check (staged docs/validator changes)"
+  bun run docs:check || exit 1
+else
+  echo "[pre-commit] No staged docs/validator files; skipping docs:check"
+fi
+
+# 2) Typecheck (only when TS/TSX is staged)
 if command -v rg >/dev/null 2>&1; then
   HAS_TS=$(printf '%s\n' "$STAGED_FILES" | rg -q "\.(ts|tsx)$" && echo 1 || echo 0)
 else
@@ -34,7 +49,7 @@ else
   echo "[pre-commit] No staged TS/TSX; skipping typecheck"
 fi
 
-# 2) Tests
+# 3) Tests
 # Use Vitest 'related' to run only affected tests for staged files.
 # Exclude heavy directories that are not relevant at commit time.
 if [ "${RUN_ALL_TESTS:-}" = "1" ]; then

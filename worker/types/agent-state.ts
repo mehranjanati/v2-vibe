@@ -1,9 +1,9 @@
 import type { PhasicBlueprint, AgenticBlueprint, PhaseConceptType ,
     FileOutputType,
     Blueprint,
-} from '../schemas';
-import type { InferenceMetadata } from '../inferutils/config.types';
-import { BehaviorType, Plan, ProjectType } from './types';
+} from './agent-schemas';
+import type { InferenceMetadata } from './infer-config.types';
+import { BehaviorType, Plan, ProjectType } from './agent-core-types';
 
 export interface FileState extends FileOutputType {
     lastDiff: string;

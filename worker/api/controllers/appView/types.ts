@@ -3,7 +3,7 @@
  * Following strict DRY principles by reusing existing database types
  */
 
-import { AgentSummary, BehaviorType } from '../../../agents/core/types';
+import { AgentSummary, BehaviorType } from 'worker/types/agent-core-types';
 import { PublicAppDetailData } from '../../../database/types';
 
 /**

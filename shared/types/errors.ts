@@ -1,5 +1,5 @@
-import type { RateLimitError } from "worker/services/rate-limit/errors";
-import type { RateLimitType } from "worker/services/rate-limit/config";
+import type { RateLimitError } from "worker/types/rate-limit";
+import type { RateLimitType } from "worker/types/rate-limit";
 
 /**
  * Security error types for proper error handling
