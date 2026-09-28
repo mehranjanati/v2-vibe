@@ -130,5 +130,107 @@ for (const v of (collection.variable || [])) {
   if (v.value && String(v.value).includes('{{baseUrl}}')) fail(`collection: variable '${v.key}' self-references {{baseUrl}}`);
 }
 
+// --- live route cross-check (T16) ---
+// `<plane>.live` is the docs' route map; until now nothing re-derived it from the
+// sources, so it drifted silently (e.g. the Worker entry comment and this manifest
+// both claimed a `/health` route that only the Go control plane serves). The
+// registrations below are the source of truth: Fiber `app.Get("/x")` in
+// `backend/pkg/api/*.go` and Hono `app.get('/x')` in `worker/light/lightApp.ts`.
+// 503 stubs are declared as patterns (`/api/agent`, `/api/agent/*`) and belong to
+// `not_available_503` rather than `<plane>.live`.
+const notAvailablePaths = (contract.worker && contract.worker.not_available_503) || [];
+function isNotAvailablePath(routePath) {
+  return notAvailablePaths.some((pat) => {
+    if (pat === routePath) return true;
+    if (pat.endsWith('/*')) {
+      const prefix = pat.slice(0, -1);
+      return routePath === pat.slice(0, -2) || routePath.startsWith(prefix);
+    }
+    return false;
+  });
+}
+
+function readSource(rel) {
+  const p = path.join(root, rel);
+  if (!fs.existsSync(p)) {
+    fail(`route-contract: missing source file ${rel}`);
+    return '';
+  }
+  return fs.readFileSync(p, 'utf8');
+}
+
+const METHOD_BY_NAME = new Map([
+  ['get', 'GET'],
+  ['post', 'POST'],
+  ['put', 'PUT'],
+  ['patch', 'PATCH'],
+  ['delete', 'DELETE'],
+  ['options', 'OPTIONS'],
+  ['all', 'ALL'],
+]);
+const REGISTRATION_RE = /app\.(get|post|put|patch|delete|options|all)\s*\(\s*(['"])([^'"]+)\2/gi;
+
+function registrationsIn(source) {
+  const out = new Set();
+  for (const m of source.matchAll(REGISTRATION_RE)) {
+    out.add(`${METHOD_BY_NAME.get(m[1].toLowerCase())} ${m[3]}`);
+  }
+  return out;
+}
+
+const controlSources = [];
+const controlDir = path.join(root, 'backend/pkg/api');
+if (!fs.existsSync(controlDir)) {
+  fail('route-contract: backend/pkg/api is missing — cannot verify the control plane routes');
+} else {
+  for (const file of fs.readdirSync(controlDir).filter((f) => f.endsWith('.go') && !f.endsWith('_test.go')).sort()) {
+    const rel = `backend/pkg/api/${file}`;
+    controlSources.push({ rel, text: readSource(rel) });
+  }
+  if (controlSources.length === 0) fail('route-contract: no Go sources found under backend/pkg/api');
+}
+const controlInCode = new Set();
+for (const { text } of controlSources) {
+  for (const r of registrationsIn(text)) controlInCode.add(r);
+}
+if (controlInCode.size === 0) {
+  fail('route-contract: no Fiber route registrations found in backend/pkg/api/*.go — cannot verify the control plane');
+}
+
+const workerSource = readSource('worker/light/lightApp.ts');
+const workerPathsInCode = new Set();
+const workerRegistrationsInCode = registrationsIn(workerSource);
+if (workerRegistrationsInCode.size === 0) {
+  fail('route-contract: no Hono route registrations found in worker/light/lightApp.ts — cannot verify the worker plane');
+}
+for (const r of workerRegistrationsInCode) {
+  const method = r.slice(0, r.indexOf(' '));
+  const routePath = r.slice(r.indexOf(' ') + 1);
+  // Catch-alls (`*`, `/api/*`) and the explicit 503 stubs are covered by the
+  // `not_available_503` section instead of `<plane>.live`.
+  if (routePath === '*' || routePath === '/api/*') continue;
+  if (isNotAvailablePath(routePath)) continue;
+  workerPathsInCode.add(`${method} ${routePath}`);
+}
+
+const contractWorkerLive = new Set((contract.worker && contract.worker.live) || []);
+const contractControlLive = new Set((contract.control && contract.control.live) || []);
+for (const r of controlInCode) if (r.startsWith('ALL ')) controlInCode.delete(r);
+
+function compareLive(plane, contractLive, codeLive) {
+  for (const r of contractLive) {
+    if (!codeLive.has(r)) {
+      fail(`route-contract: ${plane}.live lists '${r}' but no matching registration exists in the sources (stale manifest entry — fix the manifest or register the route)`);
+    }
+  }
+  for (const r of codeLive) {
+    if (!contractLive.has(r)) {
+      fail(`route-contract: ${plane} code registers '${r}' but the manifest does not list it (add it to '${plane}.live', or to 'not_available_503' when it is a 503 stub)`);
+    }
+  }
+}
+compareLive('worker', contractWorkerLive, workerPathsInCode);
+compareLive('control', contractControlLive, controlInCode);
+
 if (errors.length) { console.error('Postman contract validation FAILED:'); for (const e of errors) console.error(' - ' + e); process.exit(1); }
-console.log(`Postman contract validation PASSED: ${active.length} active requests, workerUrl+controlUrl present, plane markers OK.`);
+console.log(`Postman contract validation PASSED: ${active.length} active requests, workerUrl+controlUrl present, plane markers OK, manifest matches code (${workerPathsInCode.size} worker + ${controlInCode.size} control routes, last_verified ${contract.last_verified || 'unset'}).`);

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "_comment": "T3 route contract manifest (T3/R4). Reviewed source of truth: backend/pkg/api/routes.go + backend/pkg/api/debug_routes.go + worker/light/lightApp.ts (2026-09-28). The validator reads this file AND cross-checks it against the route registrations in those sources, so drift on either side fails `bun run docs:check`; update this file deliberately when routes change, never bypass with ad-hoc validator edits.",
+  "_comment": "Negative fixture (T16): one stale manifest entry (GET /api/ghost) + one missing live entry (GET /api/status removed) so scripts/validate-postman-negative.mjs can prove the manifest-vs-code cross-check fails.",
   "generated_from": [
     "backend/pkg/api/routes.go",
     "backend/pkg/api/debug_routes.go",
@@ -58,7 +58,6 @@
       "POST /api/auth/verify-email",
       "GET /api/limits/usage",
       "POST /api/agent",
-      "GET /api/status",
       "GET /api/capabilities",
       "GET /api/apps/public",
       "GET /api/user/apps",
@@ -74,7 +73,8 @@
       "POST /api/workflows/trigger",
       "GET /api/workflows/:workflowId",
       "GET /ws/:id",
-      "POST /api/debug/replay"
+      "POST /api/debug/replay",
+      "GET /api/ghost"
     ]
   },
   "dead_on_both_planes": [

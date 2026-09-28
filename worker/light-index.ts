@@ -7,7 +7,9 @@
  *     providers, sessions, api-keys, identities) — auth via D1
  *   - /api/auth/github/* — GitHub OAuth (when credentials are configured)
  *   - /api/github-app/* — GitHub export (create repo, push files, deploy)
- *   - /api/health — health check
+ *   - /api/status — platform/health status (this worker has NO /health route;
+ *     /health belongs to the Go control plane, and /api/* fall through to a
+ *     JSON 404/503 handler, never to the SPA HTML)
  *
  * This worker intentionally avoids heavy dependencies (CodeGen DO,
  * ThinkAgent, SpaceDO, containers, sandbox, dispatch): that keeps startup
