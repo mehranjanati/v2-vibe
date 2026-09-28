@@ -12,7 +12,7 @@
 		"build": "vite build",
 		"typecheck": "tsc -b --incremental --noEmit",
 		"lint": "eslint .",
-		"docs:check": "node scripts/validate-spec-refs.mjs && node scripts/validate-postman.mjs",
+		"docs:check": "node scripts/validate-spec-refs.mjs && node scripts/validate-postman.mjs && node scripts/validate-docs-invariants.mjs",
 		"preview": "npm run build && vite preview",
 		"deploy": "bun --env-file .prod.vars wrangler deploy --config wrangler.v2.jsonc",
 		"cli": "tsx --tsconfig tsconfig.app.json cli/index.ts",
