@@ -34,6 +34,7 @@
 - فایل‌ها: ویرایش `worker/database/schema.ts` → تولید مایگریشن با `bun run db:generate` و **نام فایل را از خروجی همان دستور بردار** (شمارهٔ `0011` را حدس نزن: `migrations/meta/_journal.json` دو ورودی `0006` تکراری دارد و `0009` ندارد).
 - مراحل: **P1.0.0 کامل شود** → تعریف در schema → generate → بازبینی SQL دستی (down-migration مخرب نباشد) → `bun run db:migrate:local` (نسخهٔ اصلاح‌شدهٔ P1.0.0).
 - تست: migrate روی لوکال بدون خطا؛ `SELECT` از هر سه جدول؛ migrate دوباره idempotent باشد (دو بار اجرا = بدون خطا).
+- ✅ **وضعیت (۲۰۲۶-۰۹-۲۹) — P1.1.1 / P1.1.1b / P1.1.2 انجام شد:** جدول سوم **ساخته شد** (گزینهٔ reuse جدول `audit_logs` انتخاب نشد، چون P1.8 تصمیم gate را در `generation_audit` و با `actor=system` می‌خواهد). مایگریشن تولیدشده **`migrations/0011_jittery_the_liberteens.sql`** است (نام واقعی از خروجی `bun run db:generate`؛ شمارهٔ `0011` حدس زده نشد) + `migrations/meta/0011_snapshot.json` + ورودی `idx: 11` در `_journal.json`. جزئیات پیاده‌سازی و شواهد تست در `docs/DEV_CHECKLIST.md` → P1.1.1 … P1.1.3.
 
 ## P1.2 — `backend/pkg/engine/generation.go`
 
@@ -42,6 +43,7 @@
 - API: `StartGenerationRecord(ctx, chatID) (genID string, err error)` — snapshot کل VFS به Redis `vfs:snap:{genID}` + ردیف running + parent = آخرین succeeded همین چت. `FinishGenerationRecord(ctx, genID, verdict)` — diff snapshot↔VFS فعلی → ردیف‌های `generation_files` + بستن status + ردیف‌های audit.
 - جزئیات: هش sha256 (کتابخانه استاندارد)؛ گارد nil-Redis (مثل `loadVFS`)؛ TTL ۷ روز روی `vfs:snap:*`؛ audit در goroutine detached.
 - تست (`generation_test.go`): (۱) دو record پشت‌هم → parent دومی = اولی؛ (۲) create/modify/delete درست تشخیص داده شود؛ (۳) Redis=nil → هر دو تابع بدون خطا و generation زنده.
+- ✅ **وضعیت (۲۰۲۶-۰۹-۲۹) — P1.2 انجام شد:** `backend/pkg/engine/generation.go` (رکورد lineage: snapshot `vfs:snap:{genID}` با TTL ۷ روز + ردیف `running` با `parent` = آخرین `succeeded`؛ و در پایان diff سه‌عملیاتی + بستن ردیف + audit جداشده) و `backend/pkg/engine/generation_test.go` (هفت تست با fake Redis روی اینترفیس `generationKV` و D1 شبیه‌سازی‌شده با httptest + `cloudflare.D1Client.SetBaseURL`) اضافه شدند. خطای lineage همه‌جا advisory است (log می‌شود، run را fail نمی‌کند). جلوتر از ترتیب اسپک: intake انتساب نویسنده (`RecordWriteAuthor`) در همین قدم آماده شد تا P1.3.3 فقط وصل کند. جزئیات و شواهد تست: `docs/DEV_CHECKLIST.md` → P1.2.1 … P1.2.4.
 
 ## P1.3 — قلاب اجرا + Git داخلی
 

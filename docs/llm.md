@@ -398,7 +398,9 @@ answer and the cancel/stop request.
 | Redis | Latest validated workflow DAG envelope | `workflow:dag:<chatId>` |
 | Redis | Agent conversation checkpoints | `store.RedisCheckpointStore` |
 | Redis Search | Code index | `idx:vfs` |
+| Redis | Generation VFS baseline snapshot (7-day TTL, written by `StartGenerationRecord`, read back when a run is finished by another process) | `vfs:snap:{genID}` (`backend/pkg/engine/generation.go:46`) |
 | D1 (`v2-vibe`) | Workflow DAG rows for the runtime Worker | `workflow_dags` (schema in `worker/database/schema.ts`) |
+| D1 (`v2-vibe`) | Generation lineage rows (`generations`, `generation_files`, `generation_audits`) — tables created by `migrations/0011_jittery_the_liberteens.sql`; written by the Go control plane recorder (`StartGenerationRecord` / `FinishGenerationRecord`, P1.2). The run hook itself lands with P1.3 | `worker/database/schema.ts`, `backend/pkg/engine/generation.go` |
 | D1 (`v2-vibe`) | Auth: users, sessions, OAuth states, API keys, audit logs | light Worker (`worker/light/lightApp.ts`) |
 
 `UpsertFile` / `DeleteFile` write the in-memory map and the Redis hash together (Redis is skipped

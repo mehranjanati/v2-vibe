@@ -97,6 +97,26 @@ type ProjectRoom struct {
 	// handshake/broadcast paths.
 	generating atomic.Bool
 
+	// ---- generation lineage (generation.go, P1.2) ----
+
+	// genKV is the Redis surface the lineage recorder uses for the VFS
+	// snapshots. nil ⇒ r.rdb; tests inject an in-memory fake so the snapshot
+	// path is exercised without a live Redis.
+	genKV generationKV
+	// lineageMu guards lineageSnapshot and genAuthors.
+	lineageMu sync.Mutex
+	// lineageSnapshot mirrors the VFS baseline of the open generation in
+	// memory. One slot on purpose: it is the Redis-less path (dev/CI, or a
+	// failed snapshot write), so the next Start legitimately replaces it and an
+	// aborted run (plan rejected / cancelled, which never calls Finish) cannot
+	// leak a VFS copy. lineageSnapshotID tells whose baseline it is.
+	lineageSnapshotID string
+	lineageSnapshot   *generationSnapshot
+	// genAuthors is the write-attribution intake of the open generation
+	// (path → agent). P1.3.3 records the explicit author of every write;
+	// FinishGenerationRecord reads it for generation_files.author_agent.
+	genAuthors map[string]string
+
 	// Actor channels.
 	register   chan *Client
 	unregister chan *Client
