@@ -112,6 +112,69 @@ func (e *Engine) SupportsPlanExecute() bool {
 	return ok
 }
 
+// RoleModelConfig configures an additional per-role chat model built on the
+// SAME provider endpoint as the engine (BaseURL/APIKey). The agent
+// WebSocket handler keeps using the engine model; the multi-agent team
+// builds one of these per role so the per-role model / token budget /
+// temperature resolved by pkg/skills actually reach the provider instead of
+// being shadowed by the single engine model.
+//
+// A zero MaxTokens (or negative Temperature) leaves that provider default
+// untouched, so an unset override never changes the request.
+type RoleModelConfig struct {
+	// Model is the provider model id, e.g.
+	// @cf/qwen/qwen2.5-coder-32b-instruct. Empty falls back to the engine
+	// model, which makes the call a no-op.
+	Model string
+	// MaxTokens caps generated tokens for this role. Zero = provider default.
+	MaxTokens int
+	// Temperature samples the model. Negative = provider default.
+	Temperature float64
+}
+
+// NewRoleModel builds a tool-calling chat model for one generation role.
+//
+// It returns the engine's own model unchanged when the role resolves to the
+// same model id with no per-call budget — the common case — so the default
+// configuration keeps sharing one provider client. Otherwise the returned
+// model is wrapped with the same malformed-chunk tolerance as the engine
+// model (see tolerant_model.go), so every consumer keeps the graceful
+// end-of-stream behavior for bad Workers AI frames.
+//
+// max_tokens rather than max_completion_tokens is sent deliberately: this
+// client talks to Workers AI / AI Gateway (OpenAI-compatible), where
+// max_tokens is the supported parameter and the o1-series incompatibility
+// noted by eino-ext does not apply.
+func (e *Engine) NewRoleModel(ctx context.Context, cfg RoleModelConfig) (model.ChatModel, error) {
+	modelID := strings.TrimSpace(cfg.Model)
+	if modelID == "" {
+		return e.chatModel, nil
+	}
+	if modelID == e.cfg.Model && cfg.MaxTokens <= 0 && cfg.Temperature < 0 {
+		return e.chatModel, nil
+	}
+
+	cc := &einoopenai.ChatModelConfig{
+		BaseURL: e.cfg.BaseURL,
+		APIKey:  e.cfg.APIKey,
+		Model:   modelID,
+	}
+	if cfg.MaxTokens > 0 {
+		mt := cfg.MaxTokens
+		cc.MaxTokens = &mt
+	}
+	if cfg.Temperature >= 0 {
+		t := float32(cfg.Temperature)
+		cc.Temperature = &t
+	}
+
+	cm, err := einoopenai.NewChatModel(ctx, cc)
+	if err != nil {
+		return nil, fmt.Errorf("agent: create role chat model %q: %w", modelID, err)
+	}
+	return newTolerantStreamModel(cm), nil
+}
+
 // RunStep executes one full ReAct step for the session using the engine's
 // default instruction and tool set. See RunStepWith for details.
 func (e *Engine) RunStep(

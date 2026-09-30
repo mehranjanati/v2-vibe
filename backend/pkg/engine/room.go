@@ -622,11 +622,14 @@ func (r *ProjectRoom) GetVFS() map[string]*models.FileEntry {
 }
 
 // UpsertFile writes a file to the in-memory VFS and persists it to Redis
-// (skipped when no Redis client is configured).
-func (r *ProjectRoom) UpsertFile(path, contents string) {
+// (skipped when no Redis client is configured). The explicit author
+// ("coder" | "gapfill" | "legacy" | …) is recorded in the current
+// generation's write-attribution intake (P1.3.3); "" records nothing.
+func (r *ProjectRoom) UpsertFile(path, contents, author string) {
 	r.vfsMu.Lock()
 	r.vfs[path] = &models.FileEntry{FilePath: path, FileContents: contents}
 	r.vfsMu.Unlock()
+	r.RecordWriteAuthor(path, author)
 
 	if r.rdb == nil {
 		return
@@ -639,11 +642,14 @@ func (r *ProjectRoom) UpsertFile(path, contents string) {
 }
 
 // DeleteFile removes a file from the in-memory VFS and Redis (Redis delete
-// is skipped when no client is configured).
-func (r *ProjectRoom) DeleteFile(path string) {
+// is skipped when no client is configured). The explicit author is recorded
+// in the current generation's write-attribution intake (P1.3.3); "" records
+// nothing.
+func (r *ProjectRoom) DeleteFile(path, author string) {
 	r.vfsMu.Lock()
 	delete(r.vfs, path)
 	r.vfsMu.Unlock()
+	r.RecordWriteAuthor(path, author)
 
 	if r.rdb == nil {
 		return
@@ -987,7 +993,7 @@ func (r *ProjectRoom) runGeneration(prompt string) {
 	var truncated []string
 	finishReason := ""
 	for attempt := 0; ; attempt++ {
-		out, trunc, err := r.streamAndApplyFiles(ctx, generationSystemPrompt, messages, maxTokens)
+		out, trunc, err := r.streamAndApplyFiles(ctx, generationSystemPrompt, messages, maxTokens, writeAuthorLegacy)
 		output.WriteString(out)
 		if err != nil {
 			log.Printf("[room:%s] LLM stream error: %v", r.chatID, err)
@@ -1095,7 +1101,7 @@ func (r *ProjectRoom) finalizeGeneration(output string, streamedFiles int) {
 		}
 		for _, block := range blocks {
 			// Thread-safe VFS mutation + Redis persistence.
-			r.UpsertFile(block.Path, block.Content)
+			r.UpsertFile(block.Path, block.Content, writeAuthorLegacy)
 
 			// Broadcast the completed file.
 			r.BroadcastMessage(models.FileGenerated{

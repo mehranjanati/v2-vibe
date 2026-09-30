@@ -17,7 +17,7 @@ func TestWriteSafeStubForMissing(t *testing.T) {
 		`<html><head></head><body>`+
 			`<div id="product-grid" class="grid"></div>`+
 			`<button id="cart-btn">Cart</button>`+
-			`</body></html>`)
+			`</body></html>`, "")
 
 	r.writeSafeStubForMissing(context.Background(), "public/js/products.js")
 
@@ -48,7 +48,7 @@ func TestWriteSafeStubForMissingCSS(t *testing.T) {
 	defer r.Stop()
 
 	r.UpsertFile("public/index.html",
-		`<html><head><link rel="stylesheet" href="styles.css"></head><body>ok</body></html>`)
+		`<html><head><link rel="stylesheet" href="styles.css"></head><body>ok</body></html>`, "")
 
 	r.writeSafeStubForMissing(context.Background(), "public/styles.css")
 

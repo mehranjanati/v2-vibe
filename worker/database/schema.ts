@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 // Schema enum arrays derived from config types  
 const REASONING_EFFORT_VALUES = ['low', 'medium', 'high'] as const;
@@ -701,6 +701,99 @@ export const workflowStepLogs = sqliteTable('workflow_step_logs', {
 }));
 
 // ========================================
+// GENERATION LINEAGE (branch-per-generation diff + audit)
+// ========================================
+
+// Generation lineage enum values (mirror the `team_completed` verdict contract
+// in `worker/api/websocketTypes.ts` and `backend/pkg/engine/team.go`).
+const GENERATION_STATUS_VALUES = ['running', 'succeeded', 'failed', 'cancelled'] as const;
+const GENERATION_VERDICT_VALUES = ['approve', 'request_changes', 'done', 'error'] as const;
+const GENERATION_FILE_OP_VALUES = ['create', 'modify', 'delete'] as const;
+
+/**
+ * Generations table - One row per generation (agent run) of a chat. The Go
+ * control plane is the single writer (`StartGenerationRecord` /
+ * `FinishGenerationRecord` in `backend/pkg/engine/generation.go`).
+ * `chat_id` is the Redis VFS namespace (`vfs:<chatId>`): a chat is not a D1
+ * row, so it stays a plain column rather than a foreign key.
+ * `parent` is the previous succeeded generation of the same chat and forms the
+ * lineage chain; `commit_sha`/`branch` link the row to the internal per-app Git
+ * repo, and `fork` marks a generation that diverged because a manual write
+ * landed while the agent was still running.
+ */
+export const generations = sqliteTable('generations', {
+    id: text('id').primaryKey(),
+    chatId: text('chat_id').notNull(),
+    
+    // Lineage (self-referencing chain; a root generation has parent = null)
+    parent: text('parent').references((): AnySQLiteColumn => generations.id, { onDelete: 'set null' }),
+    fork: integer('fork', { mode: 'boolean' }).notNull().default(false),
+    
+    // Internal Git pointers (per-app bare repo, one branch per generation)
+    commitSha: text('commit_sha'),
+    branch: text('branch'),
+    
+    // Outcome (verdict is null while the run is still open)
+    verdict: text('verdict', { enum: GENERATION_VERDICT_VALUES }),
+    status: text('status', { enum: GENERATION_STATUS_VALUES }).notNull().default('running'),
+    
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    chatCreatedAtIdx: index('generations_chat_created_at_idx').on(table.chatId, table.createdAt),
+    parentIdx: index('generations_parent_idx').on(table.parent),
+    statusIdx: index('generations_status_idx').on(table.status),
+}));
+
+/**
+ * Generation Files table - Per-file diff of one generation against the VFS
+ * snapshot of its parent (`FinishGenerationRecord`). `before_*` is null for
+ * `create` and `after_*` is null for `delete`; hashes are sha256.
+ * The natural key is `(generation_id, path)` - one row per touched path.
+ * `author_agent` records who wrote the file (`coder`, `gapfill`, `import`, ...);
+ * it is nullable here because the diff row can outlive the attribution, while
+ * the Go pre-commit check (P1.3.6) rejects an empty author before a commit.
+ */
+export const generationFiles = sqliteTable('generation_files', {
+    generationId: text('generation_id').notNull().references(() => generations.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    
+    // Diff
+    op: text('op', { enum: GENERATION_FILE_OP_VALUES }).notNull(),
+    beforeHash: text('before_hash'),
+    afterHash: text('after_hash'),
+    beforeSize: integer('before_size'),
+    afterSize: integer('after_size'),
+    
+    // Attribution
+    authorAgent: text('author_agent'),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.generationId, table.path], name: 'generation_files_pk' }),
+    pathIdx: index('generation_files_path_idx').on(table.path),
+}));
+
+/**
+ * Generation Audits table - Append-only audit trail of a generation:
+ * run outcomes, rollbacks, gate decisions (`actor = 'system'`,
+ * `action = 'gate_decision'`) and write-time attribution from the app runtime.
+ * `detail_json` carries the action-specific payload. Rows are written
+ * best-effort (detached goroutine in the control plane), so an audit failure
+ * never fails a generation.
+ */
+export const generationAudits = sqliteTable('generation_audits', {
+    id: text('id').primaryKey(),
+    generationId: text('generation_id').notNull().references(() => generations.id, { onDelete: 'cascade' }),
+    actor: text('actor').notNull(), // 'system' | agent role (coder/reviewer/gapfill) | 'user'
+    action: text('action').notNull(),
+    detailJson: text('detail_json', { mode: 'json' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    generationIdx: index('generation_audits_generation_idx').on(table.generationId, table.createdAt),
+    actionIdx: index('generation_audits_action_idx').on(table.action),
+}));
+
+// ========================================
 // TYPE EXPORTS FOR APPLICATION USE
 // ========================================
 
@@ -766,3 +859,10 @@ export type WorkflowInstance = typeof workflowInstances.$inferSelect;
 export type NewWorkflowInstance = typeof workflowInstances.$inferInsert;
 export type WorkflowStepLog = typeof workflowStepLogs.$inferSelect;
 export type NewWorkflowStepLog = typeof workflowStepLogs.$inferInsert;
+
+export type Generation = typeof generations.$inferSelect;
+export type NewGeneration = typeof generations.$inferInsert;
+export type GenerationFile = typeof generationFiles.$inferSelect;
+export type NewGenerationFile = typeof generationFiles.$inferInsert;
+export type GenerationAudit = typeof generationAudits.$inferSelect;
+export type NewGenerationAudit = typeof generationAudits.$inferInsert;

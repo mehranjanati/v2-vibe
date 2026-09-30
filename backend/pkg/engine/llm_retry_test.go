@@ -147,7 +147,7 @@ func TestStreamAndApplyFilesWritesVFS(t *testing.T) {
 	r.filesWritten.Store(0)
 
 	_, truncated, err := r.streamAndApplyFiles(context.Background(), "sys",
-		[]llm.ChatMessage{{Role: "user", Content: "build"}}, 1024)
+		[]llm.ChatMessage{{Role: "user", Content: "build"}}, 1024, "")
 	if err != nil {
 		t.Fatalf("stream error: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestFillMissingReferencedFilesStreamsGaps(t *testing.T) {
 	r.filesWritten.Store(0)
 	r.UpsertFile("public/index.html",
 		"<html><head><link rel=\"stylesheet\" href=\"styles.css\"></head>"+
-			"<body><script src=\"js/main.js\"></script></body></html>")
+			"<body><script src=\"js/main.js\"></script></body></html>", "")
 
 	r.fillMissingReferencedFiles(context.Background())
 

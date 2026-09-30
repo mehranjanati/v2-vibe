@@ -192,7 +192,7 @@ func TestGetProjectFilesReadOnly(t *testing.T) {
 
 	// Warm path: an existing room's in-memory VFS is served.
 	room := hub.GetOrCreateRoom("files-warm")
-	room.UpsertFile("public/index.html", "<h1>hi</h1>")
+	room.UpsertFile("public/index.html", "<h1>hi</h1>", "")
 	status, body = performJSON(t, app, http.MethodGet, "/api/projects/files-warm/files")
 	if status != http.StatusOK {
 		t.Fatalf("expected 200 for warm project, got %d", status)

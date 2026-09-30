@@ -18,6 +18,16 @@
   - [x] P0.1.6 — فرانت handler + typecheck/lint سبز
   - [x] P0.1.7 — تست‌ها سبز + `go vet/build` سبز
 
+- [x] P0.2 — ارتقای تیم به **DeepAgent** + آپدیت Eino (۲۰۲۶-۱۰-۰۱)
+  - [x] P0.2.1 — `github.com/cloudwego/eino v0.9.19 → v0.9.21` (`backend/go.mod`/`go.sum`) + وابستگی indirect جدید `github.com/bmatcuk/doublestar/v4 v4.10.0` (از `adk/filesystem` که `adk/prebuilt/deep` وارد می‌کند)
+  - [x] P0.2.2 — `Engine.NewRoleModel` + `RoleModelConfig` (`backend/pkg/agent/eino_engine.go:115-176`): ساخت مدل جدا per-role روی همان endpoint با `MaxTokens`/`Temperature` نقش؛ کلید `RoleModelConfig` بودجهٔ خالی را نادیده می‌گیرد و روی مدل انجین fallback می‌کند
+  - [x] P0.2.3 — coordinator از `adk.NewChatModelAgent` + دو `adk.NewAgentTool` به `deep.New` مهاجرت کرد (`backend/pkg/engine/team.go:180-191`): `SubAgents: [coder, reviewer]`، `WithoutGeneralSubAgent: true`، `MaxIteration: 30` (قبلاً ۲۴). انتخاب DeepAgent عمدی است — `adk/prebuilt/supervisor`، workflow agents و `deterministic_transfer` در سورس نسخهٔ pinned صریحاً **NOT RECOMMENDED** هستند و همان عبارت DeepAgent را توصیه می‌کند.
+  - [x] P0.2.4 — `roleModel` (`backend/pkg/engine/team.go:280-308`) بودجهٔ per-role را از رجیستری به موتور می‌رساند (قبلاً هر سه نقش `r.eng.ChatModel()` مشترک را می‌گرفتند و `Temperature`/`MaxTokens` رجیستری روی مسیر تیم بی‌اثر بود)
+  - [x] P0.2.5 — `noFormatInstruction` (`backend/pkg/engine/team.go:310-334`) روی coder و reviewer: عبور از FString پیش‌فرض ADK. **ضروری است، نه تزئینی** — `write_todos` داخلی DeepAgent یک session value ست می‌کند و task tool با `withSharedParentSession()` آن را به sub-agentها می‌رساند، پس `defaultGenModelInput` روی braceهای `02_coder.md`/`01_planner.md` می‌شکست
+  - [x] P0.2.6 — `teamToolContract` (`backend/pkg/engine/team.go:350-366`) روی پرامپت coordinator: قرارداد مکانیکی ابزار `task` + `write_todos` + **override صریح بر ضد-parallelize کردن** (prompt داخلی DeepAgent توصیه به parallel می‌کند ولی stepها ترتیب وابستگی دارند)
+  - [x] P0.2.7 — `docs/MULTI_AGENT.md` هم‌راستا شد (بخش تازهٔ DeepAgent runtime contract + ۲۶ ارجاع خطی اصلاح‌شده + گپ #۶). قاعدهٔ ارجاع: فایل‌های کتابخانه **بدون** شمارهٔ خط نام برده می‌شوند چون `scripts/validate-spec-refs.mjs` فقط مسیرهای داخل repo را resolve می‌کند
+  - ⚠️ پوشش تست ندارد: `go build ./...` سبز و `bun run docs:check` سبز، ولی `pkg/engine` به‌دلیل P1.0.4/generation_test.go کامپایل تست نمی‌شود؛ E2E تیم (سناریوی approve) دستی است
+
 ## P1 — قدم A: Branch-per-Generation + Diff قابل Review
 
 - [ ] P1.0 — تمیزکاری ریپوی پلتفرم (اندازه‌گیری ۲۰۲۶-۰۹-۲۸ روی `main`: ۵۷۲ ورودی `git status --porcelain` = ۳۸۲ حذف + ۶۶ اصلاح + ۹۳ افزودن + ۳۱ untracked)
@@ -41,11 +51,11 @@
   - [x] P1.2.4 — ✅ `backend/pkg/engine/generation_test.go`: ۷ تست — (۱) زنجیرهٔ parent با دو run پشت‌هم + TTL/محتوای snapshot، (۲) diff سه‌عملیاتی create/modify/delete + انتساب `author_agent`، (۳) nil-Redis/nil-D1 (هر دو تابع بی‌خطا و نسل زنده: VFS دست‌نخورده + run دوم)، (۴) diff بدون Redis ولی با D1 (مسیر mirror)، (۵) بازیابی snapshot از Redis توسط room دیگر (modify، نه create جعلی)، (۶) نگاشت verdict→status، (۷) خطاهای advisory (id خالی/نسل ناموجود). D1 با سرور REST in-memory (httptest + `cloudflare.D1Client.SetBaseURL` که همین حالا هم برای تست طراحی شده) و Redis با fake روی اینترفیس `generationKV` شبیه‌سازی شد. شواهد: `go vet ./...` تمیز + `go test ./...` سبز + `go test -race ./pkg/engine/ -run TestGeneration` سبز
   - نکته: `commit_sha`/`branch` (P1.3.5) و `fork` (P1.3.3/P1.10.7) عمداً در این قدم نوشته نمی‌شوند؛ intake انتساب نویسنده (`RecordWriteAuthor`, `backend/pkg/engine/generation.go:264`) آماده است تا P1.3.3 فقط وصل کند
 - [ ] P1.3 — قلاب اجرا (+ Git داخلی)
-  - [ ] P1.3.0 — تصمیم persistence گیتی (پیش‌نیاز P1.3.4): volume ماندگار vs R2-remote per-app vs D1-CAS — بدون این، bare repo روی محیط ephemeral یتیم می‌ماند
-  - [ ] P1.3.1 — قلاب در `runTeam` (`team.go`)
-  - [ ] P1.3.2 — قلاب در `runDualModelPipeline` (`dual_model.go`)
+  - [x] P1.3.0 — ✅ (۲۰۲۶-۰۹-۲۹) **تصمیم: D1-CAS** (شرح کامل + دلیل رد دو گزینهٔ دیگر در `docs/DEV_SPEC_P1A.md` → P1.3.0): تاریخچهٔ داخلی به‌صورت object-store محتوا-محور در **همان D1** که lineage در آن است (`git_objects`: `sha`/`kind`/`content` فشرده + ردیف ref) و **بدون bare repo روی دیسک**؛ `go-git` می‌ماند تا SHAها واقعی باشند و API وعده‌داده‌شدهٔ P1.3.4 (`Init/Open/Commit/Log/Diff/Revert`) عوض نشود. **(a) volume رد شد:** کانتینر بک‌اند volume ندارد و روی FS ephemeral است (`docker-compose.yml:24`؛ تنها volume مال Redis: `docker-compose.yml:16-17`)، ایمیج `nonroot`/distroless است (`backend/Dockerfile:19`) و مسیر ثابت در لوکال dev روی macOS قابل ساخت نیست. **(b) R2-remote مسدود است نه نامناسب:** R2 روی این account فعال نیست (`wrangler.v2.jsonc:49-51`، اجبارشده با `scripts/validate-docs-invariants.mjs:120`) **و در Go صفر کد R2 وجود دارد** (سنجیده‌شده روی کل `backend/`: هیچ تطابق در `*.go`؛ تنها تطابق `\br2\b` یک شناسهٔ آیتم نقشهٔ راه است: `backend/docs/architecture-roadmap.json:100`) ⇒ بازنگری به رویداد «فعال شدن R2» موکول شد. مبنای عددی: سکشن تازهٔ **`docs/CF_LIMITS.md` §۸** (منبع `[S7]` = صفحهٔ رسمی D1 Limits؛ `Last updated 2026-04-21`، `Last verified 2026-09-29`) — سقف ردیف `2 MB`، طول دستور `100 KB`، پارامتر `bind` `100`، حجم دیتابیس `500 MB`(Free)/`10 GB`، Time Travel `۷/۳۰ روز`، مدت کوئری `30s`، تک‌رشته‌ای. شواهد: `bun run docs:check` سبز (۳ ولیدیتور، شامل invariantهای `CF_LIMITS` و ارجاع‌های خطی).
+  - [x] P1.3.1 — ✅ (۲۰۲۶-۰۹-۲۹) قلاب در `runTeam` (`team.go`): امضا به `(string, error)` رفت (`backend/pkg/engine/team.go:112`) و verdict واقعی reviewer (`approve`/`request_changes`، وگرنه `done`) را برمی‌گرداند؛ رکورد دوم باز نمی‌کند چون تو در تو داخل `runDualModelPipeline` است (یک generation = یک ردیف). شواهد: `go test -race ./pkg/engine/` سبز + `TestParseReviewVerdict` موجود و ۴ تست هوک در `backend/pkg/engine/generation_hook_test.go`؛ مسیر واقعی تیم end-to-end بدون engine پوشش داده نشده (سناریوی approve تیم E2E دستی می‌ماند)
+  - [x] P1.3.2 — ✅ (۲۰۲۶-۰۹-۲۹) قلاب در `runDualModelPipeline` (`dual_model.go`): شروع رکورد در ابتدای تابع (`backend/pkg/engine/dual_model.go:41`) + سه `Finish` صریح قبل از هر `finalizeGeneration` (`backend/pkg/engine/dual_model.go:158`/`backend/pkg/engine/dual_model.go:191`/`backend/pkg/engine/dual_model.go:231`) + تور ایمنی deferred برای مسیرهای مرگ زودهنگام (`backend/pkg/engine/dual_model.go:80-84`: خطا→`failed`، وگرنه `cancelled`). تست: ۴ تست در `backend/pkg/engine/generation_hook_test.go` (run کامل→`succeeded`/`done` + diff درست؛ پلن تهی→`failed`/`error`؛ reject→`cancelled`+NULL+audit؛ cancel→`cancelled`+NULL+audit) — شواهد: `go vet ./...` تمیز + `go test ./...` سبز + `go test -race ./pkg/engine/ -run 'TestRunDualModelPipeline|TestGeneration'` سبز
   - [ ] P1.3.3 — `author_agent` در `notifyWriteTool`
-  - [ ] P1.3.4 — Git داخلی Go: `go-git` در `go.mod` + `backend/pkg/engine/gitrepo.go` (init/open/commit/log/diff/revert per-appId، bare repo در `/data/git/{appId}.git`)
+  - [ ] P1.3.4 — Git داخلی Go: `go-git` در `go.mod` + `backend/pkg/engine/gitrepo.go` (init/open/commit/log/diff/revert per-appId، بک‌اند = **D1-CAS طبق P1.3.0**: جدول `git_objects` + ref، **بدون bare repo روی دیسک**) + قیود `docs/CF_LIMITS.md` §۸
   - [ ] P1.3.5 — قلاب Git در `finalizeGeneration` (کامیت batch یکتا روی `gen/{genId}`) + پارامتر `author` در `UpsertFile/DeleteFile` برای intake (ثبت، نه کامیت جدا — وگرنه انفجار کامیت روی چانک‌ها)
   - [ ] P1.3.6 — pre-commit secret-scan (token|secret|api_key) + سقف حجم per-file (۱MB، skip لگسی) + `author` اجباری
 - [ ] P1.4 — API تاریخچه + diff + rollback (+ mirror به GitHub)
@@ -87,6 +97,12 @@
   - [ ] P1.10.7 — G4 conflict: فلگ `fork=true` در lineage (با P1.1.1b یکی است) + بنر «مال من/مال ایجنت»
   - [ ] P1.10.8 — G5 preview: banner قرمز/زرد/خاکستری + «برگرد به آخرین سالم» + «با AI درست کن»
   - [ ] P1.10.9 — Monaco editable + Save صریح (readOnly برداشته شود، lazy بماند؛ نه autosave)
+
+- [ ] P1.11 — گپ **G-maxTokens**: بودجهٔ توکن روی مسیر موتور بی‌اثر است
+  - [ ] P1.11.1 — `Room.streamLLM` (`backend/pkg/engine/room.go:434-457`) پارامتر `maxTokens` را فقط به مسیر خام (`streamLLMRaw`) می‌دهد؛ وقتی `r.eng != nil` باشد `Engine.RunStepWith` صدا زده می‌شود که هیچ بودجه‌ای نمی‌گیرد. نتیجه: overrideهای per-role (`PLANNER_MAX_TOKENS`/`CODER_MAX_TOKENS`) و حلقهٔ بازیابی truncation (`maxTokens *= 2`، `backend/pkg/engine/room.go:1062`) روی مسیر زنده **no-op** هستند.
+  - [ ] P1.11.2 — فیکس: عبور `model.WithMaxTokens` با `adk.WithChatModelOptions` (مارت `backend/pkg/agent/eino_engine.go:201-285`). توجه: optionها per-agent هستند ولی `maxTokens` اینجا per-call است، پس `RunStepWith` باید یک پارامتر بودجه بگیرد تا افزایش پله‌ای حفظ شود.
+  - [ ] P1.11.3 — تست: mock `model.BaseModel` که budget را از options می‌خواند و تأیید می‌کند هر دو پاس (۱۲۲۸۸ و ۲۴۵۷۶) به مدل می‌رسند.
+  - نکته: مسیر تیم از این گپ اثر نمی‌گیرد چون بودجهٔ هر نقش داخل مدل خودش ساخته می‌شود (`Engine.NewRoleModel`). جزئیات: `docs/MULTI_AGENT.md` → Known gaps #6.
 
 ## P2 — قدم ۳: کاتالوگ «نود-به‌عنوان-پکیج»
 

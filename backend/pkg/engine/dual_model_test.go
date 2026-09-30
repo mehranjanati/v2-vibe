@@ -175,7 +175,7 @@ func TestRunDualModelPipelineGeneratesFiles(t *testing.T) {
 	room := NewProjectRoom("dual-itest", nil, nil, nil)
 	go room.Run()
 	t.Cleanup(room.Stop)
-	room.UpsertFile("public/index.html", "<html>old</html>\n")
+	room.UpsertFile("public/index.html", "<html>old</html>\n", "")
 	approveLater(room)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -546,8 +546,8 @@ func TestRunDualModelPipelineDeletesFiles(t *testing.T) {
 	room := NewProjectRoom("dual-delete", nil, nil, nil)
 	go room.Run()
 	t.Cleanup(room.Stop)
-	room.UpsertFile("public/js/old.js", "legacy\n")
-	room.UpsertFile("public/index.html", "<html><body>hi</body></html>\n")
+	room.UpsertFile("public/js/old.js", "legacy\n", "")
+	room.UpsertFile("public/index.html", "<html><body>hi</body></html>\n", "")
 	approveLater(room)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -586,8 +586,8 @@ func TestVfsSnapshot(t *testing.T) {
 	if got := room.vfsSnapshot(); got != "(empty)" {
 		t.Errorf("empty snapshot = %q", got)
 	}
-	room.UpsertFile("public/index.html", "<html></html>\n")
-	room.UpsertFile("public/js/app.js", "x")
+	room.UpsertFile("public/index.html", "<html></html>\n", "")
+	room.UpsertFile("public/js/app.js", "x", "")
 	got := room.vfsSnapshot()
 	lines := strings.Split(got, "\n")
 	if len(lines) != 2 {
@@ -671,7 +671,7 @@ func TestPlannerMaxTokensFromRoleConfig(t *testing.T) {
 // carries the file list for the planner to reason about.
 func TestPlannerVFSContextNoRedis(t *testing.T) {
 	room := NewProjectRoom("rag-none", nil, nil, nil)
-	room.UpsertFile("public/index.html", "<html></html>\n")
+	room.UpsertFile("public/index.html", "<html></html>\n", "")
 	got := room.plannerVFSContext(context.Background(), "build a page")
 	if !strings.Contains(got, "public/index.html") {
 		t.Errorf("planner context missing the snapshot: %q", got)

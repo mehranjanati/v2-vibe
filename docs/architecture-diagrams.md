@@ -4,6 +4,7 @@
 > Historical diagrams were archived — see [Historical diagrams (removed)](#historical-diagrams-removed).
 >
 > - Authoritative narrative: [`llm.md#current-architecture`](llm.md#current-architecture)
+> - Multi-agent team guide: [`MULTI_AGENT.md`](MULTI_AGENT.md)
 > - Per-endpoint route ownership (which plane serves what): [`POSTMAN_COLLECTION_README.md`](POSTMAN_COLLECTION_README.md) §7
 > - Platform limits: [`CF_LIMITS.md`](CF_LIMITS.md)
 

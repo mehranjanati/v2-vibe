@@ -19,14 +19,38 @@ import (
 
 // ---------- VFS adapter: room as a tools.VFSStore ----------
 
+// ---------- write authors (P1.3.3) ----------
+//
+// Every agent write path tags the model role that produced it. The author is
+// an EXPLICIT argument of the write — never inferred by a wrapper — because
+// gapfill and the raw streaming paths never pass through notifyWriteTool.
+// RecordWriteAuthor (generation.go) is the single intake: FinishGenerationRecord
+// consumes it for `generation_files.author_agent` and the `file_written` audit
+// rows.
+const (
+	// writeAuthorCoder marks files the coder model produced (dual-model
+	// steps + plan-execute/team vfs_write tool calls).
+	writeAuthorCoder = "coder"
+	// writeAuthorGapfill marks files the gap-fill recovery produced (retry
+	// regenerations, safe stubs) instead of a real coder pass.
+	writeAuthorGapfill = "gapfill"
+	// writeAuthorLegacy marks files from the legacy fence-streaming path used
+	// when no eino engine / planner is available.
+	writeAuthorLegacy = "legacy"
+)
+
 // roomVFSStore adapts the ProjectRoom's in-memory + Redis VFS to the
 // tools.VFSStore interface so the planexecute executor can write files
 // with the vfs_write tool. chatID arguments are ignored: the room IS the
-// scope.
-type roomVFSStore struct{ r *ProjectRoom }
+// scope. The store carries the tool path's author (always "coder" here — it
+// is only handed to coder tools) so UpsertFile/DeleteFile record it.
+type roomVFSStore struct {
+	r      *ProjectRoom
+	author string
+}
 
 func (s roomVFSStore) VFSWrite(_ context.Context, _, path, content string) error {
-	s.r.UpsertFile(path, content)
+	s.r.UpsertFile(path, content, s.author)
 	return nil
 }
 
@@ -41,7 +65,7 @@ func (s roomVFSStore) VFSRead(_ context.Context, _, path string) (string, bool, 
 }
 
 func (s roomVFSStore) VFSDelete(_ context.Context, _, path string) error {
-	s.r.DeleteFile(path)
+	s.r.DeleteFile(path, s.author)
 	return nil
 }
 
@@ -60,6 +84,9 @@ func (s roomVFSStore) VFSList(_ context.Context, _ string) ([]string, error) {
 // notifyWriteTool wraps an invokable tool and, on success, replays the
 // write as the standard file_generating / file_generated WS events so the
 // frontend sees tool-driven writes exactly like streamed ones.
+// The tool path's author ("coder") flows through roomVFSStore into the
+// UpsertFile call below — this wrapper only broadcasts, it never infers the
+// author (P1.3.3: gapfill bypasses it entirely, so inference here would lie).
 type notifyWriteTool struct {
 	tool.InvokableTool
 	room *ProjectRoom
@@ -89,7 +116,7 @@ func (t *notifyWriteTool) InvokableRun(ctx context.Context, args string, opts ..
 		if llm.LooksLikeJS(in.Path) {
 			// Repair syntax slips in tool-written JS too.
 			full = llm.SanitizeJS(full)
-			_ = t.room.persistSanitized(in.Path, full)
+			_ = t.room.persistSanitized(in.Path, full, writeAuthorCoder)
 		}
 		t.room.BroadcastMessage(models.FileGenerated{
 			Type: "file_generated",
@@ -101,16 +128,19 @@ func (t *notifyWriteTool) InvokableRun(ctx context.Context, args string, opts ..
 }
 
 // persistSanitized re-persists a file after sanitization (the tool already
-// wrote the raw version).
-func (r *ProjectRoom) persistSanitized(path, content string) error {
-	r.UpsertFile(path, content)
+// wrote the raw version with the tool path's author). It carries the same
+// explicit author so the re-persist does not overwrite the attribution intake
+// with "".
+func (r *ProjectRoom) persistSanitized(path, content, author string) error {
+	r.UpsertFile(path, content, author)
 	return nil
 }
 
 // planExecuteTools builds the executor tool set: vfs_write (wrapped with
-// file-event notifications), vfs_read, vfs_list.
+// file-event notifications), vfs_read, vfs_list — all on the "coder" author's
+// store.
 func (r *ProjectRoom) planExecuteTools() ([]tool.BaseTool, error) {
-	store := roomVFSStore{r: r}
+	store := roomVFSStore{r: r, author: writeAuthorCoder}
 	write, err := tools.NewVFSWriteTool(store)
 	if err != nil {
 		return nil, err

@@ -172,6 +172,11 @@ verbatim as the system message of every call made for that role.
 | `coder` | `02_coder.md` | `@cf/qwen/qwen2.5-coder-32b-instruct` | 0.1 | 8192 |
 | `reviewer` | `03_reviewer.md` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 0.1 | 4096 |
 
+> Full multi-agent guide: [`MULTI_AGENT.md`](MULTI_AGENT.md) — roles with agent
+> iteration budgets (coordinator 30 / coder 8 / reviewer 6), least-privilege
+> boundary, `canRunTeam` path selection, execution trace, WS contract,
+> lineage, failure modes and known gaps (P1.6/P1.8/P1.9).
+
 - `SKILLS_DIR` overrides the prompt directory. Without it the registry probes `skills`,
   `../skills`, `../../skills` and `backend/skills` relative to the working directory (the
   container runs from `/app`, so the prompts live in `/app/skills`).
@@ -316,12 +321,19 @@ available.
 
 ### Multi-agent team (`backend/pkg/engine/team.go`)
 
+> Full guide: [`MULTI_AGENT.md`](MULTI_AGENT.md) — supervisor design, roles,
+> least-privilege boundary, path selection, execution trace, WS contract,
+> lineage, failure modes and known gaps.
+
 Used only after a plan is approved, when the coordinator/coder/reviewer prompts are loaded and the
-model supports tool calling. Three `adk.NewChatModelAgent`s are composed with `AgentAsTool`:
+model supports tool calling. The coordinator is an Eino DeepAgent: the coordinator/coder/reviewer
+ChatModelAgents each run on their own role model, the coder and reviewer are exposed to the
+coordinator as `SubAgents` through DeepAgent's built-in `task` tool, and the coordinator also gets the
+built-in `write_todos` checklist tool.
 
 | Agent | Max iterations | Tools | Writes? |
 |---|---|---|---|
-| `coordinator` | 24 | `coder`, `reviewer` (as tools) | no |
+| `coordinator` | 30 | `task`, `write_todos` | no |
 | `coder` | 8 | `vfs_write` (notifying), `vfs_read`, `vfs_list` | yes |
 | `reviewer` | 6 | `vfs_read`, `vfs_list` | **no** |
 

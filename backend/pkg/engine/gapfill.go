@@ -43,8 +43,11 @@ func modelsFileGenerated(path, content string) models.FileGenerated {
 
 // applyFileEvents routes stream-parser events to the VFS and the WS
 // broadcasts (file_generating / file_chunk_generated / file_generated),
-// bumping filesWritten for every completed file.
-func (r *ProjectRoom) applyFileEvents(evs []llm.StreamEvent) {
+// bumping filesWritten for every completed file. This is the raw
+// fence-streaming funnel (legacy generation AND gap-fill regeneration), so
+// writes carry the explicit author passed by the caller — the two paths share
+// one parser but must not share one author (P1.3.3).
+func (r *ProjectRoom) applyFileEvents(evs []llm.StreamEvent, author string) {
 	for _, ev := range evs {
 		switch ev.Kind {
 		case llm.EventStart:
@@ -61,7 +64,7 @@ func (r *ProjectRoom) applyFileEvents(evs []llm.StreamEvent) {
 				// decimals) BEFORE the file reaches the VFS/preview.
 				content = llm.SanitizeJS(content)
 			}
-			r.UpsertFile(ev.Path, content)
+			r.UpsertFile(ev.Path, content, author)
 			r.BroadcastMessage(modelsFileGenerated(ev.Path, content))
 			r.filesWritten.Add(1)
 		}
@@ -71,21 +74,24 @@ func (r *ProjectRoom) applyFileEvents(evs []llm.StreamEvent) {
 // streamAndApplyFiles runs ONE raw streaming pass whose output is parsed
 // into per-file events and applied to the VFS/WS. Returns the full raw
 // output (for fence fallback parsing), the salvage-flagged (truncated)
-// paths, and any stream error.
+// paths, and any stream error. The explicit author tags every file this pass
+// completes — legacy generation passes "legacy", gap-fill passes "gapfill"
+// (P1.3.3).
 func (r *ProjectRoom) streamAndApplyFiles(
 	ctx context.Context,
 	system string,
 	msgs []llm.ChatMessage,
 	maxTokens int,
+	author string,
 ) (string, []string, error) {
 	parser := llm.NewStreamParser()
 	output, _, err := r.streamLLMRaw(ctx, system, msgs, maxTokens, func(delta string) {
-		r.applyFileEvents(parser.Feed(delta))
+		r.applyFileEvents(parser.Feed(delta), author)
 	})
 	if err != nil {
 		return output, nil, err
 	}
-	r.applyFileEvents(parser.Flush())
+	r.applyFileEvents(parser.Flush(), author)
 	return output, parser.TruncatedPaths(), nil
 }
 
@@ -233,7 +239,7 @@ func (r *ProjectRoom) writeSafeStubForMissing(ctx context.Context, path string) 
 		stub += strings.Join(initLines, "\n") + "\n"
 		stub += "});\n"
 	}
-	r.UpsertFile(path, stub)
+	r.UpsertFile(path, stub, writeAuthorGapfill)
 	r.BroadcastMessage(modelsFileGenerated(path, stub))
 	r.filesWritten.Add(1)
 	log.Printf("[room:%s] wrote safe fallback stub for missing %s", r.chatID, path)
@@ -335,7 +341,7 @@ func (r *ProjectRoom) fillMissingReferencedFiles(ctx context.Context) {
 
 		filesBefore := r.filesWritten.Load()
 		out, truncated, err := r.streamAndApplyFiles(ctx, gapSystem,
-			[]llm.ChatMessage{{Role: "user", Content: gapMsg}}, 24576)
+			[]llm.ChatMessage{{Role: "user", Content: gapMsg}}, 24576, writeAuthorGapfill)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -384,7 +390,7 @@ func (r *ProjectRoom) fillMissingReferencedFiles(ctx context.Context) {
 // preview renders without 404 styling loss instead of the link failing.
 func (r *ProjectRoom) writeSafeStubForMissingCSS(path string) {
 	stub := "/* Auto-generated safe stub (gap-fill could not produce this file). */\n"
-	r.UpsertFile(path, stub)
+	r.UpsertFile(path, stub, writeAuthorGapfill)
 	r.BroadcastMessage(modelsFileGenerated(path, stub))
 	r.filesWritten.Add(1)
 	log.Printf("[room:%s] wrote safe CSS stub for missing %s", r.chatID, path)

@@ -38,7 +38,52 @@ var errPlanRejected = errors.New("dual-model: plan rejected")
 // A nil return means the pipeline finished (including the no-steps case).
 // errPlanRejected is returned when the client rejects the plan; any other
 // error means the caller may fall back to the legacy generation paths.
-func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) error {
+func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) (err error) {
+	// ---- P1.3.2 lineage hook: one record per generation RUN ---------------
+	// The record is opened HERE, never inside runTeam: the team path below
+	// calls runTeam from this very function, so a second Start/Finish pair
+	// there would double-count the run (two `generations` rows, two
+	// baselines, a broken parent chain). runTeam's lineage contribution is
+	// the real reviewer verdict it returns (P1.3.1).
+	//
+	// This must stay the first thing the run does: the baseline snapshot has
+	// to be taken before any file write, and the planner/design passes below
+	// already read (and gap-fill later writes) the VFS.
+	genID, lerr := r.StartGenerationRecord(ctx, "")
+	if lerr != nil {
+		log.Printf("[room:%s] lineage: open generation record: %v", r.chatID, lerr)
+	}
+
+	// finish closes the record exactly ONCE. The explicit calls below run
+	// before each finalizeGeneration — the diff must not see files that only
+	// finalize writes — and carry the run's real verdict. The deferred safety
+	// net closes a row that would otherwise stay 'running' forever when the
+	// run dies before its explicit Finish (planner error, cancelled run,
+	// rejected plan); generationStatusForVerdict maps "" → 'cancelled' and
+	// "error" → 'failed'. lineageCtx (generation.go) drops the caller's
+	// cancellation, so the close lands even for a cancelled run.
+	finished := false
+	finish := func(verdict string) {
+		if finished || genID == "" {
+			return
+		}
+		finished = true
+		if ferr := r.FinishGenerationRecord(ctx, genID, verdict); ferr != nil {
+			log.Printf("[room:%s] lineage: close generation record: %v", r.chatID, ferr)
+		}
+	}
+	defer func() {
+		if finished {
+			return
+		}
+		if err != nil && !errors.Is(err, errPlanRejected) && ctx.Err() == nil {
+			finish("error")
+			return
+		}
+		// Cancelled run or rejected plan: nothing was accepted into the VFS.
+		finish("")
+	}()
+
 	// Design direction: assemble the brand/design brief (pattern, style,
 	// palette, typography, motion, a11y) ONCE from the user's request and
 	// share it with the planner and every coder step. This is what turns
@@ -108,12 +153,15 @@ func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) e
 			Type:  "cf_agent_state",
 			State: r.BuildAgentState(),
 		})
+		// A legitimate "no changes needed" outcome: a successful run that
+		// touched zero files (so the lineage row carries no file diff).
+		finish("done")
 		r.finalizeGeneration("", 0)
 		return nil
 	}
 
 	// Execute the steps: prefer the multi-agent team (coordinator/coder/
-	// reviewer via AgentAsTool) when its prompts + tool-calling model are
+	// reviewer via DeepAgent tooling) when its prompts + tool-calling model are
 	// available; otherwise the single-coder per-step loop below.
 	// stepCtx is the plan-level context every coder call carries: the
 	// user's ORIGINAL request plus the plan's goal/subtasks/sibling steps.
@@ -127,7 +175,8 @@ func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) e
 	}
 	if r.canRunTeam(r.teamPrompts) {
 		log.Printf("[room:%s] executing plan via multi-agent team", r.chatID)
-		if terr := r.runTeam(ctx, prompt, display, r.teamPrompts); terr != nil {
+		verdict, terr := r.runTeam(ctx, prompt, display, r.teamPrompts)
+		if terr != nil {
 			return fmt.Errorf("dual-model: team: %w", terr)
 		}
 		if written := int(r.filesWritten.Load()); written == 0 {
@@ -136,6 +185,10 @@ func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) e
 				State: r.BuildAgentState(),
 			})
 		}
+		// P1.3.1: the team path has a REAL reviewer verdict
+		// (approve | request_changes | done) and that is what the lineage row
+		// records; the single-coder path below has no reviewer stage.
+		finish(verdict)
 		r.finalizeGeneration("", int(r.filesWritten.Load()))
 		return nil
 	}
@@ -174,6 +227,8 @@ func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) e
 			State: r.BuildAgentState(),
 		})
 	}
+	// No reviewer stage on this path: a fully executed plan is "done".
+	finish("done")
 	r.finalizeGeneration("", written)
 	return nil
 }
@@ -226,7 +281,7 @@ func (r *ProjectRoom) regenerateTruncatedSteps(ctx context.Context, plan agentpl
 			// missing one — the gap-fill/stub passes below regenerate it
 			// from the standard contract and keep the preview alive.
 			log.Printf("[room:%s] %s still truncated after retries; dropping partial for gap-fill", r.chatID, path)
-			r.DeleteFile(path)
+			r.DeleteFile(path, writeAuthorGapfill)
 			r.BroadcastMessage(models.FileDeleted{
 				Type:     "file_deleted",
 				FilePath: path,
@@ -275,7 +330,7 @@ func (r *ProjectRoom) executeStepOnRoom(ctx context.Context, step agentplan.Plan
 func (r *ProjectRoom) executeStepOnRoomBudget(ctx context.Context, step agentplan.PlanStep, stepCtx agentplan.StepContext, maxTokens int) (bool, error) {
 	if step.Action == agentplan.ActionDelete {
 		debugLogEvent(r, "file_deleted", "path", step.FilePath)
-		r.DeleteFile(step.FilePath)
+		r.DeleteFile(step.FilePath, writeAuthorCoder)
 		r.BroadcastMessage(models.FileDeleted{
 			Type:     "file_deleted",
 			FilePath: step.FilePath,
@@ -327,7 +382,7 @@ func (r *ProjectRoom) executeStepOnRoomBudget(ctx context.Context, step agentpla
 	}
 
 	content := coderFileContent(step.FilePath, collected.String())
-	r.UpsertFile(step.FilePath, content)
+	r.UpsertFile(step.FilePath, content, writeAuthorCoder)
 	r.BroadcastMessage(modelsFileGenerated(step.FilePath, content))
 	r.filesWritten.Add(1)
 	debugLogEvent(r, "file_generated", "path", step.FilePath, "bytes", len(content))

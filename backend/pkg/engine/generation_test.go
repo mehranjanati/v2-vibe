@@ -220,6 +220,18 @@ func (f *fakeD1) fileRows() []fakeFileRow {
 	return append([]fakeFileRow(nil), f.files...)
 }
 
+// genRows returns a copy of every emulated `generations` row in insertion
+// order (the lineage hook tests count rows and read their terminal state).
+func (f *fakeD1) genRows() []fakeGenRow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]fakeGenRow, 0, len(f.gens))
+	for _, g := range f.gens {
+		out = append(out, *g)
+	}
+	return out
+}
+
 func (f *fakeD1) auditRows() []fakeAuditRow {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -270,6 +282,59 @@ func sha256Of(s string) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
+// TestRecordWriteAuthorIntakeDocumentsSemantics: pins the G0 intake contract
+// RecordWriteAuthor implements — the exact behavior P1.3.3 wires every write
+// path through. The assertions read through takeGenerationAuthors (the same
+// consume path FinishGenerationRecord uses) rather than the private map, so
+// they also pin that the intake is readable and single-use per generation.
+func TestRecordWriteAuthorIntakeDocumentsSemantics(t *testing.T) {
+	room := NewProjectRoom("chat-intake", nil, nil, nil)
+
+	// An empty path is a no-op: no entry, and the intake stays nil. A caller
+	// that loses the path cannot invent a phantom attribution row.
+	room.RecordWriteAuthor("", "coder")
+	if got := room.takeGenerationAuthors(); got != nil {
+		t.Fatalf("empty path produced intake %v, want nil", got)
+	}
+
+	// A non-empty author is recorded against its path; the map is created
+	// lazily because a fresh room has genAuthors == nil.
+	room.RecordWriteAuthor("index.html", "coder")
+	room.RecordWriteAuthor("public/app.js", "gapfill")
+	got := room.takeGenerationAuthors()
+	if len(got) != 2 {
+		t.Fatalf("intake = %v, want 2 entries", got)
+	}
+	if got["index.html"] != "coder" || got["public/app.js"] != "gapfill" {
+		t.Errorf("intake = %v, want index.html=coder and public/app.js=gapfill", got)
+	}
+
+	// Consuming clears the intake: attribution belongs to exactly one
+	// generation, so the next run must not inherit the previous run's authors.
+	if again := room.takeGenerationAuthors(); again != nil {
+		t.Errorf("intake after consume = %v, want nil", again)
+	}
+
+	// A blank or whitespace-only author CLEARS the entry instead of storing an
+	// empty string — that is what lets an unknown author become NULL
+	// author_agent rather than a fake one.
+	room.RecordWriteAuthor("a.txt", "coder")
+	room.RecordWriteAuthor("b.txt", "reviewer")
+	room.RecordWriteAuthor("a.txt", "   ")
+	room.RecordWriteAuthor("b.txt", "")
+	if cleared := room.takeGenerationAuthors(); len(cleared) != 0 {
+		t.Errorf("intake after clearing = %v, want no entries", cleared)
+	}
+
+	// Re-recording a path overwrites it: the intake is last-write-wins, which
+	// is what makes a mid-generation manual edit show up as the final author.
+	room.RecordWriteAuthor("data.js", "coder")
+	room.RecordWriteAuthor("data.js", "user")
+	if last := room.takeGenerationAuthors(); last["data.js"] != "user" {
+		t.Errorf("data.js author = %q, want the last write to win", last["data.js"])
+	}
+}
+
 // ---------- tests ----------
 
 const lineageChatID = "chat-lineage-1"
@@ -283,7 +348,7 @@ func TestGenerationRecordParentChain(t *testing.T) {
 	room := NewProjectRoom(lineageChatID, nil, nil, nil)
 	room.SetD1Client(d1Client)
 	room.genKV = kv
-	room.UpsertFile("index.html", "<h1>v1</h1>")
+	room.UpsertFile("index.html", "<h1>v1</h1>", "")
 
 	ctx := context.Background()
 
@@ -381,9 +446,9 @@ func TestGenerationRecordDiffOps(t *testing.T) {
 	room := NewProjectRoom("chat-diff", nil, nil, nil)
 	room.SetD1Client(d1Client)
 	room.genKV = kv
-	room.UpsertFile("a.txt", "one")
-	room.UpsertFile("b.txt", "two")
-	room.UpsertFile("keep.txt", "same")
+	room.UpsertFile("a.txt", "one", "")
+	room.UpsertFile("b.txt", "two", "")
+	room.UpsertFile("keep.txt", "same", "")
 
 	ctx := context.Background()
 	gen, err := room.StartGenerationRecord(ctx, "chat-diff")
@@ -392,9 +457,9 @@ func TestGenerationRecordDiffOps(t *testing.T) {
 	}
 
 	// The run writes: b.txt modified, a.txt deleted, c.txt created.
-	room.UpsertFile("b.txt", "TWO")
-	room.DeleteFile("a.txt")
-	room.UpsertFile("c.txt", "new")
+	room.UpsertFile("b.txt", "TWO", "")
+	room.DeleteFile("a.txt", "")
+	room.UpsertFile("c.txt", "new", "")
 	room.RecordWriteAuthor("c.txt", "gapfill")
 
 	if err := room.FinishGenerationRecord(ctx, gen, "request_changes"); err != nil {
@@ -466,7 +531,7 @@ func TestGenerationRecordDiffOps(t *testing.T) {
 // untouched.
 func TestGenerationRecordNilRedis(t *testing.T) {
 	room := NewProjectRoom("chat-nil", nil, nil, nil)
-	room.UpsertFile("index.html", "<h1>x</h1>")
+	room.UpsertFile("index.html", "<h1>x</h1>", "")
 	ctx := context.Background()
 
 	// chatID "" falls back to the room's own chat id.
@@ -478,7 +543,7 @@ func TestGenerationRecordNilRedis(t *testing.T) {
 		t.Fatal("StartGenerationRecord without Redis returned an empty id")
 	}
 
-	room.UpsertFile("app.js", "console.log(1)")
+	room.UpsertFile("app.js", "console.log(1)", "")
 	if err := room.FinishGenerationRecord(ctx, gen1, ""); err != nil {
 		t.Fatalf("FinishGenerationRecord without Redis: %v", err)
 	}
@@ -507,14 +572,14 @@ func TestGenerationRecordDiffsWithoutRedis(t *testing.T) {
 	d1, d1Client := newFakeD1(t)
 	room := NewProjectRoom("chat-no-redis", nil, nil, nil)
 	room.SetD1Client(d1Client)
-	room.UpsertFile("main.css", "a{}")
+	room.UpsertFile("main.css", "a{}", "")
 
 	ctx := context.Background()
 	gen, err := room.StartGenerationRecord(ctx, "chat-no-redis")
 	if err != nil {
 		t.Fatalf("StartGenerationRecord: %v", err)
 	}
-	room.UpsertFile("main.css", "a{color:red}")
+	room.UpsertFile("main.css", "a{color:red}", "")
 
 	if err := room.FinishGenerationRecord(ctx, gen, "done"); err != nil {
 		t.Fatalf("FinishGenerationRecord: %v", err)
@@ -537,7 +602,7 @@ func TestGenerationRecordAdvisoryErrors(t *testing.T) {
 	kv := newFakeGenerationKV()
 	room := NewProjectRoom("chat-advisory", nil, nil, nil)
 	room.genKV = kv
-	room.UpsertFile("index.html", "<h1>x</h1>")
+	room.UpsertFile("index.html", "<h1>x</h1>", "")
 	ctx := context.Background()
 
 	// Snapshot store present, D1 absent: the baseline is still written and the
@@ -581,20 +646,20 @@ func TestFinishGenerationRecordRestoresSnapshotFromRedis(t *testing.T) {
 	starter := NewProjectRoom(chatID, nil, nil, nil)
 	starter.SetD1Client(d1Client)
 	starter.genKV = kv
-	starter.UpsertFile("a.txt", "one")
+	starter.UpsertFile("a.txt", "one", "")
 
 	ctx := context.Background()
 	gen, err := starter.StartGenerationRecord(ctx, chatID)
 	if err != nil {
 		t.Fatalf("StartGenerationRecord: %v", err)
 	}
-	starter.UpsertFile("a.txt", "one more")
+	starter.UpsertFile("a.txt", "one more", "")
 
 	// The finisher never saw the start: its only baseline is Redis.
 	finisher := NewProjectRoom(chatID, nil, nil, nil)
 	finisher.SetD1Client(d1Client)
 	finisher.genKV = kv
-	finisher.UpsertFile("a.txt", "one more")
+	finisher.UpsertFile("a.txt", "one more", "")
 
 	if err := finisher.FinishGenerationRecord(ctx, gen, "done"); err != nil {
 		t.Fatalf("FinishGenerationRecord: %v", err)
