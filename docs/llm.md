@@ -325,6 +325,14 @@ available.
 > least-privilege boundary, path selection, execution trace, WS contract,
 > lineage, failure modes and known gaps.
 
+> **Eino version:** the ADK API surface described here is pinned by
+> `github.com/cloudwego/eino v0.9.21` (`backend/go.mod`). The coordinator is built
+> on the `adk/prebuilt/deep` DeepAgent prebuilt **deliberately**: the module source
+> marks the neighbouring `adk/prebuilt/supervisor`, the workflow agents and
+> deterministic agent transfer as *NOT RECOMMENDED*. See the "Why DeepAgent and
+> not supervisor / workflow agents" section of [`MULTI_AGENT.md`](MULTI_AGENT.md)
+> before changing the composition.
+
 Used only after a plan is approved, when the coordinator/coder/reviewer prompts are loaded and the
 model supports tool calling. The coordinator is an Eino DeepAgent: the coordinator/coder/reviewer
 ChatModelAgents each run on their own role model, the coder and reviewer are exposed to the
