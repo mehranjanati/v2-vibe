@@ -6,7 +6,7 @@
     "backend/pkg/api/debug_routes.go",
     "worker/light/lightApp.ts"
   ],
-  "last_verified": "2026-09-28",
+  "last_verified": "2026-10-04",
   "worker": {
     "live": [
       "GET /api/status",
@@ -17,6 +17,7 @@
       "POST /api/auth/login",
       "POST /api/auth/logout",
       "GET /api/auth/profile",
+      "GET /api/auth/session",
       "GET /api/auth/providers",
       "GET /api/auth/sessions",
       "GET /api/auth/api-keys",

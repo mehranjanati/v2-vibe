@@ -1,13 +1,13 @@
-# SPEC P1A — P1.0 تا P1.5 (lineage + Git داخلی + mirror + History)
+# SPEC P1A — P1.0 to P1.5 (lineage + internal Git + mirror + History)
 
-## P1.0 — تمیزکاری ریپو (پیش‌نیاز همه)
+## P1.0 — Repo cleanup (prerequisite for all)
 
 - هدف: تبدیل working tree آلودهٔ `main` به یک PR تمیز. **اندازه‌گیری ۲۰۲۶-۰۹-۲۸ روی `main`:** ۵۷۲ ورودی `git status --porcelain` = ۳۸۲ حذف + ۶۶ اصلاح + ۹۳ افزودن + ۳۱ untracked. (عدد قدیمی «۵۴۳» برآورد پیش از شمارش دقیق بود.)
 - مراحل (اجراشده ۲۰۲۶-۰۹-۲۸؛ جزئیات و شواهد در `docs/DEV_CHECKLIST.md` → P1.0.1…P1.0.3): `git fetch github origin` → برنچ **`chore/p1.0-repo-cleanup`** → سه کامیت منطقی: (۱) `feat(phase-1): commit multi-agent engine, workflow API and dual-plane wiring`، (۲) `chore: remove retired worker/agents, space and container surfaces`، (۳) `docs: track the spec set, CF limits, audit backlog and archive` → push → **PR #1** به `github/main` (`https://github.com/mehranjanati/v2-vibe/pull/1`) → مرج فقط پس از سبز شدن هر دو job (`ci` + `go-test`) → merge commit `22a5cb3`.
 - تست: P1.0.3: پس از مرج `cd backend && go vet ./... && go test ./...` + روت `bun run typecheck && bun run lint && bun run build` — هر ۵ سبز، وگرنه revert.
 - P1.0.4: در تمام کامیت‌ها `git add -A` روی ریشه نزن؛ `.dev.vars*`، `.prod.vars`، `.env*`، `.wrangler/`، `dist/` و `backend/dist/` باید کامیت‌نشده بمانند (در `.gitignore` هستند ✅).
 
-## P1.0.0 — رفع ابزار D1 (پیش‌نیاز P1.1، P2.1، P5.1) — ✅ انجام شد (۲۰۲۶-۰۹-۲۳)
+## P1.0.0 — D1 tooling fix (prerequisite for P1.1, P2.1, P5.1)
 
 - مشکل اولیه: `bun run db:migrate:local` fail می‌شد — ۱) wrangler به Node ≥۲۲ نیاز دارد و shell روی `v20.19.0` است؛ ۲) اسکریپت‌ها `--config` نداشتند در حالی که فقط `wrangler.v2.jsonc` وجود دارد؛ ۳) نام DB در اسکریپت `vibesdk-db` بود ولی نام واقعی `v2-vibe` است.
 - **رفع انجام‌شده** (فقط `package.json`):
@@ -27,7 +27,7 @@
   - روی محیط پشتیبانی‌شده: `bun run db:migrate:local` دو بار پشت‌سرهم بدون خطا (idempotent) + `SELECT name FROM sqlite_master WHERE type='table'`.
   - روی macOS قدیمی (این ماشین) معادل فقط-خواندنی: `bun --bun wrangler d1 migrations list v2-vibe --remote --config wrangler.v2.jsonc` → «No migrations to apply!» و `bun --bun wrangler d1 execute v2-vibe --remote --config wrangler.v2.jsonc --json -y --command "SELECT name FROM sqlite_master WHERE type='table'"`.
 
-## P1.1 — جدول‌های lineage در D1
+## P1.1 — Lineage tables in D1
 
 - هدف: سه جدول `generations` (`id/chat_id/parent/commit_sha/branch/fork/verdict/status/created_at`)، `generation_files` (`generation_id/path/op/before_hash/after_hash/before_size/after_size/author_agent`)، `generation_audits` (`generation_id/actor/action/detail_json/created_at`) + ایندکس `(chat_id, created_at)`.
   - نام‌گذاری جمع است تا با کنوانسیون فعلی `worker/database/schema.ts` یکسان بماند (`workflow_dags`، `workflow_instances`، `apps`، `audit_logs`). اگر ترجیح می‌دهی audit نسل‌ها در `audit_logs` موجود (`worker/database/schema.ts:475`) بنشیند، همان را در P1.2/P1.4 جایگزین کن و جدول سوم را نساز.
@@ -36,7 +36,7 @@
 - تست: migrate روی لوکال بدون خطا؛ `SELECT` از هر سه جدول؛ migrate دوباره idempotent باشد (دو بار اجرا = بدون خطا).
 - ✅ **وضعیت (۲۰۲۶-۰۹-۲۹) — P1.1.1 / P1.1.1b / P1.1.2 انجام شد:** جدول سوم **ساخته شد** (گزینهٔ reuse جدول `audit_logs` انتخاب نشد، چون P1.8 تصمیم gate را در `generation_audit` و با `actor=system` می‌خواهد). مایگریشن تولیدشده **`migrations/0011_jittery_the_liberteens.sql`** است (نام واقعی از خروجی `bun run db:generate`؛ شمارهٔ `0011` حدس زده نشد) + `migrations/meta/0011_snapshot.json` + ورودی `idx: 11` در `_journal.json`. جزئیات پیاده‌سازی و شواهد تست در `docs/DEV_CHECKLIST.md` → P1.1.1 … P1.1.3.
 
-## P1.2 — `backend/pkg/engine/generation.go`
+## P1.2 — Generation recorder
 
 - پیش‌نیاز مسیر D1 — تصمیم (الف) اعمال شد: توکن در `.env` (`CLOUDFLARE_API_TOKEN`) می‌نشیند و `docker-compose.yml` همان را به بک‌اند می‌رساند (اجرای مستقیم باینری هم از `godotenv` می‌خواند). بدون مقدار، `D1Client` با خطای صریح `d1: accountID, apiToken and databaseID are required` fail می‌کند (تست curl پذیرش در P1.0.0). پس acceptance اول P1.2 = پس از جای‌گذاری توکن، این خطا دیگر دیده نشود.
 - هدف: رکورد lineage بدون شکستن generation (best-effort: خطای lineage هرگز run را fail نکند).
@@ -45,7 +45,7 @@
 - تست (`generation_test.go`): (۱) دو record پشت‌هم → parent دومی = اولی؛ (۲) create/modify/delete درست تشخیص داده شود؛ (۳) Redis=nil → هر دو تابع بدون خطا و generation زنده.
 - ✅ **وضعیت (۲۰۲۶-۰۹-۲۹) — P1.2 انجام شد:** `backend/pkg/engine/generation.go` (رکورد lineage: snapshot `vfs:snap:{genID}` با TTL ۷ روز + ردیف `running` با `parent` = آخرین `succeeded`؛ و در پایان diff سه‌عملیاتی + بستن ردیف + audit جداشده) و `backend/pkg/engine/generation_test.go` (هفت تست با fake Redis روی اینترفیس `generationKV` و D1 شبیه‌سازی‌شده با httptest + `cloudflare.D1Client.SetBaseURL`) اضافه شدند. خطای lineage همه‌جا advisory است (log می‌شود، run را fail نمی‌کند). جلوتر از ترتیب اسپک: intake انتساب نویسنده (`RecordWriteAuthor`) در همین قدم آماده شد تا P1.3.3 فقط وصل کند. جزئیات و شواهد تست: `docs/DEV_CHECKLIST.md` → P1.2.1 … P1.2.4.
 
-## P1.3 — قلاب اجرا + Git داخلی
+## P1.3 — Execution hooks + internal Git
 
 - ✅ **P1.3.0 — تصمیم ثبت‌شده (۲۰۲۶-۰۹-۲۹): D1-CAS.** تاریخچهٔ داخلی به‌صورت **object-store محتوا-محور روی همان D1 ای که lineage در آن است** ذخیره می‌شود و **bare repo روی دیسک ساخته نمی‌شود**. شرط «بدون تصمیم، P1.3.4 شروع نشود» برآورده شد.
   - **گزینه (a) volume ماندگار (`/data/git/{appId}.git`) — رد شد** (سه دلیل سنجیده‌شده، نه سلیقه):
@@ -75,7 +75,7 @@
 - P1.3.6: pre-commit: regex `(?i)(token|secret|api_key|password)\s*[:=]` → بلاک + خطا؛ فایل >۱MB → skip با warning + ردیف audit؛ `author` خالی → خطا.
 - تست (`gitrepo_test.go`): (۱) دو generation → دو SHA متفاوت با parent درست (`git log` برانچ)؛ (۲) ۱۰ write در یک generation → دقیقاً ۱ کامیت؛ (۳) محتوای secret → کامیت بلاک؛ (۴) فایل ۲MB → skip؛ (۵) revert → کامیت جدید، تاریخ قبلی سر جاش.
 
-## P1.4 — API تاریخچه + mirror
+## P1.4 — History API + mirror
 
 - مسیر Change Path (معماری **dual-plane** — مرجع: `docs/llm.md:5-28` (`#current-architecture`)): این اندپوینت‌ها به **Go control plane** تعلق دارند، چون generation و VFS همان‌جا تولید می‌شود.
   1. `src/api-types.ts` (مدل `Generation` + `commit_sha`/`branch`/`fork`)
@@ -88,7 +88,7 @@
 - اندپوینت‌ها: `GET /api/generations/:chatId` (لیست)؛ `GET /api/generations/:chatId/:genId/diff` (op+hash+size، نه محتوا)؛ `POST /api/generations/:chatId/:genId/rollback` (revert-commit + ردیف rollback)؛ P1.4.5 mirror با Git Data API (tree→commit→ref، یک کامیت اتمی، ذخیره `last_pushed_sha`)؛ P1.4.7 import (diff با HEAD → fast-forward یا fork).
 - تست: (۱) typecheck سبز؛ (۲) unit سرویس با D1 لوکال: لیست/diff/rollback؛ (۳) E2E P1.7.4: push → دقیقاً ۱ کامیت در ریپوی تست؛ PR → body شامل goal+verdict+فایل‌ها؛ (۴) round-trip: VFS→Git→VFS بایت‌به‌بایت یکسان؛ (۵) توکن نامعتبر → generation داخلی موفق + فلگ mirror-pending.
 
-## P1.5 — فرانت History
+## P1.5 — Frontend History
 
 - P1.5.1: تب History در چت: لیست generationها با badge (approve/request_changes/done/error) + `commit_sha` کوتاه + branch.
 - P1.5.2: نمای diff: هر فایل `path + op + before→after size + hash کوتاه`.

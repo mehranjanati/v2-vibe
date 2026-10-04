@@ -1,228 +1,433 @@
-# DEV CHECKLIST — V2 Vibe (Multi-Agent + Node Catalog + Git-Base)
+# DEV CHECKLIST — Canonical Ordered Implementation Backlog
 
-> مرجع زنده توسعه. تسک انجام‌شده: `- [ ]` → `- [x]`.
-> ترتیب اجرا: P0 → P1 (شامل P1-git، lineage و P1.10) → P5 (پیش‌نیاز موج ۱ فروش، بعد از P1-git و P1.10، قبل یا موازی P2) → P2 → P6 (ادیتور ورکفلو n8n-like) → P3 → P4.
-> مشخصات اجرایی + تست هر تسک: `docs/DEV_TASKS_SPEC.md` (ایندکس) ← `docs/DEV_SPEC_P1A.md` · `docs/DEV_SPEC_P1B.md` · `docs/DEV_SPEC_P2.md` · `docs/DEV_SPEC_P3P4.md` · `docs/DEV_SPEC_P5.md` · `docs/DEV_SPEC_P6.md`.
+> **Single canonical backlog.** Every task has an explicit ID and status.
+> Historical task IDs are preserved verbatim and mapped into the target P0–P6
+> phase model below — never renumbered. Strategy:
+> [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`DEV_STATUS.md`](DEV_STATUS.md). Task-spec quality contract:
+> [`DEV_TASKS_SPEC.md`](DEV_TASKS_SPEC.md).
+> Specs: [`DEV_SPEC_P1A.md`](DEV_SPEC_P1A.md) ·
+> [`DEV_SPEC_P1B.md`](DEV_SPEC_P1B.md) · [`DEV_SPEC_P2.md`](DEV_SPEC_P2.md) ·
+> [`DEV_SPEC_P3P4.md`](DEV_SPEC_P3P4.md) · [`DEV_SPEC_P5.md`](DEV_SPEC_P5.md) ·
+> [`DEV_SPEC_P6.md`](DEV_SPEC_P6.md).
+> Docs-maintenance history (not the product backlog):
+> [`DOCS_AUDIT_BACKLOG.md`](DOCS_AUDIT_BACKLOG.md) — all 16 tasks closed.
 >
-> **Backlog اصلاح مستندات:** `docs/DOCS_AUDIT_BACKLOG.md` (۱۶ تسک با اولویت P0–P3؛ ✅ همه انجام شد — وضعیت زنده و معیار پذیرش هر تسک همان‌جاست).
+> Status vocabulary: `planned` | `in_progress` | `implemented_unverified` |
+> `verified` | `blocked` | `obsolete`. Tick rule: only when the task's
+> tests/build are green (rule 1). Never mark planned work implemented because
+> the architecture "could support it".
 
+## Historical ID → Target Phase Map (normative)
 
-## P0 — تثبیت شده ✅
+Historical IDs keep their meaning only through this map. Read the map; never
+infer phase from a legacy prefix.
 
-- [x] P0.1 — تیم Multi-Agent (Coordinator/Coder/Reviewer با AgentAsTool)
+| Legacy ID(s) | Legacy meaning | Target phase | Notes |
+|---|---|---|---|
+| P0.1, P0.2 (+ sub-IDs) | Team skeleton; DeepAgent migration | **P1** Agent Primitive | The team is a canonical building block; the migration is done (`verified`). |
+| P0.3–P0.9 | Security/tenancy/identity foundation | **P0** Foundation | 1:1 — the target P0 exists because of these. |
+| P1.0 (+ P1.0.0–P1.0.5) | Repo cleanup + D1 tooling | **P0** Foundation | Hygiene that unblocks everything; mostly `verified`. |
+| P1.1 (tables/migration) | Generation lineage schema | **P1** Agent Primitive | Lineage is a primitive: `generations`, `generation_files`, `generation_audits`. |
+| P1.1.3 local migrate | Blocked migrate step | **P0** Foundation | Environment/tooling blocker, stays `blocked` here. |
+| P1.2 (recorder) | Generation lineage recorder | **P1** Agent Primitive | `verified`. |
+| P1.3.0 (D1-CAS decision) | Storage design decision | **P1** Agent Primitive | Decision record; implementation is P1.3.4–P1.3.6. |
+| P1.3.1/P1.3.2 (run hooks) | Lineage run hooks | **P1** Agent Primitive | `verified`. |
+| P1.3.3 (author threading) | Write attribution | **P1** Agent Primitive | `implemented_unverified`. |
+| P1.3.4–P1.3.6 (internal Git) | Versioned system state | **P5** Systems & Marketplace | Git is the system-versioning substrate. |
+| P1.4 (History API) | Lineage read API + mirror | **P5** Systems & Marketplace | System version/diff/rollback surface. |
+| P1.5 (frontend History) | Lineage UI | **P4** Workbench | Inspection UI for system state. |
+| P1.6 (reviewer diffs) | Relative review | **P2** Compiler | Diff-aware review feeds plan validation + repair. |
+| P1.7 (P1 validation) | Phase gate | **P1** Agent Primitive | Kept as the P1 exit gate. |
+| P1.8 (difficulty gate) | Team-vs-coder routing | **P2** Compiler | First slice of model/team routing. |
+| P1.9 (`vfs_claim`) | Write coordination | **P2** Compiler | Concurrency control for composed teams. |
+| P1.10 (identity pipeline) | Identified generation | **P4** Workbench | Artifact identity for the workbench/preview loop. |
+| P1.11 (maxTokens) | Token-budget fix | **P1** Agent Primitive | Budget plumbing the router will drive. |
+| P2.1–P2.6 (node catalog) | Capability packaging | **P1** Agent Primitive | Node packages = first registry content. |
+| P2.7 (isolation/security/quota) | Runtime policy | **P0** + **P3** | Ownership halves → P0.3–P0.7; execution halves → P3. |
+| P2.8 (E2E/exit path) | Validation + export | **P3** + **P5** | Bundle gate → P3; open export → P5. |
+| P3.1–P3.4 (suspense/RFT/circuit) | Output quality + repair | **P6** Factory | Repair-loop building blocks. |
+| P3.5 (postmortems) | Deferred research notes | **P6** Factory | Decision-note tasks, not code. |
+| P4.1/P4.2 (sandbox) | Execution environment | **P4** Workbench | Agent tooling environment. |
+| P5.1–P5.6 (App Runtime) | Per-app backend | **P5** Systems | Reframed as the first **reference system**, not a vertical. |
+| P6.1–P6.8 (workflow canvas) | Visual workflow work | **P4** + **P3** | Inspection view (P4) + triggers/observability (P3). |
+
+## Task template (every item below carries these fields)
+
+`id` · target `phase` · `title` · `status` · `goal` · `why` (platform
+reading) · `dependencies` · `affected files` (when known) · `implementation
+notes` · `acceptance criteria` · `verification` · `unblock condition` (if
+`blocked`). A developer must be able to pick a task and implement it without
+prior chat history.
+
+---
+
+## P0 — Foundation (target)
+
+Purpose: identity, tenancy, security, credentials, authorization, agent
+identity, quotas, isolation, audit. Everything multi-tenant depends on this
+phase; nothing in P2–P6 ships to other users' data without it.
+
+### P0.3 — Control-plane auth boundary
+
+- **id:** P0.3 · **phase:** P0 · **title:** Control-plane auth boundary · **status:** `planned`.
+- **Goal:** every mutating control-plane route enforces an explicit session/ownership check.
+- **Why:** Edge auth does not protect Go; without this, multi-tenancy is fiction.
+- **Dependencies:** P0.9 decision informs the mechanism; implementable with a provisional check first.
+- **Affected files:** `backend/pkg/api/routes.go`, `backend/pkg/engine/hub.go`.
+- **Implementation notes:** routes in `backend/pkg/api/routes.go:296`, `backend/pkg/api/routes.go:299`, `backend/pkg/api/routes.go:302`, `backend/pkg/api/routes.go:306`, `backend/pkg/api/routes.go:309`, `backend/pkg/api/routes.go:314`, `backend/pkg/api/routes.go:315` (`POST /api/agent/session`, `GET /api/agent/:id/connect`, `GET /api/projects/:id/files`, `POST /api/projects/:id/deploy`, `POST /api/projects/:id/github-export`, `POST /api/workflows/trigger`, `GET /api/workflows/:workflowId`).
+- **Acceptance criteria:** unauthenticated mutate → 401/403; authenticated cross-user access → 403/empty.
+- **Verification:** new Go tests per route + `go vet ./... && go test ./...`.
+
+### P0.4 — Resource ownership model
+
+- **id:** P0.4 · **phase:** P0 · **title:** Resource ownership model · **status:** `planned`.
+- **Goal:** rooms/VFS/deploys scoped by `user_id`, not bare chat/project id.
+- **Why:** rooms/VFS/deploys are keyed by chat/project id with no ownership — user B can address user A's project.
+- **Dependencies:** P0.3.
+- **Affected files:** `backend/pkg/engine/hub.go`, `backend/pkg/api/routes.go`, schema.
+- **Acceptance criteria:** ownership column + per-query scoping; user B cannot read/mutate user A project.
+- **Verification:** cross-user Go tests + `go vet ./... && go test ./...`.
+
+### P0.5 — WebSocket authorization
+
+- **id:** P0.5 · **phase:** P0 · **title:** WebSocket authorization · **status:** `planned`.
+- **Goal:** ticket or session gate on WS upgrade.
+- **Why:** `GET /ws/:id` (`backend/pkg/api/routes.go:318`) upgrades without any ticket/session check.
+- **Dependencies:** P0.3.
+- **Affected files:** `backend/pkg/api/routes.go`.
+- **Acceptance criteria:** no-ticket connect rejected.
+- **Verification:** WS auth tests + `go vet ./... && go test ./...`.
+
+### P0.6 — Credential/secret hardening
+
+- **id:** P0.6 · **phase:** P0 · **title:** Credential/secret hardening · **status:** `planned`.
+- **Goal:** no plaintext provider tokens in D1; encrypted storage or vault/reference model + revoke.
+- **Why:** Edge `storeGitHubToken`/`getGitHubToken` (`worker/light/lightApp.ts:564`, `worker/light/lightApp.ts:575`) persist `access_token` plaintext in D1 `github_tokens`.
+- **Dependencies:** none (prerequisite for P2.7/P6.4 credential vault — merge, don't duplicate).
+- **Affected files:** `worker/light/lightApp.ts`, `migrations/0008_github_tokens.sql`.
+- **Acceptance criteria:** D1 holds ciphertext/reference only; resolve + revoke work.
+- **Verification:** D1-content test (no plaintext) + `bun run typecheck && bun run build`.
+
+### P0.7 — Workflow authorization + tenant isolation
+
+- **id:** P0.7 · **phase:** P0 · **title:** Workflow authorization + tenant isolation · **status:** `planned`.
+- **Goal:** workflow resources explicitly scoped to user/tenant ownership.
+- **Why:** `workflow_dags.workflow_id` is chat/project id with no `user_id` (`worker/database/schema.ts:634`); `handleWorkflowTrigger`/`handleWorkflowGet` (`backend/pkg/api/workflows.go:42`, `backend/pkg/api/workflows.go:107`) skip ownership.
+- **Dependencies:** P0.3, P0.4.
+- **Affected files:** `backend/pkg/api/workflows.go`, `worker/database/schema.ts`, `worker/workflow/VibeWorkflow.ts`.
+- **Acceptance criteria:** user B trigger/get on user A workflow → 403 + audit. Gates multi-tenant workflow exposure.
+- **Verification:** cross-user workflow tests + `go vet ./... && go test ./...`.
+
+### P0.8 — Room lifecycle + quotas
+
+- **id:** P0.8 · **phase:** P0 · **title:** Room lifecycle + quotas · **status:** `planned`.
+- **Goal:** documented TTL/heartbeat/cap policy + enforcement for rooms.
+- **Why:** `EngineHub` (`backend/pkg/engine/hub.go:126`, `backend/pkg/engine/hub.go:203`, `backend/pkg/engine/hub.go:210`) never evicts; no idle TTL, no per-user cap.
+- **Dependencies:** none.
+- **Affected files:** `backend/pkg/engine/hub.go`, `backend/pkg/engine/room.go`.
+- **Acceptance criteria:** idle room evicted; quota cap returns explicit error.
+- **Verification:** lifecycle/quota tests + `go vet ./... && go test ./...`.
+
+### P0.9 — Identity source-of-truth decision
+
+- **id:** P0.9 · **phase:** P0 · **title:** Identity source-of-truth decision · **status:** `planned`.
+- **Goal:** one recorded, documented identity/session architecture decision.
+- **Why:** split-brain — Edge KV sessions (`session:token:*` in `worker/light/lightApp.ts:482`) vs live Go PG handlers (`handleRegisterPG`/`handleLoginPG` in `backend/pkg/api/auth_pg.go:98`, `backend/pkg/api/auth_pg.go:158`) vs dead Go D1 handlers (`handleRegisterD1`/`handleLoginD1` in `backend/pkg/api/auth_d1.go:96`, `backend/pkg/api/auth_d1.go:152`, unregistered in `backend/pkg/api/routes.go`). No Go handler reads the Edge cookie.
+- **Dependencies:** none (decision first; implementation follows).
+- **Affected files:** decision record + `docs/llm.md`, `docs/setup.md`, `docs/POSTMAN_COLLECTION_README.md`.
+- **Acceptance criteria:** recorded decision (unify vs contract the split) and docs updated. Do not invent unification.
+- **Verification:** `bun run docs:check` green; one documented owner.
+- **Unblock condition:** P0.4/P0.5 mechanism choice waits on this; provisional checks may land first.
+
+### P0 history (verified, IDs preserved) — maps to target P0 (hygiene) and P1 (team primitive)
+
+- [x] P0.1 — Multi-agent team skeleton (Coordinator/Coder/Reviewer) — STATUS: `verified` → target P1.
   - [x] P0.1.1 — `backend/skills/00_coordinator.md` + `03_reviewer.md`
   - [x] P0.1.2 — `backend/pkg/engine/team.go`
-  - [x] P0.1.3 — رجیستری skills + env override
-  - [x] P0.1.4 — سیم‌کشی hub/room/cmd + fallback تک-coder
-  - [x] P0.1.5 — ایونت‌های WS (team_started/activity/completed)
-  - [x] P0.1.6 — فرانت handler + typecheck/lint سبز
-  - [x] P0.1.7 — تست‌ها سبز + `go vet/build` سبز
+  - [x] P0.1.3 — skills registry + env override
+  - [x] P0.1.4 — hub/room/cmd wiring + single-coder fallback
+  - [x] P0.1.5 — WS events (team_started/activity/completed)
+  - [x] P0.1.6 — frontend handler + typecheck/lint green
+  - [x] P0.1.7 — tests green + `go vet/build` green
 
-- [x] P0.2 — ارتقای تیم به **DeepAgent** + آپدیت Eino (۲۰۲۶-۱۰-۰۱)
-  - [x] P0.2.1 — `github.com/cloudwego/eino v0.9.19 → v0.9.21` (`backend/go.mod`/`go.sum`) + وابستگی indirect جدید `github.com/bmatcuk/doublestar/v4 v4.10.0` (از `adk/filesystem` که `adk/prebuilt/deep` وارد می‌کند)
-  - [x] P0.2.2 — `Engine.NewRoleModel` + `RoleModelConfig` (`backend/pkg/agent/eino_engine.go:115-176`): ساخت مدل جدا per-role روی همان endpoint با `MaxTokens`/`Temperature` نقش؛ کلید `RoleModelConfig` بودجهٔ خالی را نادیده می‌گیرد و روی مدل انجین fallback می‌کند
-  - [x] P0.2.3 — coordinator از `adk.NewChatModelAgent` + دو `adk.NewAgentTool` به `deep.New` مهاجرت کرد (`backend/pkg/engine/team.go:180-191`): `SubAgents: [coder, reviewer]`، `WithoutGeneralSubAgent: true`، `MaxIteration: 30` (قبلاً ۲۴). انتخاب DeepAgent عمدی است — `adk/prebuilt/supervisor`، workflow agents و `deterministic_transfer` در سورس نسخهٔ pinned صریحاً **NOT RECOMMENDED** هستند و همان عبارت DeepAgent را توصیه می‌کند.
-  - [x] P0.2.4 — `roleModel` (`backend/pkg/engine/team.go:280-308`) بودجهٔ per-role را از رجیستری به موتور می‌رساند (قبلاً هر سه نقش `r.eng.ChatModel()` مشترک را می‌گرفتند و `Temperature`/`MaxTokens` رجیستری روی مسیر تیم بی‌اثر بود)
-  - [x] P0.2.5 — `noFormatInstruction` (`backend/pkg/engine/team.go:310-334`) روی coder و reviewer: عبور از FString پیش‌فرض ADK. **ضروری است، نه تزئینی** — `write_todos` داخلی DeepAgent یک session value ست می‌کند و task tool با `withSharedParentSession()` آن را به sub-agentها می‌رساند، پس `defaultGenModelInput` روی braceهای `02_coder.md`/`01_planner.md` می‌شکست
-  - [x] P0.2.6 — `teamToolContract` (`backend/pkg/engine/team.go:350-366`) روی پرامپت coordinator: قرارداد مکانیکی ابزار `task` + `write_todos` + **override صریح بر ضد-parallelize کردن** (prompt داخلی DeepAgent توصیه به parallel می‌کند ولی stepها ترتیب وابستگی دارند)
-  - [x] P0.2.7 — `docs/MULTI_AGENT.md` هم‌راستا شد (بخش تازهٔ DeepAgent runtime contract + ۲۶ ارجاع خطی اصلاح‌شده + گپ #۶). قاعدهٔ ارجاع: فایل‌های کتابخانه **بدون** شمارهٔ خط نام برده می‌شوند چون `scripts/validate-spec-refs.mjs` فقط مسیرهای داخل repo را resolve می‌کند
-  - ⚠️ پوشش تست ندارد: `go build ./...` سبز و `bun run docs:check` سبز، ولی `pkg/engine` به‌دلیل P1.0.4/generation_test.go کامپایل تست نمی‌شود؛ E2E تیم (سناریوی approve) دستی است
+- [x] P0.2 — DeepAgent migration + Eino bump (2026-09-30) — STATUS: `verified` → target P1.
+  - [x] P0.2.1 — `github.com/cloudwego/eino v0.9.19 → v0.9.21` (`backend/go.mod`/`go.sum`) + new indirect dep `github.com/bmatcuk/doublestar/v4 v4.10.0` (from `adk/filesystem`, imported by `adk/prebuilt/deep`)
+  - [x] P0.2.2 — `Engine.NewRoleModel` + `RoleModelConfig` (`backend/pkg/agent/eino_engine.go:115-176`): builds a separate per-role model on the same endpoint with the role's `MaxTokens`/`Temperature`; the `RoleModelConfig` key ignores an empty budget and falls back to the engine model
+  - [x] P0.2.3 — coordinator migrated from `adk.NewChatModelAgent` + two `adk.NewAgentTool` to `deep.New` (`backend/pkg/engine/team.go:180-191`): `SubAgents: [coder, reviewer]`, `WithoutGeneralSubAgent: true`, `MaxIteration: 30` (was 24). DeepAgent is a deliberate choice — `adk/prebuilt/supervisor`, the workflow agents and `deterministic_transfer` are explicitly **NOT RECOMMENDED** in the pinned version's source, which recommends DeepAgent in the same breath.
+  - [x] P0.2.4 — `roleModel` (`backend/pkg/engine/team.go:280-308`) carries per-role budgets from the registry to the engine (previously all three roles shared `r.eng.ChatModel()` and the registry `Temperature`/`MaxTokens` were no-ops on the team path)
+  - [x] P0.2.5 — `noFormatInstruction` (`backend/pkg/engine/team.go:310-334`) on coder and reviewer: bypasses the ADK default FString pass. **Required, not cosmetic** — DeepAgent's built-in `write_todos` sets a session value and the task tool forwards it to sub-agents via `withSharedParentSession()`, so `defaultGenModelInput` would break on the braces in `02_coder.md`/`01_planner.md`
+  - [x] P0.2.6 — `teamToolContract` (`backend/pkg/engine/team.go:350-366`) on the coordinator prompt: the mechanical `task`-tool contract + `write_todos` + **an explicit anti-parallelize override** (DeepAgent's built-in prompt advises parallelizing, but steps have dependency order)
+  - [x] P0.2.7 — `docs/MULTI_AGENT.md` aligned (new DeepAgent runtime contract section + 26 fixed line refs + gap #6). Reference rule: library files are cited **without** line numbers because `scripts/validate-spec-refs.mjs` resolves only in-repo paths
+  - ⚠️ no test coverage: `go build ./...` green and `bun run docs:check` green, but `pkg/engine` does not compile its tests due to P1.0.4/generation_test.go; the team E2E (approve scenario) is manual
 
-## P1 — قدم A: Branch-per-Generation + Diff قابل Review
+## P1 — Agent Primitive (target): lineage, attribution, budgets, capability registry
 
-- [ ] P1.0 — تمیزکاری ریپوی پلتفرم (اندازه‌گیری ۲۰۲۶-۰۹-۲۸ روی `main`: ۵۷۲ ورودی `git status --porcelain` = ۳۸۲ حذف + ۶۶ اصلاح + ۹۳ افزودن + ۳۱ untracked)
-  - [x] P1.0.0 — رفع ابزار D1 ✅ (۲۰۲۶-۰۹-۲۳): اسکریپت‌ها به `bun --bun wrangler d1 migrations apply v2-vibe --{local,remote} --config wrangler.v2.jsonc` اصلاح شد؛ `db:generate` بدون drift؛ D1 تولید هر ۱۱ مایگریشن + ۲۹ جدول دارد. ⚠️ مسیر `--local` روی macOS <۱۳.۵ اجرا نمی‌شود (workerd) → در CI/DevContainer اجرا شود. جزئیات: `docs/DEV_SPEC_P1A.md`
-  - [x] P1.0.1 — ✅ (۲۰۲۶-۰۹-۲۸) روی برنچ `chore/p1.0-repo-cleanup` در ۳ کامیت: (۱) `feat(phase-1): commit multi-agent engine, workflow API and dual-plane wiring`، (۲) `chore: remove retired worker/agents, space and container surfaces` = ۳۷۲ حذف خالص (worker/agents ۱۴۵ + worker/services ۷۳ + worker/api ۵۸ + worker/utils ۲۵ + worker/database ۱۲ + worker/middleware ۴ + worker/logger ۳ + worker/config ۲ + worker/types ۱ + worker/observability ۱ + `worker/app.ts` + `space/` ۳۴ + `container/` ۱۱ + `SandboxDockerfile` + `scripts/deploy.ts`) به‌علاوه‌ٔ ۱۰ ماژول تایپ که با rename به `worker/types/` رفتند، (۳) `docs: track the spec set, CF limits, audit backlog and archive` = کل `docs/**`
-  - [x] P1.0.1b — ✅ (۲۰۲۶-۰۹-۲۸) `scripts/validate-spec-refs.mjs` + `scripts/validate-postman.mjs` + `scripts/postman-route-contract.json` + `scripts/run-tests.mjs` در کامیت اول همان PR کامیت شدند و `docs/DOCS_AUDIT_BACKLOG.md` + `docs/archive/**` در کامیت مستندات آمدند (کلون/CI تازه `docs:check` و `test` را دارد)
-  - [x] P1.0.2 — ✅ (۲۰۲۶-۰۹-۲۸) PR #1 به `github/main` (https://github.com/mehranjanati/v2-vibe/pull/1) پس از سبز شدن هر دو job (`ci` + `go-test`) با مرج تمیز شد — merge commit `22a5cb3`
-  - [x] P1.0.3 — ✅ (۲۰۲۶-۰۹-۲۸) CI روی `main` پس از مرج سبز شد (jobهای `ci` و `go-test` روی `22a5cb3`)؛ تأیید CI + بیلد سبز پس از مرج (`go vet ./... && go test ./...` + `typecheck/lint/build`) — یادداشت: jobهای گیت `lint`/`typecheck`/`test-build`/`go-test` از T15 وجود دارند (در `ci.yml` و در هر دو ورک‌فلوی دیپلوی که `deploy` به آن‌ها وابسته است)؛ (`docs/DOCS_AUDIT_BACKLOG.md` ← T15) + گیت‌های لوکال ۲۰۲۶-۰۹-۲۸: `typecheck`/`lint` (۰ error، ۳ warning)/`build`/`go vet ./...`+`go test ./...`/`docs:check` سبز؛ `bun run test` روی macOS ۱۲.۷.۶ اجرا نمی‌شود (workerd ≥ ۱۳.۵) ⇒ فقط در CI تأیید شود
-  - [ ] P1.0.4 — هیچ‌وقت `.dev.vars*`/`.prod.vars`/`.env*`/`.wrangler/`/`dist/` را کامیت نکن
-  - [x] P1.0.5 — `CLOUDFLARE_API_TOKEN` ✅ (۲۰۲۶-۰۹-۲۳): با `bun run d1:token` (اسکریپت جدید `scripts/sync-d1-token.ts`) توکن OAuth تازه از wrangler خوانده، با `SELECT 1` روی D1 اعتبارسنجی و در `.env` ریشه نوشته می‌شود؛ سپس کانتینر `vibesdk-backend` بازسازی شد و env آن تأیید شد (`len=93`) — قبلاً `len=0` بود. همچنین `backend/.env`/`.env.example` از placeholderها پاک شد و `backend/cmd/main.go` حالا `.env` ریشه را هم می‌خواند. برای توکن ماندگار: یک بار Custom token با `Account → D1 → Edit` بساز و دستی جای OAuth بگذار.
+Purpose: the canonical building blocks agentic systems compose from —
+AgentDefinition, ModelDefinition, ToolDefinition, SkillDefinition,
+MemoryDefinition, PolicyDefinition, capability registry, versioned manifests.
+Platform reading: today's lineage/author/budget/catalog work *is* primitive
+construction; P1.7 gates the phase.
 
-- [ ] P1.1 — D1: جدول‌های lineage (+ ستون Git)
-  - [x] P1.1.1 — ✅ (۲۰۲۶-۰۹-۲۹) سه جدول `generations`/`generation_files`/`generation_audits` در `worker/database/schema.ts` (نام جمع طبق کنوانسیون فایل؛ `generation_files` کلید طبیعی `(generation_id, path)`؛ ایندکس `(chat_id, created_at)` + روی `parent`/`status`/`action`؛ `parent` self-FK با `ON DELETE set null`؛ FK نسل با `cascade`) + تایپ‌های `Generation*` در انتهای فایل — بخش جدید **بعد از آخرین جدول** اضافه شد تا شمارهٔ خطوط قبلی جابه‌جا نشود (`worker/database/schema.ts:475` هنوز `audit_logs` است) ⇒ `docs:check` سبز
-  - [x] P1.1.1b — ✅ (۲۰۲۶-۰۹-۲۹) ستون‌های `commit_sha` + `branch` + `fork` (boolean، پیش‌فرض `false`) در همان جدول `generations` ⇒ در همان مایگریشن P1.1.2 آمدند (مایگریشن دوم لازم نشد، طبق «جدا نزن» اسپک)
-  - [x] P1.1.2 — ✅ (۲۰۲۶-۰۹-۲۹) نام واقعی از خروجی `bun run db:generate`: **`migrations/0011_jittery_the_liberteens.sql`** (+ `migrations/meta/0011_snapshot.json` + ورودی `idx: 11` در `_journal.json`)؛ SQL فقط `CREATE TABLE`×۳ + `CREATE INDEX`×۶ و هیچ `DROP`/`ALTER` ندارد (بدون drift)؛ اجرای دوبارهٔ `db:generate` = «No schema changes»
-  - [ ] P1.1.3 — `bun run db:migrate:local` + تست سبز — ⚠️ روی این ماشین اجرانشدنی است (workerd: macOS 12.6 < 13.5 → `Unsupported macOS version`)، پس در CI/DevContainer اجرا شود. معادلِ تأییدشدهٔ امروز: هر ۱۲ مایگریشن به ترتیب `_journal.json` روی یک SQLite خالی اجرا شد ✅ + تست رفتاری constraintها (کلید ترکیبی = رد ردیف تکراری، FK = رد `generation_id` ناموجود، `cascade` = پاک شدن فایل/audit با حذف نسل، `set null` = خالی شدن `parent` فرزند) + بازبینی دستی SQL
-- [x] P1.2 — Go: `backend/pkg/engine/generation.go` — ✅ (۲۰۲۶-۰۹-۲۹)
-  - [x] P1.2.1 — ✅ `StartGenerationRecord(ctx, chatID)` (`backend/pkg/engine/generation.go:318`): snapshot کل VFS (hash+size+content در یک JSON) روی `vfs:snap:{genID}` + mirror درون‌حافظه‌ای (مسیر بدون Redis) + درج ردیف `running` در D1؛ `parent` = آخرین `succeeded` همین چت (`generationParentSQL`؛ tie-break با `rowid` چون `CURRENT_TIMESTAMP` دقت ثانیه دارد و دو نسل در یک ثانیه باید به ترتیب درج زنجیر شوند)
-  - [x] P1.2.2 — ✅ `FinishGenerationRecord(ctx, genID, verdict)` (`backend/pkg/engine/generation.go:396`): diff snapshot↔VFS فعلی (`create/modify/delete`، مرتب بر اساس path، فایل دست‌نخورده = بدون ردیف) → `INSERT OR REPLACE` در `generation_files` + بستن ردیف (`UPDATE generations`) + audit در goroutine جدا (`generation_finished` با actor=system و `file_written` به‌ازای هر فایل دارای author)؛ نگاشت verdict→status: `request_changes` = `succeeded` (فایل‌ها نشستند)، `error` = `failed`، خالی = `cancelled`؛ همهٔ خطاها advisory (log می‌شوند و run را fail نمی‌کنند)
-  - [x] P1.2.3 — ✅ هش sha256 با کتابخانهٔ استاندارد (`hashVFSFile`)؛ گارد nil-Redis (اینترفیس `generationKV` + `generationKVOrNil` + یک اسلات mirror در `backend/pkg/engine/room.go:105-120` که در نبود Redis هم diff را ممکن می‌کند؛ تک‌اسلات تا run لغوشده‌ای که هرگز `Finish` نمی‌گیرد، نسخهٔ VFS را لو ندهد)؛ TTL ۷ روز روی `vfs:snap:*` (`generationSnapshotTTL`, `backend/pkg/engine/generation.go:50`)
-  - [x] P1.2.4 — ✅ `backend/pkg/engine/generation_test.go`: ۷ تست — (۱) زنجیرهٔ parent با دو run پشت‌هم + TTL/محتوای snapshot، (۲) diff سه‌عملیاتی create/modify/delete + انتساب `author_agent`، (۳) nil-Redis/nil-D1 (هر دو تابع بی‌خطا و نسل زنده: VFS دست‌نخورده + run دوم)، (۴) diff بدون Redis ولی با D1 (مسیر mirror)، (۵) بازیابی snapshot از Redis توسط room دیگر (modify، نه create جعلی)، (۶) نگاشت verdict→status، (۷) خطاهای advisory (id خالی/نسل ناموجود). D1 با سرور REST in-memory (httptest + `cloudflare.D1Client.SetBaseURL` که همین حالا هم برای تست طراحی شده) و Redis با fake روی اینترفیس `generationKV` شبیه‌سازی شد. شواهد: `go vet ./...` تمیز + `go test ./...` سبز + `go test -race ./pkg/engine/ -run TestGeneration` سبز
-  - نکته: `commit_sha`/`branch` (P1.3.5) و `fork` (P1.3.3/P1.10.7) عمداً در این قدم نوشته نمی‌شوند؛ intake انتساب نویسنده (`RecordWriteAuthor`, `backend/pkg/engine/generation.go:264`) آماده است تا P1.3.3 فقط وصل کند
-- [ ] P1.3 — قلاب اجرا (+ Git داخلی)
-  - [x] P1.3.0 — ✅ (۲۰۲۶-۰۹-۲۹) **تصمیم: D1-CAS** (شرح کامل + دلیل رد دو گزینهٔ دیگر در `docs/DEV_SPEC_P1A.md` → P1.3.0): تاریخچهٔ داخلی به‌صورت object-store محتوا-محور در **همان D1** که lineage در آن است (`git_objects`: `sha`/`kind`/`content` فشرده + ردیف ref) و **بدون bare repo روی دیسک**؛ `go-git` می‌ماند تا SHAها واقعی باشند و API وعده‌داده‌شدهٔ P1.3.4 (`Init/Open/Commit/Log/Diff/Revert`) عوض نشود. **(a) volume رد شد:** کانتینر بک‌اند volume ندارد و روی FS ephemeral است (`docker-compose.yml:24`؛ تنها volume مال Redis: `docker-compose.yml:16-17`)، ایمیج `nonroot`/distroless است (`backend/Dockerfile:19`) و مسیر ثابت در لوکال dev روی macOS قابل ساخت نیست. **(b) R2-remote مسدود است نه نامناسب:** R2 روی این account فعال نیست (`wrangler.v2.jsonc:49-51`، اجبارشده با `scripts/validate-docs-invariants.mjs:120`) **و در Go صفر کد R2 وجود دارد** (سنجیده‌شده روی کل `backend/`: هیچ تطابق در `*.go`؛ تنها تطابق `\br2\b` یک شناسهٔ آیتم نقشهٔ راه است: `backend/docs/architecture-roadmap.json:100`) ⇒ بازنگری به رویداد «فعال شدن R2» موکول شد. مبنای عددی: سکشن تازهٔ **`docs/CF_LIMITS.md` §۸** (منبع `[S7]` = صفحهٔ رسمی D1 Limits؛ `Last updated 2026-04-21`، `Last verified 2026-09-29`) — سقف ردیف `2 MB`، طول دستور `100 KB`، پارامتر `bind` `100`، حجم دیتابیس `500 MB`(Free)/`10 GB`، Time Travel `۷/۳۰ روز`، مدت کوئری `30s`، تک‌رشته‌ای. شواهد: `bun run docs:check` سبز (۳ ولیدیتور، شامل invariantهای `CF_LIMITS` و ارجاع‌های خطی).
-  - [x] P1.3.1 — ✅ (۲۰۲۶-۰۹-۲۹) قلاب در `runTeam` (`team.go`): امضا به `(string, error)` رفت (`backend/pkg/engine/team.go:112`) و verdict واقعی reviewer (`approve`/`request_changes`، وگرنه `done`) را برمی‌گرداند؛ رکورد دوم باز نمی‌کند چون تو در تو داخل `runDualModelPipeline` است (یک generation = یک ردیف). شواهد: `go test -race ./pkg/engine/` سبز + `TestParseReviewVerdict` موجود و ۴ تست هوک در `backend/pkg/engine/generation_hook_test.go`؛ مسیر واقعی تیم end-to-end بدون engine پوشش داده نشده (سناریوی approve تیم E2E دستی می‌ماند)
-  - [x] P1.3.2 — ✅ (۲۰۲۶-۰۹-۲۹) قلاب در `runDualModelPipeline` (`dual_model.go`): شروع رکورد در ابتدای تابع (`backend/pkg/engine/dual_model.go:41`) + سه `Finish` صریح قبل از هر `finalizeGeneration` (`backend/pkg/engine/dual_model.go:158`/`backend/pkg/engine/dual_model.go:191`/`backend/pkg/engine/dual_model.go:231`) + تور ایمنی deferred برای مسیرهای مرگ زودهنگام (`backend/pkg/engine/dual_model.go:80-84`: خطا→`failed`، وگرنه `cancelled`). تست: ۴ تست در `backend/pkg/engine/generation_hook_test.go` (run کامل→`succeeded`/`done` + diff درست؛ پلن تهی→`failed`/`error`؛ reject→`cancelled`+NULL+audit؛ cancel→`cancelled`+NULL+audit) — شواهد: `go vet ./...` تمیز + `go test ./...` سبز + `go test -race ./pkg/engine/ -run 'TestRunDualModelPipeline|TestGeneration'` سبز
-  - [ ] P1.3.3 — `author_agent` در `notifyWriteTool`
-  - [ ] P1.3.4 — Git داخلی Go: `go-git` در `go.mod` + `backend/pkg/engine/gitrepo.go` (init/open/commit/log/diff/revert per-appId، بک‌اند = **D1-CAS طبق P1.3.0**: جدول `git_objects` + ref، **بدون bare repo روی دیسک**) + قیود `docs/CF_LIMITS.md` §۸
-  - [ ] P1.3.5 — قلاب Git در `finalizeGeneration` (کامیت batch یکتا روی `gen/{genId}`) + پارامتر `author` در `UpsertFile/DeleteFile` برای intake (ثبت، نه کامیت جدا — وگرنه انفجار کامیت روی چانک‌ها)
-  - [ ] P1.3.6 — pre-commit secret-scan (token|secret|api_key) + سقف حجم per-file (۱MB، skip لگسی) + `author` اجباری
-- [ ] P1.4 — API تاریخچه + diff + rollback (+ mirror به GitHub)
-  - [ ] P1.4.1 — تایپ‌ها `src/api-types.ts` (+ `commit_sha`/`branch` در مدل generation)
-  - [ ] P1.4.2 — متدها `src/lib/api-client.ts` (+ push/PR/import)
-  - [ ] P1.4.3 — هندلر Go: `backend/pkg/api/generations.go` + دسترسی D1 از `backend/pkg/cloudflare/d1.go` (نه `worker/database/services/` که وجود ندارد)
-  - [ ] P1.4.4 — ثبت روت در `backend/pkg/api/routes.go` (+ تایپ/متد در `src/api-types.ts` و `src/lib/api-client.ts`، از طریق `controlPlane.baseUrl`)
-  - [ ] P1.4.5 — mirror اتمی: جایگزینی `pushFiles` تکی با Git Data API (tree→commit→ref) — یک generation = یک کامیت اتمی؛ ذخیره `last_pushed_sha`
-  - [ ] P1.4.6 — بنر «Push / ساخت PR» با diff summary بعد از `team_completed` (base=main، head=gen/{id}، body خودکار)؛ اسکوپ توکن `repo` برای PR
-  - [ ] P1.4.7 — endpoint import (GitHub → VFS): diff با HEAD داخلی → fast-forward تمیز / fork + بنر تعارض؛ `author=import`
-- [ ] P1.5 — فرانت History (+ SHA و بنر پوش)
-  - [ ] P1.5.1 — تب History با verdict badge + نمایش `commit_sha`/branch
-  - [ ] P1.5.2 — نمای diff summary (op + size + hash)
-  - [ ] P1.5.3 — Rollback با confirm + refresh بعد از `team_completed` (revert-commit جدید، نه rewrite تاریخ)
-  - [ ] P1.5.4 — حالت mirror pending: قطع اینترنت/توکن → generation داخلی موفق + بنر «mirror pending»
-- [ ] P1.6 — اتصال reviewer به baseline + hub-awareness (Co-Coder)
-  - [ ] P1.6.1 — `03_reviewer.md` (diff نسبت به نسل قبلی)
-  - [ ] P1.6.2 — تزریق `changed_files` در `team.go`
-  - [ ] P1.6.3 — hub-awareness: شناسایی hub-fileها (پرریفرنس‌ترین فایل‌ها از روی plan/VFS) + اعلام blast-radius در task reviewer
-- [ ] P1.7 — اعتبارسنجی P1
-  - [ ] P1.7.1 — `go vet/test` سبز (شامل `gitrepo_test.go`: generation → SHA، rollback → revert-commit)
-  - [ ] P1.7.2 — `bun run typecheck/lint/build` سبز
-  - [ ] P1.7.3 — E2E: دو generation → دو SHA روی دو برانچ با parent درست → diff → rollback
-  - [ ] P1.7.4 — E2E پوش: یک کامیت اتمی در ریپوی کاربر + PR با body خودکار؛ round-trip (VFS → Git → VFS یکسان؟)
-- [ ] P1.8 — difficulty gate برای `canRunTeam` (DATS)
-  - [ ] P1.8.1 — classifier سبک: تعداد steps + چگالی وابستگی از روی VFS/plan (≤۲ فایل و بدون وابستگی → تک-coder، وگرنه تیم)
-  - [ ] P1.8.2 — تست gate (آسان→تک، سخت→تیم) + لاگ تصمیم در audit
-- [ ] P1.9 — ابزار `vfs_claim` (AgentRoom: claim/status/release)
-  - [ ] P1.9.1 — `claim`/`release`/`status` در `teamTools` (فقط سیگنال مالکیت، نه اشتراک history)
-  - [ ] P1.9.2 — coordinator: قبل از delegate به coder، claim بگیرد؛ بعد از اتمام release
-  - [ ] P1.9.3 — تست برخورد (دو claim همزمان روی یک path → دومی صف/خطا)
-- [ ] P1.10 — قرارداد «تولید شناسنامه‌دار» + خط لوله write دستی (۶ دروازه)
-  - [ ] P1.10.1 — قرارداد coder: `data-vibe-block/section/id/slots` در `02_coder.md` + ولیدیتور Go (Suspense ترمیم: id یکتا، block از plan)
-  - [ ] P1.10.2 — استخراج `vibe.meta.json` موقع finalize (لیست id/block/section/slots، بدون پارس HTML در فرانت)
-  - [ ] P1.10.3 — G0 intake: پارامتر `author` در `UpsertFile/DeleteFile` (با P1.3.5 یکی شود، جدا نزن)
-  - [ ] P1.10.4 — G1 syntax: pass جدید با acorn در `preview-normalize` (امروز فقط regex است) + htmlparser2/jsonc + گسترش `SanitizeJS` (status=broken + خط دقیق، ولی ذخیره کن؛ با P3.1 یکی شود، جدا نزن)
-  - [ ] P1.10.5 — G2 identity: `pkg/design/identity.go` + چک reviewer (نباشد → unmanaged، نه خطا)
-  - [ ] P1.10.6 — G3 wiring: missing-ref از `resolve()` موجود + بنر فرانت + micro-fix صفر-توکن
-  - [ ] P1.10.7 — G4 conflict: فلگ `fork=true` در lineage (با P1.1.1b یکی است) + بنر «مال من/مال ایجنت»
-  - [ ] P1.10.8 — G5 preview: banner قرمز/زرد/خاکستری + «برگرد به آخرین سالم» + «با AI درست کن»
-  - [ ] P1.10.9 — Monaco editable + Save صریح (readOnly برداشته شود، lazy بماند؛ نه autosave)
+### P1.0 — Platform repo cleanup + D1 tooling (IDs preserved; maps to target P0)
 
-- [ ] P1.11 — گپ **G-maxTokens**: بودجهٔ توکن روی مسیر موتور بی‌اثر است
-  - [ ] P1.11.1 — `Room.streamLLM` (`backend/pkg/engine/room.go:434-457`) پارامتر `maxTokens` را فقط به مسیر خام (`streamLLMRaw`) می‌دهد؛ وقتی `r.eng != nil` باشد `Engine.RunStepWith` صدا زده می‌شود که هیچ بودجه‌ای نمی‌گیرد. نتیجه: overrideهای per-role (`PLANNER_MAX_TOKENS`/`CODER_MAX_TOKENS`) و حلقهٔ بازیابی truncation (`maxTokens *= 2`، `backend/pkg/engine/room.go:1062`) روی مسیر زنده **no-op** هستند.
-  - [ ] P1.11.2 — فیکس: عبور `model.WithMaxTokens` با `adk.WithChatModelOptions` (مارت `backend/pkg/agent/eino_engine.go:201-285`). توجه: optionها per-agent هستند ولی `maxTokens` اینجا per-call است، پس `RunStepWith` باید یک پارامتر بودجه بگیرد تا افزایش پله‌ای حفظ شود.
-  - [ ] P1.11.3 — تست: mock `model.BaseModel` که budget را از options می‌خواند و تأیید می‌کند هر دو پاس (۱۲۲۸۸ و ۲۴۵۷۶) به مدل می‌رسند.
-  - نکته: مسیر تیم از این گپ اثر نمی‌گیرد چون بودجهٔ هر نقش داخل مدل خودش ساخته می‌شود (`Engine.NewRoleModel`). جزئیات: `docs/MULTI_AGENT.md` → Known gaps #6.
+- **id:** P1.0 · **phase:** P0 · **status:** `planned` overall (sub-items below carry their own states).
+- **Goal:** clean tree, working D1 tooling, no secret leaks into git.
+- **Why:** hygiene that unblocks everything; legacy order kept for traceability.
+- **Dependencies:** none.
+- **Acceptance criteria:** all sub-items `verified`; `docs:check` + full gates green.
+- **Verification:** `bun run docs:check && bun run typecheck && bun run lint && bun run build`; `cd backend && go vet ./... && go test ./...
+  - [x] P1.0.0 — D1 tooling fix ✅ (2026-09-23): scripts now use `bun --bun wrangler d1 migrations apply v2-vibe --{local,remote} --config wrangler.v2.jsonc`; `db:generate` no drift; production D1 has all 11 migrations + 29 tables. ⚠️ the `--local` path needs workerd (macOS < 13.5 fails) → run in CI/DevContainer. Details: `docs/DEV_SPEC_P1A.md`
+  - [x] P1.0.1 — ✅ (2026-09-28) on branch `chore/p1.0-repo-cleanup` in 3 commits: (1) `feat(phase-1): commit multi-agent engine, workflow API and dual-plane wiring`, (2) `chore: remove retired worker/agents, space and container surfaces` = 372 net deletions (worker/agents 145 + worker/services 73 + worker/api 58 + worker/utils 25 + worker/database 12 + worker/middleware 4 + worker/logger 3 + worker/config 2 + worker/types 1 + worker/observability 1 + `worker/app.ts` + `space/` 34 + `container/` 11 + `SandboxDockerfile` + `scripts/deploy.ts`) plus 10 type modules renamed into `worker/types/`, (3) `docs: track the spec set, CF limits, audit backlog and archive` = all of `docs/**`
+  - [x] P1.0.1b — ✅ (2026-09-28) `scripts/validate-spec-refs.mjs` + `scripts/validate-postman.mjs` + `scripts/postman-route-contract.json` + `scripts/run-tests.mjs` were committed in the first commit of the same PR, and `docs/DOCS_AUDIT_BACKLOG.md` + `docs/archive/**` in the docs commit (fresh clones/CI get `docs:check` and `test`)
+  - [x] P1.0.2 — ✅ (2026-09-28) PR #1 to `github/main` (https://github.com/mehranjanati/v2-vibe/pull/1) merged clean after both jobs (`ci` + `go-test`) went green — merge commit `22a5cb3`
+  - [x] P1.0.3 — ✅ (2026-09-28) CI on `main` green post-merge (`ci` + `go-test` jobs on `22a5cb3`); CI + build verified after merge (`go vet ./... && go test ./...` + `typecheck/lint/build`) — note: the gating jobs `lint`/`typecheck`/`test-build`/`go-test` from T15 exist (in `ci.yml` and in both deploy workflows whose `deploy` depends on them); (`docs/DOCS_AUDIT_BACKLOG.md` ← T15) + local gates 2026-09-28: `typecheck`/`lint` (0 errors, 3 warnings)/`build`/`go vet ./...`+`go test ./...`/`docs:check` green; `bun run test` cannot run on macOS 12.7.6 (workerd ≥ 13.5) ⇒ verify in CI only
+  - [ ] P1.0.4 — never commit `.dev.vars*`/`.prod.vars`/`.env*`/`.wrangler/`/`dist/`
+  - [x] P1.0.5 — `CLOUDFLARE_API_TOKEN` ✅ (2026-09-23): via `bun run d1:token` (new script `scripts/sync-d1-token.ts`) a fresh OAuth token is read from wrangler, validated with `SELECT 1` against D1, and written to root `.env`; then the `vibesdk-backend` container was rebuilt and its env verified (`len=93` — previously `len=0`). Also `backend/.env`/`.env.example` were cleaned of placeholders and `backend/cmd/main.go` now also reads root `.env`. For a durable token: create a Custom token with `Account → D1 → Edit` once and substitute it for OAuth manually.
 
-## P2 — قدم ۳: کاتالوگ «نود-به‌عنوان-پکیج»
+- [ ] P1.1 — Generation lineage schema (+ Git columns) — STATUS: `planned` overall → target P1 (Memory/Lineage). Spec: `docs/DEV_SPEC_P1A.md` P1.1. Goal: lineage tables + Git-ready columns live in D1.
+  - [x] P1.1.1 — ✅ (2026-09-29) three tables `generations`/`generation_files`/`generation_audits` in `worker/database/schema.ts` (plural names matching the file convention; `generation_files` natural key `(generation_id, path)`; indexes `(chat_id, created_at)` + on `parent`/`status`/`action`; `parent` self-FK with `ON DELETE set null`; child FKs with `cascade`) + `Generation*` types at file end — the new section was added **after the last table** so earlier line numbers stay put (`worker/database/schema.ts:475` is still `audit_logs`) ⇒ `docs:check` green
+  - [x] P1.1.1b — ✅ (2026-09-29) columns `commit_sha` + `branch` + `fork` (boolean, default `false`) on the same `generations` table ⇒ arrived in the same P1.1.2 migration (no second migration needed, per the spec's "don't split" rule)
+  - [x] P1.1.2 — ✅ (2026-09-29) actual name from `bun run db:generate`: **`migrations/0011_jittery_the_liberteens.sql`** (+ `migrations/meta/0011_snapshot.json` + `idx: 11` entry in `_journal.json`); SQL contains only `CREATE TABLE`×3 + `CREATE INDEX`×6, no `DROP`/`ALTER` (no drift); re-running `db:generate` = "No schema changes"
+  - [ ] P1.1.3 — `bun run db:migrate:local` + green tests — STATUS: `blocked` (machine-class only).
+### P1.2 — Generation lineage recorder — STATUS: `verified` (2026-09-29) → target P1 (Memory/Lineage). Spec: `docs/DEV_SPEC_P1A.md` P1.2. Goal: record open/finish + diff + audit for every generation.
+  - [x] P1.2.1 — ✅ `StartGenerationRecord(ctx, chatID)` (`backend/pkg/engine/generation.go:318`): full VFS snapshot (hash+size+content in one JSON) on `vfs:snap:{genID}` + in-memory mirror (no-Redis path) + insert of a `running` row in D1; `parent` = latest `succeeded` of the same chat (`generationParentSQL`; tie-break on `rowid` because `CURRENT_TIMESTAMP` has second precision and two generations in one second must chain in insertion order)
+  - [x] P1.2.2 — ✅ `FinishGenerationRecord(ctx, genID, verdict)` (`backend/pkg/engine/generation.go:396`): diff snapshot↔current VFS (`create/modify/delete`, sorted by path, untouched file = no row) → `INSERT OR REPLACE` into `generation_files` + closing the row (`UPDATE generations`) + audit in a separate goroutine (`generation_finished` with actor=system and one `file_written` per file carrying an author); verdict→status mapping: `request_changes` = `succeeded` (files landed), `error` = `failed`, empty = `cancelled`; all errors advisory (logged, never fail the run)
+  - [x] P1.2.3 — ✅ sha256 hash via the standard library (`hashVFSFile`); nil-Redis guard (interface `generationKV` + `generationKVOrNil` + one mirror slot in `backend/pkg/engine/room.go:105-120` enabling diff without Redis; single slot so a cancelled run that never gets `Finish` cannot leak a VFS version); 7-day TTL on `vfs:snap:*` (`generationSnapshotTTL`, `backend/pkg/engine/generation.go:50`)
+  - [x] P1.2.4 — ✅ `backend/pkg/engine/generation_test.go`: 7 tests — (1) parent chain over two runs + snapshot TTL/content, (2) three-op diff create/modify/delete + `author_agent` attribution, (3) nil-Redis/nil-D1 (both functions error-free, generation alive: VFS untouched + second run), (4) diff without Redis but with D1 (mirror path), (5) snapshot recovery from Redis by another room (modify, not fake create), (6) verdict→status mapping, (7) advisory errors (empty id/missing generation). D1 simulated with an in-memory REST server (httptest + `cloudflare.D1Client.SetBaseURL`, already designed for tests) and Redis with a fake over the `generationKV` interface. Evidence: `go vet ./...` clean + `go test ./...` green + `go test -race ./pkg/engine/ -run TestGeneration` green
+  - Note: `commit_sha`/`branch` (P1.3.5) and `fork` (P1.3.3/P1.10.7) are deliberately not written in this step; the author-intake (`RecordWriteAuthor`, `backend/pkg/engine/generation.go:264`) is ready for P1.3.3 to just wire up
+### P1.3 — Execution hooks + internal Git (IDs preserved; implementation maps to target P5)
 
-- [ ] P2.1 — قرارداد + ذخیره‌سازی
-  - [ ] P2.1.1 — manifest نود (`name@version` + `kind` + `paramsSchema` + `credentials`)
-  - [ ] P2.1.2 — جدول `node_packages` + `0012_node_packages.sql`
-  - [ ] P2.1.3 — کش KV (`nodepkg:{name}@{version}`)
-- [ ] P2.2 — Go: ولیدیشن رجیستری-آگاه
+- **id:** P1.3 · **status:** mixed (P1.3.1/P1.3.2 `verified`; P1.3.3 `implemented_unverified`; P1.3.4–P1.3.6 `planned`).
+- **Goal:** lineage hooks live; versioned system state in D1-CAS Git.
+- **Why (platform):** hooks = lineage primitive (P1); internal Git = system-versioning substrate (P5).
+- **Dependencies:** P0.3–P0.9 for multi-tenant exposure; P1.1/P1.2 done.
+- **Acceptance criteria:** per sub-item.
+- **Verification:** `cd backend && go vet ./... && go test ./...` incl. `gitrepo_test.go`.
+  - [x] P1.3.0 — ✅ (2026-09-29) **Decision: D1-CAS** (full rationale + rejection of the two alternatives in `docs/DEV_SPEC_P1A.md` → P1.3.0): internal history as a content-addressed object store in **the same D1** as lineage (`git_objects`: `sha`/`kind`/compressed `content` + a ref row), **no bare repo on disk**; `go-git` stays so SHAs remain real and the promised P1.3.4 API (`Init/Open/Commit/Log/Diff/Revert`) is unchanged. **(a) volume rejected:** the backend container has no volume and runs on ephemeral FS (`docker-compose.yml:24`; the only volume belongs to Redis: `docker-compose.yml:16-17`), the image is `nonroot`/distroless (`backend/Dockerfile:19`), and a stable path is impossible in local dev on macOS. **(b) R2-remote is blocked, not unsuitable:** R2 is not enabled on this account (`wrangler.v2.jsonc:49-51`, enforced by `scripts/validate-docs-invariants.mjs:120`) **and there is zero R2 code in Go** (measured across all of `backend/`: no match in `*.go`; the only `\\br2\\b` match is a roadmap item id: `backend/docs/architecture-roadmap.json:100`) ⇒ revisit deferred to the "R2 enabled" event. Numbers: new section **`docs/CF_LIMITS.md` §8** (source `[S7]` = official D1 Limits page; `Last updated 2026-04-21`, `Last verified 2026-09-29`) — row cap `2 MB`, statement length `100 KB`, `bind` params `100`, DB size `500 MB` (Free)/`10 GB`, Time Travel `7/30 days`, query duration `30s`, single-threaded. Evidence: `bun run docs:check` green (3 validators incl. `CF_LIMITS` invariants and line refs).
+  - [x] P1.3.1 — ✅ (2026-09-29) hook in `runTeam` (`team.go`): signature moved to `(string, error)` (`backend/pkg/engine/team.go:112`) and returns the reviewer's real verdict (`approve`/`request_changes`, else `done`); no second record opened because it nests inside `runDualModelPipeline` (one generation = one row). Evidence: `go test -race ./pkg/engine/` green + `TestParseReviewVerdict` present and 4 hook tests in `backend/pkg/engine/generation_hook_test.go`; the real team path end-to-end is not covered without an engine (team approve E2E stays manual)
+  - [x] P1.3.2 — ✅ (2026-09-29) hook in `runDualModelPipeline` (`dual_model.go`): record start at function top (`backend/pkg/engine/dual_model.go:41`) + three explicit `Finish` calls before each `finalizeGeneration` (`backend/pkg/engine/dual_model.go:158`/`backend/pkg/engine/dual_model.go:191`/`backend/pkg/engine/dual_model.go:231`) + deferred safety net for early-death paths (`backend/pkg/engine/dual_model.go:80-84`: error→`failed`, else `cancelled`). Tests: 4 tests in `backend/pkg/engine/generation_hook_test.go` (full run→`succeeded`/`done` + correct diff; empty plan→`failed`/`error`; reject→`cancelled`+NULL+audit; cancel→`cancelled`+NULL+audit) — evidence: `go vet ./...` clean + `go test ./...` green + `go test -race ./pkg/engine/ -run 'TestRunDualModelPipeline|TestGeneration'` green
+  - [ ] P1.3.3 — `author_agent` threading — STATUS: `implemented_unverified` (code threaded, verification missing; do NOT tick until P1.3.3-verify lands). Implementation: explicit `author` on `UpsertFile`/`DeleteFile` (`backend/pkg/engine/room.go:628`, `backend/pkg/engine/room.go:648`) recorded via `RecordWriteAuthor` (`backend/pkg/engine/generation.go:264`); tool path carries `coder` through `roomVFSStore` (`backend/pkg/engine/plan_execute.go:47`); `notifyWriteTool` only broadcasts (`backend/pkg/engine/plan_execute.go:95`); gapfill passes `gapfill` (`backend/pkg/engine/gapfill.go:67`); dual-model passes `coder`/`gapfill` (`backend/pkg/engine/dual_model.go:284`, `backend/pkg/engine/dual_model.go:333`, `backend/pkg/engine/dual_model.go:385`); legacy fallback passes `legacy` (`backend/pkg/engine/room.go:1104`). Missing for `verified`: (a) end-to-end test that every write path lands its expected non-empty `author_agent` in `generation_files`, (b) `fork` flag on concurrent manual write, (c) `author` from editor/import channels.
+  - [ ] P1.3.4 — Go internal Git: `go-git` in `go.mod` + `backend/pkg/engine/gitrepo.go` (init/open/commit/log/diff/revert per-appId; backend = **D1-CAS per P1.3.0**: `git_objects` table + ref, **no bare repo on disk**) + `docs/CF_LIMITS.md` §8 constraints
+  - [ ] P1.3.5 — Git hook in `finalizeGeneration` (single batch commit on `gen/{genId}`) + `author` param on `UpsertFile/DeleteFile` for intake (record, not separate commits — else commit explosion on chunks)
+  - [ ] P1.3.6 — pre-commit secret-scan (token|secret|api_key) + per-file size cap (1MB, skip legacy) + mandatory `author`
+### P1.4 — History API + diff + rollback (+ GitHub mirror) — STATUS: `planned` → target P5 (system version/diff/rollback surface). Spec: `docs/DEV_SPEC_P1A.md` P1.4.
+  - [ ] P1.4.1 — types in `src/api-types.ts` (+ `commit_sha`/`branch` on the generation model)
+  - [ ] P1.4.2 — methods in `src/lib/api-client.ts` (+ push/PR/import)
+  - [ ] P1.4.3 — Go handler: `backend/pkg/api/generations.go` + D1 access via `backend/pkg/cloudflare/d1.go` (not `worker/database/services/`, which does not exist)
+  - [ ] P1.4.4 — route registration in `backend/pkg/api/routes.go` (+ types/methods in `src/api-types.ts` and `src/lib/api-client.ts`, via `controlPlane.baseUrl`)
+  - [ ] P1.4.5 — atomic mirror: replace one-by-one `pushFiles` with Git Data API (tree→commit→ref) — one generation = one atomic commit; store `last_pushed_sha`
+  - [ ] P1.4.6 — "Push / create PR" banner with diff summary after `team_completed` (base=main, head=gen/{id}, auto body); `repo` token scope for PRs
+  - [ ] P1.4.7 — import endpoint (GitHub → VFS): diff against internal HEAD → clean fast-forward / fork + conflict banner; `author=import`
+### P1.5 — Frontend History (+ SHA, push banner) — STATUS: `planned` → target P4 (inspection UI for system state). Spec: `docs/DEV_SPEC_P1A.md` P1.5.
+  - [ ] P1.5.1 — History tab with verdict badge + `commit_sha`/branch display
+  - [ ] P1.5.2 — diff summary view (op + size + hash)
+  - [ ] P1.5.3 — rollback with confirm + refresh after `team_completed` (new revert-commit, never history rewrite)
+  - [ ] P1.5.4 — mirror-pending state: offline/bad token → internal generation succeeds + "mirror pending" banner
+### P1.6 — Reviewer baseline + hub-awareness — STATUS: `planned` → target P2 (diff-aware review feeds plan validation + repair). Spec: `docs/DEV_SPEC_P1B.md` P1.6.
+  - [ ] P1.6.1 — `03_reviewer.md` (diff relative to previous generation)
+  - [ ] P1.6.2 — inject `changed_files` in `team.go`
+  - [ ] P1.6.3 — hub-awareness: identify hub-files (most-referenced files from plan/VFS) + report blast-radius in the reviewer task
+### P1.7 — P1 exit gate — STATUS: `planned` → target P1. Spec: checklist (no separate impl spec).
+  - [ ] P1.7.1 — `go vet/test` green (incl. `gitrepo_test.go`: generation → SHA, rollback → revert-commit)
+  - [ ] P1.7.2 — `bun run typecheck/lint/build` green
+  - [ ] P1.7.3 — E2E: two generations → two SHAs on two branches with correct parent → diff → rollback
+  - [ ] P1.7.4 — push E2E: one atomic commit in the user's repo + PR with auto body; round-trip (VFS → Git → VFS identical?)
+### P1.8 — Difficulty gate for `canRunTeam` — STATUS: `planned` → target P2 (first slice of team routing). Spec: `docs/DEV_SPEC_P1B.md` P1.8.
+  - [ ] P1.8.1 — lightweight classifier: step count + dependency density from VFS/plan (≤2 files and no dependencies → single coder, else team)
+  - [ ] P1.8.2 — gate tests (easy→single, hard→team) + decision logged to audit
+### P1.9 — `vfs_claim` tool (claim/status/release) — STATUS: `planned` → target P2 (write coordination for composed teams). Spec: `docs/DEV_SPEC_P1B.md` P1.9.
+  - [ ] P1.9.1 — `claim`/`release`/`status` in `teamTools` (ownership signal only, no history sharing)
+  - [ ] P1.9.2 — coordinator: claim plan paths before delegating to coder; release on completion
+  - [ ] P1.9.3 — collision test (two concurrent claims on one path → second queued/errored)
+### P1.10 — Identified generation + manual-write pipeline — STATUS: `planned` → target P4 (artifact identity for the workbench loop). Spec: `docs/DEV_SPEC_P1B.md` P1.10.
+  - [ ] P1.10.1 — coder contract: `data-vibe-block/section/id/slots` in `02_coder.md` + Go validator (Suspense repair: unique id, block guessed from plan)
+  - [ ] P1.10.2 — extract `vibe.meta.json` at finalize (list of id/block/section/slots, no HTML parsing in the frontend)
+  - [ ] P1.10.3 — G0 intake: `author` param on `UpsertFile/DeleteFile` (merge with P1.3.5, don't duplicate)
+  - [ ] P1.10.4 — G1 syntax: new pass with acorn in `preview-normalize` (today regex-only) + htmlparser2/jsonc + extend `SanitizeJS` (status=broken + precise line, still save; merge with P3.1, don't duplicate)
+  - [ ] P1.10.5 — G2 identity: `pkg/design/identity.go` + reviewer check (missing → unmanaged, not an error)
+  - [ ] P1.10.6 — G3 wiring: missing-ref from the existing `resolve()` + frontend banner + zero-token micro-fix
+  - [ ] P1.10.7 — G4 conflict: `fork=true` flag in lineage (same as P1.1.1b) + "mine / agent's" banner
+  - [ ] P1.10.8 — G5 preview: red/yellow/gray banner + "back to last healthy" + "fix with AI"
+  - [ ] P1.10.9 — Monaco editable + explicit Save (drop readOnly, keep lazy; no autosave)
+
+### P1.11 — G-maxTokens: token budget honored on engine path — STATUS: `planned` → target P1 (budget plumbing the router will drive).
+  - [ ] P1.11.1 — `Room.streamLLM` (`backend/pkg/engine/room.go:434-457`) passes `maxTokens` only to the raw path (`streamLLMRaw`); when `r.eng != nil` it calls `Engine.RunStepWith`, which takes no budget. Result: per-role overrides (`PLANNER_MAX_TOKENS`/`CODER_MAX_TOKENS`) and the truncation-retry loop (`maxTokens *= 2`, `backend/pkg/engine/room.go:1062`) are **no-ops** on the live engine path.
+  - [ ] P1.11.2 — fix: pass `model.WithMaxTokens` via `adk.WithChatModelOptions` (sweep `backend/pkg/agent/eino_engine.go:201-285`). Note: options are per-agent but `maxTokens` here is per-call, so `RunStepWith` must take a budget param to preserve step-doubling.
+  - [ ] P1.11.3 — test: mock `model.BaseModel` reading the budget from options, asserting both passes (12288 and 24576) reach the model.
+  - Note: the team path is unaffected (each role's budget is baked into its own model via `Engine.NewRoleModel`). Details: `docs/MULTI_AGENT.md` → Known gaps #6.
+
+## P2 — Agentic Compiler and Composition (target)
+
+Purpose: turn a user outcome into a validated executable agent system —
+outcome parsing, capability discovery, agent selection, model routing, tool
+selection, team composition, delegation, ExecutionPlan as universal system
+IR, system synthesis, plan validation, policy validation.
+Platform reading: P1.6/P1.8/P1.9 are the first compiler slices (review
+input, team routing, write coordination). Full outcome→system synthesis is
+new work filed here as it is specified — no placeholder IDs invented.
+Legacy node-catalog work below (P2.1–P2.6) is the first
+**capability-registry content** (target P1 primitive); its ownership halves
+live in P0.3–P0.7 and its execution halves in P3 — see the map.
+
+### P2.1 — Capability manifest contract + storage — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.1.
+  - [ ] P2.1.1 — node manifest (`name@version` + `kind` + `paramsSchema` + `credentials`)
+  - [ ] P2.1.2 — `node_packages` table + `0012_node_packages.sql`
+  - [ ] P2.1.3 — KV cache (`nodepkg:{name}@{version}`)
+### P2.2 — Registry-aware Go validation — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.2.
   - [ ] P2.2.1 — `backend/pkg/engine/nodepkg.go`
-  - [ ] P2.2.2 — `Validate(wf, registry)` در `workflowschema.go`
-  - [ ] P2.2.3 — تست‌ها سبز
-- [ ] P2.3 — TS: dispatch جدول‌محور
-  - [ ] P2.3.1 — جدول `kind → handler` در `VibeWorkflow.ts`
-  - [ ] P2.3.2 — resolve manifest → validate → اجرا
-  - [ ] P2.3.3 — `NonRetryableError` برای نود بد + تست
-- [ ] P2.4 — API کاتالوگ
+  - [ ] P2.2.2 — `Validate(wf, registry)` in `workflowschema.go`
+  - [ ] P2.2.3 — tests green
+### P2.3 — Table-driven TS dispatch — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.3.
+  - [ ] P2.3.1 — `kind → handler` table in `worker/workflow/VibeWorkflow.ts`
+  - [ ] P2.3.2 — resolve manifest → validate → execute
+  - [ ] P2.3.3 — `NonRetryableError` for bad nodes + test
+### P2.4 — Catalog API — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.4. Route facts stay pinned to `docs/POSTMAN_COLLECTION_README.md` §7.
   - [ ] P2.4.1 — `GET /api/nodes` + `GET /api/nodes/:name@:version`
   - [ ] P2.4.2 — `POST /api/workflows/validate`
-- [ ] P2.5 — اتصال تیم ایجنتیک
-  - [ ] P2.5.1 — `02_coder.md`: تولید `node.pkg@version`
-  - [ ] P2.5.2 — `03_reviewer.md`: چک کاتالوگ + credential ارجاعی
-- [ ] P2.6 — ۲۰ نود curated
+### P2.5 — Agentic-team wiring — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.5.
+  - [ ] P2.5.1 — `02_coder.md`: emit `node.pkg@version`
+  - [ ] P2.5.2 — `03_reviewer.md`: catalog check + reference credentials
+### P2.6 — 20 curated nodes — STATUS: `planned` → target P1 (registry content). Spec: `docs/DEV_SPEC_P2.md` P2.6.
   - [ ] P2.6.1 — notify: email/slack/telegram
   - [ ] P2.6.2 — http: request/webhook-trigger/webhook-call
   - [ ] P2.6.3 — data: db.query/kv/queue
   - [ ] P2.6.4 — time: cron/sleep + ai: prompt/classify/extract
   - [ ] P2.6.5 — logic: branch/loop/map + premium: stripe/sheets
-  - [ ] P2.6.6 — مثال درست/غلط در manifest هر نود (دو نمونه، برای coder)
-- [ ] P2.7 — ایزولاسیون + امنیت نود + کوتای per-app (user_id + ماسک لاگ + MCP/ETDI)
-  - [ ] P2.7.1 — اسکوپ `user_id` در کوئری‌های `workflow_*` + چک مالکیت در trigger
-  - [ ] P2.7.2 — ماسک credential در لاگ (فقط ارجاع، هرگز plaintext) + Dual-LLM برای دیتای نامطمئن
-  - [ ] P2.7.3 — پین ورژن + checksum manifest (ETDI) + مرز cross-server dataflow
-  - [ ] P2.7.4 — کوتای per-app (سقف generation/کامیت/ران‌تایم) + تصمیم secret-storage (توکن GitHub: KV یا D1 رمزنگاری‌شده + چرخه revoke) — با P6.4 یکی شود، جدا نزن
-- [ ] P2.8 — اعتبارسنجی + exit path (E2E نمونه + سایز باندل در بودجه + بیلد سبز + export باز)
-  - [ ] P2.8.1 — E2E: `webhook.trigger → ai.extract → slack.postMessage` روی CF
-  - [ ] P2.8.2 — سایز باندل ورکر: `wrangler deploy --outdir bundled/ --dry-run` + لاگ `Total Upload` (سقف پلتفرم ۶۴ MiB فشرده‌نشده؛ سقف ۳MiB در ۲۰۲۶-۰۹-۰۴ حذف شد — `docs/CF_LIMITS.md` §۴)
-  - [ ] P2.8.3 — export کامل DAG + تاریخچه به فرمت باز (exit path کاربر)
+  - [ ] P2.6.6 — correct/incorrect examples in each node's manifest (two samples, for the coder)
+### P2.7 — Isolation + node security + per-app quotas — STATUS: `planned`. Split by map: ownership halves → P0.3–P0.7 (do there, not here); execution halves (log masking, version pinning, quotas) → P3.
+  - [ ] P2.7.1 — `user_id` scoping on all `workflow_*` queries + ownership check on trigger
+  - [ ] P2.7.2 — credential masking in logs (reference only, never plaintext) + Dual-LLM for untrusted data
+  - [ ] P2.7.3 — version pinning + manifest checksum (ETDI) + cross-server dataflow boundary
+  - [ ] P2.7.4 — per-app quotas (generation/commit/runtime caps) + secret-storage decision (GitHub token: encrypted KV or D1-ciphertext + revoke cycle) — merge with P6.4, don't duplicate
+### P2.8 — Validation + exit path — STATUS: `planned`. Split by map: bundle gate → P3; open export → P5.
+  - [ ] P2.8.1 — E2E: `webhook.trigger → ai.extract → slack.postMessage` on CF
+  - [ ] P2.8.2 — worker bundle size: `wrangler deploy --outdir bundled/ --dry-run` + log `Total Upload` (platform cap is 64 MiB uncompressed; the 3MiB cap was removed 2026-09-04 — `docs/CF_LIMITS.md` §4)
+  - [ ] P2.8.3 — full DAG + history export to an open format (user exit path)
 
-## P3 — Suspense + AutoFix (از v0) + Circuit Breaker
+## P3 — Durable Agent Runtime (target)
 
-- [ ] P3.1 — Suspense صفر-توکن در `notifyWriteTool` (id/src/token/tag؛ با P1.10.4 یکی شود، جدا نزن)
-- [ ] P3.2 — prompt-cache-aware + RAG کاتالوگ (فقط سکشن مرتبط)
-- [ ] P3.3 — مثال درست/غلط در manifest + لاگ REQUEST_CHANGES برای RFT آینده (مثال‌ها با P2.6.6 یکی است — فقط لاگ اینجا)
-- [ ] P3.4 — Circuit Breaker قطعی (ZeroLabs)
-  - [ ] P3.4.1 — هوک pre-persist: گارد حذف فاجعه‌بار + سقف حجم + bailout بعد از ۳ تلاش ناموفق
-  - [ ] P3.4.2 — micro-pass با temperature 0 برای fix موضعی (نه rewrite کل فایل، نه patch یکپارچه)
-  - [ ] P3.4.3 — تصمیم reflect درونی (ReflexiCoder) vs reviewer بیرونی: هر دو — reflect برای خطای سطحی، reviewer برای verdict
-- [ ] P3.5 — کالبدشکافی‌های باز (Temporal durable execution / Dify Human-Input / Mastra runners)
+Purpose: run agentic systems reliably in production — durable execution,
+workflow engine, events, retries, timeouts, backoff, human approval,
+webhooks, schedules, idempotency, cancellation, execution state,
+observability, cost tracking, evaluations. Receives the P2.7-execution and
+P2.8-bundle halves plus the P6.5/P6.6/P6.8 runtime pieces (see P4/P6 notes).
+Legacy suspense/circuit work below (P3.1–P3.4) is the **repair-loop**
+building stock (target P6 Factory); P4 sandbox halves below belong to the
+P4 Workbench — see the map.
 
-## P4 — فاز ۲: Sandbox واقعی (خارج از light worker — دلیل: CPU ۱۰ms در پلن Free و نبود sandbox/container binding؛ سقف ۳MiB دیگر وجود ندارد، `docs/CF_LIMITS.md` §۴)
+### P3.1 — Zero-token suspense — STATUS: `planned` → target P6 (repair). Spec: `docs/DEV_SPEC_P3P4.md` P3.1 (merge with P1.10.4, don't duplicate).
+### P3.2 — Prompt-cache-aware + catalog RAG — STATUS: `planned` → target P6 (repair context). Spec: `docs/DEV_SPEC_P3P4.md` P3.2.
+### P3.3 — Correct/incorrect manifest examples + REQUEST_CHANGES log — STATUS: `planned` → target P6 (repair data). Spec: `docs/DEV_SPEC_P3P4.md` P3.3 (examples merge with P2.6.6 — log only here).
+### P3.4 — Deterministic circuit breaker — STATUS: `planned` → target P6 (repair guard). Spec: `docs/DEV_SPEC_P3P4.md` P3.4.
+  - [ ] P3.4.1 — pre-persist hook: catastrophic-delete guard + size cap + bailout after 3 failed retries
+  - [ ] P3.4.2 — micro-pass at temperature 0 for targeted fixes (no full-file rewrite, no off-by-one-prone bulk patch)
+  - [ ] P3.4.3 — internal reflect (ReflexiCoder) vs external reviewer: keep both — reflect for surface errors, reviewer for verdicts
+### P3.5 — Open postmortems (Temporal / Dify Human-Input / Mastra runners) — STATUS: `planned` → target P6 decision notes, not code. Spec: `docs/DEV_SPEC_P3P4.md` P3.5.
 
-- [ ] P4.1 — Sandbox per-chat + Bash در همان FS (در کنترل‌پلین/کانتینر جدا، نه ورکر)
-- [ ] P4.2 — Verifier واقعی + Dual-key
+## P4 — Agent Development Workbench (target)
 
-## P5 — App Runtime (بک‌اند per-app: جدول + API + نقش‌ها)
+Purpose: give agents the capabilities for real software and business work —
+code, browser, database, HTTP, MCP, shell, files, sandbox, tests, Git,
+deployment tooling — plus the inspection UIs (History P1.5, identity P1.10,
+workflow inspection P6.1–P6.3 reframed). Sandbox stays outside the light
+worker (10 ms CPU on Workers Free; no sandbox/container binding — and the
+3 MiB cap no longer exists, `docs/CF_LIMITS.md` §4).
 
-> چرا: بدون این، انبار/حسابداری نمایشی می‌ماند (localStorage). ERP واقعی =
-> تراکنش + نقش + audit. پیش‌نیاز موج ۱ فروش.
+### P4.1 — Per-chat sandbox + Bash in the same FS — STATUS: `planned` → target P4. Control-plane-side container, not the Worker. Spec: `docs/DEV_SPEC_P3P4.md` P4.
+### P4.2 — Real verifier + dual-key — STATUS: `planned` → target P4. Spec: `docs/DEV_SPEC_P3P4.md` P4.
 
-- [ ] P5.1 — مدل داده per-app (جدول‌های ثابت + `data_json`، نه DDL پویا)
-  - [ ] P5.1.1 — جدول `app_records` (`app_id`, `table_name`, `row_id`, `data_json`) + ایندکس‌ها — DDL به‌ازای هر اپ ممنوع (محدودیت D1)
-  - [ ] P5.1.2 — جدول‌های واقعی جدا برای موجودی (`stock`: `app_id`+`sku` یکتا — برای decrement اتمی) + template مرجع: `products`/`movements`/`invoices` (نه hardcode)
-  - [ ] P5.1.3 — مایگریشن + ایندکس (`app_id`, `sku`, `created_at`)
-- [ ] P5.2 — API تراکنشی
-  - [ ] P5.2.1 — CRUD تولیدشده per-table با اسکوپ `app_id + user_id`
-  - [ ] P5.2.2 — decrement اتمی موجودی (`UPDATE ... WHERE stock >= qty`، نه read-then-write)
-  - [ ] P5.2.3 — audit خودکار هر write (کی، چه ردیفی، قبل/بعد) در `generation_audit` یا جدول جدا
-- [ ] P5.3 — نقش‌ها و دسترسی
-  - [ ] P5.3.1 — نقش‌ها: `admin`/`storekeeper`/`accountant` + جدول `app_members`
-  - [ ] P5.3.2 — policy per-table per-role (انباردار: انبار RW، مالی RO و بالعکس)
-  - [ ] P5.3.3 — اتصال به auth موجود (JWT/session فعلی) + تست نفوذ پایه
-- [ ] P5.4 — اتصال فرانت و ایجنت
-  - [ ] P5.4.1 — داشبورد از API واقعی (جایگزین localStorage) + حالت آفلاین-خوانا
-  - [ ] P5.4.2 — coder: تولید فرم/گزارش روی API واقعی (نه mock data)
-  - [ ] P5.4.3 — reviewer: چک «دیتا از API می‌آید؟» به چک‌لیست `03_reviewer.md`
-- [ ] P5.5 — ابزار مهاجرت (import اکسل/CSV با گزارش سطر خراب، نه fail کل فایل)
-- [ ] P5.6 — اعتبارسنجی: سناریو فروش همزمان (دو ثبت همزمان → موجودی منفی نشود) + E2E موج ۱
+## P5 — Agent Systems and Marketplace (target)
 
-## P6 — ادیتور ورکفلو n8n-like (ساخت و تغییر فلو توسط کاربر)
+Purpose: turn agents, teams, workflows, and systems into reusable/versioned
+artifacts — reference systems, system templates, agent/team/workflow
+marketplace, system versioning, system diff, fork/remix, publishing,
+install/deploy, creator ecosystem.
+Platform reading: legacy "App Runtime" (P5.1–P5.6) is reframed as the first
+**reference system** (per-app backend proving the platform), not a vertical
+SaaS. Legacy internal-Git work (P1.3.4–P1.3.6) is the versioning substrate;
+P1.4 is the version/diff/rollback surface.
 
-> چرا: زنجیره تولید → نمایش → اجرا آماده است (`workflow.json` + `WorkflowVisualizer` + `VibeWorkflow`) ولی حلقه ویرایش باز است.
-> کاربر فلو را می‌بیند ولی نمی‌تواند دست بزند. ترتیب ساخت: L1 → L3 → L2.
-> پیش‌نیازها: موج ۱ بدون P2 شروع می‌شود (روی ۷ تایپ فعلی)؛ موج ۲+ به P2 نیاز دارد.
+> Original motive (preserved): without per-app backend, inventory/accounting
+> stays a localStorage demo. Real ERP = transactions + roles + audit.
 
-- [ ] P6.1 — موج ۱: Canvas زنده روی ۷ تایپ فعلی (بدون P2)
-  - [ ] P6.1.1 — `WorkflowVisualizer`: `showInteractive` روشن + `onNodeClick` → انتخاب نود + `onConnect` (چک cycle قبل از قبول) + delete (نود + edgeهای متصل + هشدار orphan)
-  - [ ] P6.1.2 — پالت ۷ تایپ (`trigger/http/db/ai/email/condition/sleep`) + drag نود جدید با position + params پیش‌فرض
-  - [ ] P6.1.3 — ذخیره به VFS → generation جدید (`author=user`) + lineage + کامیت Git داخلی (P1-git)
-- [ ] P6.2 — L1: پنل params (فرم هر نود)
-  - [ ] P6.2.1 — فرم داینامیک از روی `validateNodeParams` (بعداً: از manifest نود P2، نه hardcode)
-  - [ ] P6.2.2 — ولیدیشن فرانت با همان `validateWorkflowV2` موجود در `VibeWorkflow.ts` قبل از ذخیره
-- [ ] P6.3 — L3: ویرایش JSON با گارد (موازی P6.2)
-  - [ ] P6.3.1 — Monaco روی `workflow.json` + schema v2 (autocomplete/error زنده)
-  - [ ] P6.3.2 — ذخیره → خط لوله G1 (jsonc-parser) → invalid = draft + بنر خط دقیق (نه reject)
-- [ ] P6.4 — Credential vault جنریک (پیش‌نیاز موج ۲، با P2.7 هم‌زمان)
-  - [ ] P6.4.1 — جدول credentials (ارجاع، هرگز plaintext) + UI «اتصال جدید» + اسکوپ `repo` برای PR
-  - [ ] P6.4.2 — ماسک در لاگ + Dual-LLM برای دیتای نامطمئن (با P2.7.2 یکی شود، جدا نزن)
-- [ ] P6.5 — Test-run (اجرای آزمایشی بدون side-effect واقعی)
-  - [ ] P6.5.1 — جدول سطح side-effect در manifest هر نود: `safe` (واقعاً اجرا) / `mocked` (فقط لاگ «می‌فرستادم به X») / `blocked` (در test ممنوع)
-  - [ ] P6.5.2 — حالت `dryRun` در `POST /api/workflows/trigger` (validate + شبیه‌سازی، بدون commit بیرونی)
-  - [ ] P6.5.3 — UI: دکمه Test با ورودی نمونه + لیست اجراها + لاگ per-step (بک `workflow_instances/step_logs` آماده است)
-- [ ] P6.6 — Active toggle + trigger واقعی (موج ۴)
-  - [ ] P6.6.1 — webhook URL per-workflow (`/wh/:workflowId` روی ورکر) — اول webhook، بعد cron
-  - [ ] P6.6.2 — Cron Triggers ورکر + Workflows (دقت دقیقه‌ای + کوتای CF مستند شود؛ اعداد فقط از `docs/CF_LIMITS.md` §۱/§۲ — سقف طول cron expression در داک رسمی تأیید نشده و `⚠️ unverified` است، به آن عدد استناد نکن)
-  - [ ] P6.6.3 — toggle Active/Inactive + گارد W3: نودهای `email/stripe/http-POST` بنر تأیید جدا («ایمیل واقعی می‌رود — مطمئنی؟»)
-- [ ] P6.7 — اعتبارسنجی: سناریو «فلو را با موس عوض کن → Test → Active → webhook واقعی» + سایز باندل در بودجهٔ خودمان (`Total Upload` از `--dry-run`؛ سقف پلتفرم ۶۴ MiB فشرده‌نشده — `docs/CF_LIMITS.md` §۴)
-- [ ] P6.8 — Observability سرتاسری: trace یک generation از plan تا push (اتصال `debuglog.go` + `workflow_step_logs` + lineage + SHA در یک trace-id)
+### P5.1 — Per-app data model (fixed tables + `data_json`, no dynamic DDL) — STATUS: `planned` → target P5 reference system. Spec: `docs/DEV_SPEC_P5.md` P5.1.
+  - [ ] P5.1.1 — `app_records` table (`app_id`, `table_name`, `row_id`, `data_json`) + indexes — per-app DDL forbidden (D1 constraint)
+  - [ ] P5.1.2 — separate real table for stock (`stock`: unique `app_id`+`sku` — for atomic decrement) + reference template: `products`/`movements`/`invoices` (not hardcoded)
+  - [ ] P5.1.3 — migration + indexes (`app_id`, `sku`, `created_at`)
+### P5.2 — Transactional API — STATUS: `planned` → target P5 reference system. Spec: `docs/DEV_SPEC_P5.md` P5.2.
+  - [ ] P5.2.1 — generated per-table CRUD with mandatory `app_id + user_id` scope
+  - [ ] P5.2.2 — atomic stock decrement (`UPDATE ... WHERE stock >= qty`, never read-then-write)
+  - [ ] P5.2.3 — automatic audit of every write (who, which row, before/after) in `generation_audit` or a separate table
+### P5.3 — Roles and access — STATUS: `planned` → target P5 reference system. Depends on P0.3–P0.5 + P0.9 for auth (do not invent auth). Spec: `docs/DEV_SPEC_P5.md` P5.3.
+  - [ ] P5.3.1 — roles: `admin`/`storekeeper`/`accountant` + `app_members` table
+  - [ ] P5.3.2 — per-table per-role policy (storekeeper: stock RW, accounting RO, and vice versa)
+  - [ ] P5.3.3 — wire to existing auth (current JWT/session) + basic penetration test
+### P5.4 — Frontend + agent wiring — STATUS: `planned` → target P5 reference system. Spec: `docs/DEV_SPEC_P5.md` P5.4.
+  - [ ] P5.4.1 — dashboard from the real API (replaces localStorage) + readable-offline mode
+  - [ ] P5.4.2 — coder: generate forms/reports against the real API (no mock data)
+  - [ ] P5.4.3 — reviewer: "does data come from the API?" added to the `03_reviewer.md` checklist
+### P5.5 — Migration tool (Excel/CSV import with per-row error report, never whole-file fail) — STATUS: `planned` → target P5 reference system. Spec: `docs/DEV_SPEC_P5.md` P5.5.
+### P5.6 — Validation: concurrent-sale scenario (two simultaneous writes → stock never negative) + wave-1 E2E — STATUS: `planned` → target P5 reference system. Spec: `docs/DEV_SPEC_P5.md` P5.6.
 
-## قوانین
+## P6 — Autonomous Software Factory (target)
 
-1. تیک فقط وقتی تست/بیلد سبز شده.
-2. هر P کامل شد تاریخ بزن.
+Purpose: move from agent construction to continuous autonomous
+software/system lifecycle management — intent → system synthesis, build,
+test, review, deploy, operate, observe, evaluate, repair, replan, continuous
+improvement.
+Platform reading: the legacy P6 canvas items below are reframed — graph is
+an advanced inspection/debugging representation (P4 workbench surface), while
+test-run (P6.5), triggers (P6.6), and observability (P6.8) are durable-runtime
+pieces (P3). Repair-loop items (P3.1–P3.4) belong to this phase's
+evaluate/repair loop. New factory-loop tasks (synthesis→evaluate→replan)
+are filed here as specified — no invented IDs.
 
-| P | وضعیت | تاریخ |
-|---|-------|-------|
-| P0 | ✅ done | 2026-09-22 |
-| P1 | ⬜ todo | — |
-| P2 | ⬜ todo | — |
-| P3 | ⬜ todo | — |
-| P4 | ⬜ todo | — |
-| P5 | ⬜ todo | — |
-| P6 | ⬜ todo | — |
+> Original motive (preserved): generate → visualize → execute is ready
+> (`workflow.json` + `WorkflowVisualizer` + `VibeWorkflow`) but the edit loop
+> is open. Build order: L1 → L3 → L2. Prerequisites: wave 1 starts without
+> P2 (on the current 7 types); waves 2+ need P2.
+
+- [ ] P6.1 — Wave 1: live canvas on the current 7 types (no P2) — STATUS: `planned` → inspection surface owned by P4; runtime halves → P3.
+  - [ ] P6.1.1 — `WorkflowVisualizer`: state-driven component (`useNodesState`/`useEdgesState`) + `onNodeClick` select + `onConnect` with cycle check + delete (node + edges + orphan warning). Note: `showInteractive` on `<Controls>` only locks zoom controls — it does not enable editing (see `docs/DEV_SPEC_P6.md` P6.1); P6.1 = making the component stateful.
+  - [ ] P6.1.2 — 7-type palette (`trigger/http/db/ai/email/condition/sleep`) + drag new node with position + default params (complete renderers for all 7 first — see `docs/DEV_SPEC_P6.md` P6.1.1b; drop `function`)
+  - [ ] P6.1.3 — save to VFS → new generation (`author=user`) + lineage + internal Git commit (P1-git)
+- [ ] P6.2 — L1: params panel (per-node form) — STATUS: `planned` → P4 inspection surface.
+  - [ ] P6.2.1 — dynamic form from `validateNodeParams` (later: from P2 node manifest, not hardcode)
+  - [ ] P6.2.2 — frontend validation with the existing `validateWorkflowV2` in `worker/workflow/VibeWorkflow.ts` before save
+- [ ] P6.3 — L3: guarded JSON editing (parallel with P6.2) — STATUS: `planned` → P4 inspection surface.
+  - [ ] P6.3.1 — Monaco on `workflow.json` + schema v2 (live autocomplete/errors)
+  - [ ] P6.3.2 — save → G1 pipeline (jsonc-parser) → invalid = draft + precise error banner (not reject)
+- [ ] P6.4 — Generic credential vault (wave-2 prerequisite, with P2.7) — STATUS: `planned`. Depends on P0.6 (merge, don't duplicate).
+  - [ ] P6.4.1 — credentials table (reference, never plaintext) + "new connection" UI + `repo` scope for PRs
+  - [ ] P6.4.2 — log masking + Dual-LLM for untrusted data (merge with P2.7.2, don't duplicate)
+- [ ] P6.5 — Test-run (trial execution without real side effects) — STATUS: `planned` → durable-runtime piece owned by P3.
+  - [ ] P6.5.1 — side-effect level table in each node's manifest: `safe` (really execute) / `mocked` (log "would send to X" only) / `blocked` (error in test)
+  - [ ] P6.5.2 — `dryRun` mode on `POST /api/workflows/trigger` (validate + simulate, no external commit)
+  - [ ] P6.5.3 — UI: Test button with sample input + run list + per-step log (backend `workflow_instances/step_logs` already exists)
+- [ ] P6.6 — Active toggle + real triggers (wave 4) — STATUS: `planned` → durable-runtime piece owned by P3.
+  - [ ] P6.6.1 — per-workflow webhook URL (`/wh/:workflowId` on the Worker) — webhooks first, then cron
+  - [ ] P6.6.2 — Worker Cron Triggers + Workflows (minute precision + CF quotas documented; numbers only from `docs/CF_LIMITS.md` §1/§2 — cron-expression length cap is `⚠️ unverified` in official docs, never cite a number for it)
+  - [ ] P6.6.3 — Active/Inactive toggle + W3 guard: `email/stripe/http-POST` nodes get a separate confirm banner ("a real email goes out — sure?")
+- [ ] P6.7 — Validation: full scenario + bundle budget — STATUS: `planned` → P3 gate.
+- [ ] P6.8 — End-to-end observability (one trace-id plan → push) — STATUS: `planned` → durable-runtime piece owned by P3.
+
+## Rules
+
+1. Tick only when the task's tests/build are green (rule 1 in header).
+2. When a phase's exit gate passes, record the date next to the gate item —
+   never backfill completion dates, never use future dates.
+
+| Target phase | Status | Date |
+|---|---|---|
+| P0 Foundation | ⬜ open (P0.3–P0.9 `planned`) | — |
+| P1 Agent Primitive | ⬜ open (P1.7 exit gate `planned`) | — |
+| P2 Compiler | ⬜ open (no exit gate filed yet) | — |
+| P3 Durable Runtime | ⬜ open (no exit gate filed yet) | — |
+| P4 Workbench | ⬜ open (no exit gate filed yet) | — |
+| P5 Systems & Marketplace | ⬜ open (no exit gate filed yet) | — |
+| P6 Factory | ⬜ open (no exit gate filed yet) | — |
+
+Legacy per-phase ticks were removed: the old table mixed legacy phase names
+with the new model. Per-item status above is the source of truth.
 

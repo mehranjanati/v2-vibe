@@ -1,30 +1,30 @@
-# SPEC P1B — P1.6 تا P1.10 (reviewer + gate + claim + شناسنامه‌دار)
+# SPEC P1B — P1.6 to P1.10 (reviewer + gate + claim + identified generation)
 
-## P1.6 — reviewer + hub-awareness
+## P1.6 — Reviewer + hub-awareness
 
 - P1.6.1: به `backend/skills/03_reviewer.md` یک بخش: «diff نسل قبلی را هم ببین؛ نظرت باید نسبی باشد (این تغییر درست است؟) نه مطلق (این فایل تمیز است؟)».
 - P1.6.2: در `backend/pkg/engine/team.go` موقع ساخت task reviewer، لیست `changed_files` (path+op از `generation_files` جاری) ضمیمه شود — فقط path+op، نه محتوا (context باد نکند).
 - P1.6.3: hub-awareness: تابع `HubFiles(plan, vfs) []string` — فایل‌های با بیشترین inbound-ref (مثل `store.js`)؛ در task reviewer خط `HUB: {files} — تغییر این‌ها blast-radius بالا دارد`. ⚠️ نام `backend/pkg/engine/hub.go` از قبل برای `EngineHub` (رجیستری roomها) اشغال است — این تابع را در فایل جدا بگذار (`backend/pkg/engine/team_hub.go`) و با `EngineHub` قاطی نکن.
 - تست: unit `HubFiles` (plan سه‌فایله → hub درست)؛ E2E: تغییر hub → verdict reviewer به آن اشاره کند (دستی).
 
-## P1.7 — اعتبارسنجی P1 (در DEV_CHECKLIST.md)
+## P1.7 — P1 validation (in DEV_CHECKLIST.md)
 
 > **توجه:** مشخصات تفصیلی و چک‌لیست اعتبارسنجی P1 (تست‌های `go vet/test`، بیلد فرانت و سناریوهای E2E rollback/push) مستقیماً در `docs/DEV_CHECKLIST.md` (بخش `P1.7 — اعتبارسنجی P1`) مستند شده‌اند و اسپک مجزای پیاده‌سازی کد ندارند.
 
 
-## P1.8 — difficulty gate (`canRunTeam`)
+## P1.8 — Difficulty gate
 
 - هدف: تسک آسان (≤۲ فایل، بدون وابستگی بین steps) → تک-coder؛ وگرنه تیم کامل.
 - پیاده‌سازی در `backend/pkg/engine/team.go` (یا فایل جدا `backend/pkg/engine/gate.go`): `ShouldUseTeam(plan) bool` = `len(steps) > 2 || dependencyDensity > 0`. تصمیم در `generation_audit` لاگ شود (`actor=system, action=gate_decision`).
 - تست: (۱) plan تک‌فایل → false؛ (۲) plan چهارفایل با وابستگی → true؛ (۳) مرزی (۲ فایل با وابستگی) → true؛ (۴) لاگ audit ثبت شده.
 
-## P1.9 — ابزار `vfs_claim`
+## P1.9 — vfs_claim tool
 
 - هدف: سیگنال مالکیت path (نه اشتراک history). API در `teamTools`: `vfs_claim{path, holder}` → ok/denied؛ `vfs_release{path}`؛ `vfs_status{}` → لیست claimها.
 - P1.9.2: coordinator قبل از delegate به coder روی pathهای plan claim بگیرد؛ بعد از اتمام release؛ timeout خودکار ۱۰ دقیقه (claim یتیم نماند).
 - تست: (۱) دو claim همزمان یک path → دومی denied؛ (۲) release → claim بعدی ok؛ (۳) timeout → آزاد شدن خودکار. برای تست‌پذیری clock را تزریق‌پذیر کن (`now func() time.Time` در ساختار claim store) — در `pkg/engine` هیچ انتزاع زمانی تزریق‌پذیری وجود ندارد و همه‌جا `time.Now` مستقیم استفاده می‌شود، پس بدون این کار تست timeout فلیکی می‌شود.
 
-## P1.10 — تولید شناسنامه‌دار + خط لوله دستی
+## P1.10 — Identified generation + manual-write pipeline
 
 - P1.10.1: به `backend/skills/02_coder.md`: «هر section ریشه دقیقاً این ۴ attribute: `data-vibe-block` (از رجیستری `backend/pkg/design/blocks.go`)، `data-vibe-section`، `data-vibe-id` (یکتا، پیشوند `b-`)، `data-vibe-slots` (JSON معتبر)». ولیدیتور Go در finalize: id تکراری/گمشده → Suspense ترمیم (id بساز؛ block را از ترتیب plan حدس بزن)؛ block ناموجود → `unmanaged`.
 - P1.10.2: موقع finalize، پارس `index.html` → `vibe.meta.json` در VFS: `[{id, block, section, slots}]`. فرانت فقط این را می‌خواند.

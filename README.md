@@ -10,7 +10,16 @@
 
 ## What is VibeSDK?
 
-VibeSDK lets people build full-stack applications by working with an AI coding agent. Describe what you want, answer clarifying questions, and follow the agent as it plans, edits files, deploys previews, inspects errors, and iterates with you in the loop.
+VibeSDK is an **Outcome-First Agentic Software Platform**: tell it the outcome
+you want; it synthesizes the agentic system needed to achieve it, executes it
+durably, evaluates the result, and improves or repairs it. App generation is a
+first-class capability (and today's reference workload), not the platform
+identity. Canonical strategy: [`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md);
+current reality: [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
+
+Today this means: describe what you want, answer clarifying questions, and follow
+the agent team as it plans, edits files, deploys previews, inspects errors, and
+iterates with you in the loop.
 
 The platform runs as a **dual-plane** system:
 
@@ -19,7 +28,9 @@ The platform runs as a **dual-plane** system:
 
 The control plane is **required for chat**: the edge Worker answers JSON `503 NOT_AVAILABLE` for `/api/agent*`, `/api/projects/*` and `/ws/*`, and JSON `404` for unknown `/api/*` paths.
 
-> Where to read next: [`docs/llm.md`](docs/llm.md) is the architecture narrative,
+> Where to read next: [`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md) is the product strategy,
+> [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md) is the current-state dashboard,
+> [`docs/llm.md`](docs/llm.md) is the architecture narrative,
 > [`docs/architecture-diagrams.md`](docs/architecture-diagrams.md) holds the diagrams and Worker
 > bindings, and [`docs/DEV_CHECKLIST.md`](docs/DEV_CHECKLIST.md) tracks the development plan.
 

@@ -1,5 +1,9 @@
 ## Usage Limits UI Rules
 
+> Billing-surface direction: usage UI aligns to runs/systems as the platform
+> matures — see [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Business model
+> considerations). Current reality: [`DEV_STATUS.md`](DEV_STATUS.md).
+
 Defines when each limits-related UI element renders, based on `UsageSummary` from `GET /api/limits/usage`.
 
 ## Inputs

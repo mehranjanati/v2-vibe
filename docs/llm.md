@@ -1,6 +1,7 @@
 # VibeSDK Developer Guide
 
 > **Scope:** this guide documents the **current dual-plane architecture only** — the Go control plane in `backend/` plus the light Cloudflare Worker. The retired ThinkAgent/SpaceDO/Cloudflare Artifacts guide was moved verbatim to [`archive/llm-legacy.md`](archive/llm-legacy.md) (docs audit task T7, [`DOCS_AUDIT_BACKLOG.md`](DOCS_AUDIT_BACKLOG.md)).
+> Product strategy (what this architecture is *for*): [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) — Outcome-First Agentic Software Platform; **CURRENT** here vs **TARGET** there, never mixed. Current reality dashboard: [`DEV_STATUS.md`](DEV_STATUS.md).
 > Follow [`AGENTS.md`](../AGENTS.md) for commands, code style and change paths. Companion documents: [`architecture-diagrams.md`](architecture-diagrams.md) · [`CF_LIMITS.md`](CF_LIMITS.md) · [`POSTMAN_COLLECTION_README.md`](POSTMAN_COLLECTION_README.md) §7.
 ## Current architecture
 
@@ -434,7 +435,7 @@ to `localhost:6379`.
 | Plane | Runtime | Owns |
 |---|---|---|
 | Edge / auth | light Worker (`worker/light-index.ts`) | SPA assets, `/api/auth/*`, GitHub OAuth + GitHub App export, `/api/status`, `/api/capabilities`, `/api/limits/usage`, read-only app lists. Unknown `/api/*` → JSON 404; chat/project/WS paths → JSON 503 `NOT_AVAILABLE`. |
-| Control | Go Fiber (`backend/pkg/api/routes.go`) | `/health`, `POST /api/agent`, `POST /api/agent/session`, `GET /api/agent/:id/connect`, `/api/projects/:id/{files,deploy,github-export}`, `/api/workflows/*`, `GET /ws/:id`, `/ws-agent/:id` (stateless agent), `/api/apps*`. |
+| Control | Go Fiber (`backend/pkg/api/routes.go`, plus conditional `/ws-agent/:id` in `backend/cmd/main.go`) | `/health`, `POST /api/agent`, `POST /api/agent/session`, `GET /api/agent/:id/connect`, `/api/projects/:id/{files,deploy,github-export}`, `/api/workflows/*`, `GET /ws/:id`, `/api/apps*`. Auth boundary + ownership gap: these routes currently enforce no session/ownership check (Edge auth does not protect Go) — see `docs/DEV_CHECKLIST.md` P0.3–P0.5 and `docs/DEV_STATUS.md` Known risks. |
 | Execution (optional) | Cloudflare Edge (`VITE_EXECUTION_PLANE_URL`) | Workers / Workflows / Vectorize execution when configured; dependent features stay disabled when the URL is empty. |
 
 The frontend resolves plane base URLs in `src/config/api.ts` and sends HTTP through

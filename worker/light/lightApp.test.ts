@@ -29,8 +29,16 @@ function makeFakeAssets() {
 	};
 }
 
-/** Minimal fake env with required bindings for the light worker. */
-function makeFakeEnv() {
+/**
+ * Minimal fake env with required bindings for the light worker.
+ *
+ * `sessionUserId` seeds the `VibecoderStore` KV binding so a request carrying
+ * the `access_token` cookie resolves to that user id (the `session:token:<token>`
+ * contract used by `getUserId()`).
+ */
+function makeFakeEnv(options: { sessionUserId?: string } = {}) {
+	const store = new Map<string, string>();
+	if (options.sessionUserId) store.set('session:token:test-session-token', options.sessionUserId);
 	return {
 		ASSETS: makeFakeAssets(),
 		DB: {
@@ -48,6 +56,15 @@ function makeFakeEnv() {
 			put: async () => {},
 			delete: async () => {},
 		},
+		VibecoderStore: {
+			get: async (key: string) => store.get(key) ?? null,
+			put: async (key: string, value: string) => {
+				store.set(key, value);
+			},
+			delete: async (key: string) => {
+				store.delete(key);
+			},
+		},
 		R2: {
 			get: async () => null,
 			put: async () => null,
@@ -59,9 +76,13 @@ function makeFakeEnv() {
 }
 
 /** Helper to make a request to the Hono app. */
-async function makeRequest(path: string, init?: RequestInit) {
+async function makeRequest(
+	path: string,
+	init?: RequestInit,
+	envOptions?: { sessionUserId?: string },
+) {
 	const app = buildLightApp();
-	const env = makeFakeEnv();
+	const env = makeFakeEnv(envOptions);
 	const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
 	const url = `https://example.com${path}`;
 	const req = new Request(url, init);
@@ -137,6 +158,37 @@ describe('Light Worker — API route contract', () => {
 			const body = await res.json();
 			expect(body.success).toBe(true);
 			expect(body.data.apps).toEqual([]);
+		});
+	});
+
+	describe('GET /api/auth/session', () => {
+		it('returns JSON 401 when there is no session cookie', async () => {
+			const res = await makeRequest('/api/auth/session');
+			expect(res.status).toBe(401);
+			expect(res.headers.get('Content-Type')).toContain('application/json');
+			const body = await res.json();
+			expect(body.success).toBe(false);
+			expect(body.error).toBe('Not authenticated');
+		});
+
+		it('returns JSON 401 when the cookie token has no KV session', async () => {
+			const res = await makeRequest('/api/auth/session', {
+				headers: { Cookie: 'access_token=unknown-token' },
+			});
+			expect(res.status).toBe(401);
+			const body = await res.json();
+			expect(body.success).toBe(false);
+		});
+
+		it('returns { userId } for a valid session cookie', async () => {
+			const res = await makeRequest(
+				'/api/auth/session',
+				{ headers: { Cookie: 'access_token=test-session-token' } },
+				{ sessionUserId: 'user-abc' },
+			);
+			expect(res.status).toBe(200);
+			const body = await res.json();
+			expect(body).toEqual({ success: true, data: { userId: 'user-abc' } });
 		});
 	});
 

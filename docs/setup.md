@@ -1,5 +1,9 @@
 # VibeSDK Setup Guide
 
+> Strategy: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`DEV_STATUS.md`](DEV_STATUS.md). Ordered work:
+> [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md).
+
 Set up VibeSDK for local development and production deployment.
 
 **Make sure to read through the entire guide for important notes, and have all the required information ready before starting.**

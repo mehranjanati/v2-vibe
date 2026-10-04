@@ -384,6 +384,18 @@ export function buildLightApp(): Hono<LightAppEnv> {
 	app.get('/api/auth/api-keys', (c) => c.json(ok({ apiKeys: [] })));
 	app.get('/api/auth/identities', (c) => c.json(ok({ identities: [] })));
 
+	/**
+	 * GET /api/auth/session — resolve the session cookie to its user id.
+	 * Reuses getUserId() (the same `access_token` cookie → KV lookup the
+	 * GitHub export routes use) so the SPA can cheaply probe auth state
+	 * without the D1 user lookup that /api/auth/profile performs.
+	 */
+	app.get('/api/auth/session', async (c) => {
+		const userId = await getUserId(c);
+		if (!userId) return c.json(fail('Not authenticated', 401), 401);
+		return c.json(ok({ userId }));
+	});
+
 	// -------------------------------------------------------------------------
 	// GitHub OAuth (login)
 	// -------------------------------------------------------------------------

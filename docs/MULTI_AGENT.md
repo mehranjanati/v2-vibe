@@ -8,9 +8,11 @@
 >
 > - Authoritative narrative: [`llm.md`](llm.md)
 > - Architecture diagram: [`architecture-diagrams.md`](architecture-diagrams.md)
+> - Product strategy (why a DeepAgent team, not a graph editor): [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md)
+> - Current reality dashboard: [`DEV_STATUS.md`](DEV_STATUS.md)
 > - Workspace rules: [`../AGENTS.md`](../AGENTS.md)
 >
-> **Status:** `current` — last verified 2026-10-01 against `backend/pkg/engine/team.go`,
+> **Status:** `current` — last verified 2026-09-30 against `backend/pkg/engine/team.go`,
 > `backend/pkg/engine/dual_model.go`, `backend/pkg/agent/eino_engine.go`,
 > `backend/pkg/skills/registry.go`, `backend/pkg/models/websocket.go`,
 > `worker/api/websocketTypes.ts` and `src/routes/chat/utils/handle-websocket-message.ts`.
@@ -464,4 +466,4 @@ families — but NOT the team. Do not confuse them:
 
 ---
 
-_Last reviewed: 2026-10-01 against the files listed in the scope header (Eino v0.9.21, DeepAgent coordinator)._
+_Last reviewed: 2026-09-30 against the files listed in the scope header (Eino v0.9.21, DeepAgent coordinator)._

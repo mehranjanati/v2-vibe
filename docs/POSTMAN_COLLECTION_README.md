@@ -1,7 +1,12 @@
 # V2 Vibe API Postman Collection — Two-Plane Smoke Tests
 
-> Active collection: `docs/v1dev-api-collection.postman_collection.json` (v2.0.0, **12 requests in 2 plane folders**) + environment `docs/v1dev-environment.postman_environment.json`.
-> Sources of truth: `backend/pkg/api/routes.go` (Go control plane) and `worker/light/lightApp.ts` (light Worker). Last verified: **2026-09-28** (route manifest re-derived from the live registrations; the light Worker has **no** `/health` — it serves `/api/status`).
+> Route ownership lives here (§7) and is machine-checked by
+> `scripts/validate-postman.mjs`. Strategy:
+> [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`DEV_STATUS.md`](DEV_STATUS.md).
+
+> Active collection: `docs/v1dev-api-collection.postman_collection.json` (v2.0.0, **13 requests in 2 plane folders**) + environment `docs/v1dev-environment.postman_environment.json`.
+> Sources of truth: `backend/pkg/api/routes.go` (Go control plane) and `worker/light/lightApp.ts` (light Worker). Last verified: **2026-10-04** (route manifest re-derived from the live registrations; the light Worker has **no** `/health` — it serves `/api/status`).
 > Legacy artifact (29 requests, single `{{baseUrl}}`): archived at `docs/archive/v1dev-api-collection.legacy.postman_collection.json` + `docs/archive/v1dev-environment.legacy.postman_environment.json` — **historical only, do not use for smoke tests**.
 
 ## 1. Topology: two planes, no shared base URL
@@ -23,7 +28,7 @@ There is **no valid single shared base URL**. Worker and Control/Go are distinct
 
 | Folder | Plane | Requests |
 |---|---|---|
-| Worker Plane | `worker` | Get CSRF Token, Register User, Login with Email, Get User Profile, OAuth - GitHub (Browser Only), OAuth Helper - Get GitHub URL, Logout (7) |
+| Worker Plane | `worker` | Get CSRF Token, Register User, Login with Email, Get User Profile, Get Current Session, OAuth - GitHub (Browser Only), OAuth Helper - Get GitHub URL, Logout (8) |
 | Control Plane (Go) | `control` | Health Check (Control), Start Code Generation (NDJSON), Create Agent Session, Connect Agent, Get App Details (5) |
 
 Every active request carries an explicit plane marker as a structured description prefix (`plane: worker` or `plane: control`) — folder names alone are not the contract. The validator cross-checks the marker against the URL base variable (`{{workerUrl}}` vs `{{controlUrl}}`).
@@ -62,20 +67,21 @@ The collection test script implements this rule:
 
 ## 6. What was removed (and why)
 
-Active set shrank **29 → 12**. Removed from active (preserved in `docs/archive/`): `GET /api/health` (live is `/health`), `GET /api/agent/:id` + `/preview` (live is `/api/agent/:id/connect`), `.../ws` (live is `GET /ws/:id`), star/fork, `PUT /api/user/profile`, user analytics, `/api/stats`, all `/api/model-configs*`, all `/api/secrets*`, Google OAuth + its helpers (GitHub OAuth kept, Worker-only). None are live on either plane per the sources of truth above.
+Active set shrank **29 → 12** in the two-plane rewrite (T3/R5) and rose to **13** when `GET /api/auth/session` was added (2026-10-04). Removed from active (preserved in `docs/archive/`): `GET /api/health` (live is `/health`), `GET /api/agent/:id` + `/preview` (live is `/api/agent/:id/connect`), `.../ws` (live is `GET /ws/:id`), star/fork, `PUT /api/user/profile`, user analytics, `/api/stats`, all `/api/model-configs*`, all `/api/secrets*`, Google OAuth + its helpers (GitHub OAuth kept, Worker-only). None are live on either plane per the sources of truth above.
 
 Also out of scope (unchanged): `POST /api/ws-ticket` (referenced by `sdk/src/http.ts`, implemented nowhere) — not added, not worked around.
 
-## 7. Ownership table (verified 2026-09-28؛ مسیر کامل `file:line`ها: ۲۰۲۶-۰۹-۲۵ — T8؛ هم‌خوانی ماشینی با کد: T16 در `scripts/validate-postman.mjs`)
+## 7. Ownership table (verified 2026-10-04؛ مسیر کامل `file:line`ها: ۲۰۲۶-۰۹-۲۵ — T8؛ هم‌خوانی ماشینی با کد: T16 در `scripts/validate-postman.mjs`)
 
 | Endpoint (active) | Plane | Source |
 |---|---|---|
 | `GET /api/auth/csrf-token` | Worker (+ Go dev stub) | `worker/light/lightApp.ts:188`, `backend/pkg/api/routes.go:61` |
 | `POST /api/auth/register`, `POST /api/auth/login` | Worker (D1/KV); Go has parallel PG handlers | `worker/light/lightApp.ts:198,258`, `backend/pkg/api/auth_pg.go:98,158` |
 | `GET /api/auth/profile`, `GET /api/auth/providers` | Worker (+ Go stubs) | `worker/light/lightApp.ts:336,368`, `backend/pkg/api/routes.go:67,70` |
+| `GET /api/auth/session` | Worker only | `worker/light/lightApp.ts:393` |
 | `POST /api/auth/logout` | Worker only | `worker/light/lightApp.ts:319` |
-| `GET /api/auth/oauth/github` | Worker only | `worker/light/lightApp.ts:391` |
+| `GET /api/auth/oauth/github` | Worker only | `worker/light/lightApp.ts:403` |
 | `GET /health` | Control/Go (Worker answers `/api/status`, not `/health`) | `backend/pkg/api/routes.go:49` |
 | `POST /api/agent` (NDJSON) | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:116` |
 | `POST /api/agent/session`, `GET /api/agent/:id/connect` | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:296,299` |
-| `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:253`, `worker/light/lightApp.ts:797` |
+| `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:253`, `worker/light/lightApp.ts:809` |

@@ -1,9 +1,11 @@
 # VibeSDK Architecture Diagrams
 
-> **Scope:** this document covers the **current dual-plane architecture only**.
+> **Scope:** this document covers the **current dual-plane architecture only** (plus an explicitly labeled target sketch).
 > Historical diagrams were archived — see [Historical diagrams (removed)](#historical-diagrams-removed).
 >
 > - Authoritative narrative: [`llm.md#current-architecture`](llm.md#current-architecture)
+> - Product strategy and target architecture: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Agentic system model)
+> - Current reality dashboard: [`DEV_STATUS.md`](DEV_STATUS.md)
 > - Multi-agent team guide: [`MULTI_AGENT.md`](MULTI_AGENT.md)
 > - Per-endpoint route ownership (which plane serves what): [`POSTMAN_COLLECTION_README.md`](POSTMAN_COLLECTION_README.md) §7
 > - Platform limits: [`CF_LIMITS.md`](CF_LIMITS.md)
@@ -58,7 +60,7 @@ flowchart LR
 | Plane | Runtime & entry point | Responsibilities | Frontend config |
 |---|---|---|---|
 | **Edge / auth** (light Worker) | Cloudflare Worker `vibesdk-v2` — `worker/light-index.ts` to `buildLightApp()` in `worker/light/lightApp.ts`; bindings in `wrangler.v2.jsonc` | Serves the SPA through the `ASSETS` binding; D1-backed auth (`/api/auth/*`), GitHub OAuth + GitHub App export, read-only app lists, `/api/status`, `/api/capabilities`, `/api/limits/usage`. Unknown `/api/*` answers JSON `404`; chat/project/WebSocket paths answer JSON `503 NOT_AVAILABLE`; every other path returns the SPA HTML. | `authPlane.baseUrl` |
-| **Control** (Go) | Go Fiber service in `backend/` — `backend/pkg/api/routes.go` | Agent sessions and streaming (`POST /api/agent`, `POST /api/agent/session`, `GET /api/agent/:id/connect`), rooms/VFS and deploys (`/api/projects/:id/files`, `.../deploy`, `.../github-export`), WebSocket (`GET /ws/:id`), workflow runs (`/api/workflows/*`). Streams from AI Gateway (`backend/pkg/llm/client.go`), keeps project and VFS state in Redis, deploys generated apps to Cloudflare Pages. | `controlPlane.baseUrl` · `controlPlane.wsUrl` |
+| **Control** (Go) | Go Fiber service in `backend/` — `backend/pkg/api/routes.go` | Agent sessions and streaming (`POST /api/agent`, `POST /api/agent/session`, `GET /api/agent/:id/connect`), rooms/VFS and deploys (`/api/projects/:id/files`, `.../deploy`, `.../github-export`), WebSocket (`GET /ws/:id`), workflow runs (`/api/workflows/*`). Streams from AI Gateway (`backend/pkg/llm/client.go`), keeps project and VFS state in Redis, deploys generated apps to Cloudflare Pages. Ownership/auth boundary gap: no session/ownership check yet (Edge auth does not protect Go) — `docs/DEV_CHECKLIST.md` P0.3–P0.5, `docs/DEV_STATUS.md` Known risks. | `controlPlane.baseUrl` · `controlPlane.wsUrl` |
 | **Execution** (optional) | Cloudflare Edge (Workers / Workflows / Vectorize) | End-user agent execution when `VITE_EXECUTION_PLANE_URL` is set; features that depend on it stay disabled when the value is empty. | `executionPlane.baseUrl` |
 
 HTTP from the SPA goes through `src/lib/api-client.ts` and
@@ -84,6 +86,45 @@ Vite variable is unset).
 > `bun run cf-typegen`) and this table. Adding or removing a binding therefore means:
 > edit the config → `bun run cf-typegen` → update this table, all in the same change.
 > `bun run docs:check` fails when they disagree (`scripts/validate-docs-invariants.mjs`).
+
+## Target architecture sketch (PLANNED — not live)
+
+> **Status: `planned`.** Nothing below exists as a component; it is the
+> shape the roadmap phases build toward. Canonical layer definitions:
+> [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Agentic system model). Do not
+> quote this sketch as current behavior.
+
+```mermaid
+flowchart TB
+    OUTCOME["Outcome<br/>(user intent, validated)"]
+    COMPILER["Agentic compiler<br/>(P2: synthesis → ExecutionPlan / System IR)"]
+    REG["Capability registry<br/>(P1: versioned tools / MCP / skills / models)"]
+    POLICY["Policy / permissions<br/>(P0+P1: runtime-enforced)"]
+    RUNTIME["Durable runtime<br/>(P3: events, retries, approvals, schedules)"]
+    TEAMS["Agents / Teams<br/>(P1: DeepAgent team today; composed teams next)"]
+    STATE["Memory / Lineage / Versions<br/>(P1+P5: generations, Git, diffs)"]
+    EVAL["Evaluation / Repair<br/>(P6: score runs, repair systems)"]
+    SUBSTRATE[("Cloudflare substrate<br/>(Workers, Workflows, D1, KV, Pages)")]
+
+    OUTCOME --> COMPILER
+    COMPILER --> TEAMS
+    REG --> COMPILER
+    POLICY --> TEAMS
+    POLICY --> RUNTIME
+    TEAMS --> RUNTIME
+    RUNTIME --> STATE
+    STATE --> EVAL
+    EVAL --> COMPILER
+    RUNTIME --> SUBSTRATE
+    TEAMS --> SUBSTRATE
+```
+
+Reading the sketch against today: `Outcome`, `Compiler` (beyond plan
+approval), `Policy` enforcement, `Evaluation/Repair`, and the registry beyond
+node packages do not exist yet — they are P0–P2/P6 work. What exists:
+single-outcome app generation, the DeepAgent team primitive, lineage tables,
+the 7-type workflow runtime on the substrate. Graph editing would sit beside
+`STATE` as an inspection view (P4), never on the synthesis path.
 
 ## Historical diagrams (removed)
 

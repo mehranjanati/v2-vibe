@@ -222,6 +222,31 @@
           "response": []
         },
         {
+          "name": "Get Current Session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{workerUrl}}/api/auth/session",
+              "host": [
+                "{{workerUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "session"
+              ]
+            },
+            "description": "plane: worker | Resolve the Worker cookie session to its user id ({ userId }); returns JSON 401 when unauthenticated."
+          },
+          "response": []
+        },
+        {
           "name": "OAuth - GitHub (Browser Only)",
           "request": {
             "method": "GET",

@@ -1,5 +1,9 @@
 # Local Development Guide — VibeSDK Hybrid Architecture
 
+> Strategy: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`DEV_STATUS.md`](DEV_STATUS.md). Ordered work:
+> [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md).
+
 This guide explains how to run the decoupled hybrid stack locally:
 
 - **Control Plane** (Go Fiber + Redis): sessions, VFS, LLM streaming, vector RAG, and Cloudflare Pages deployments.
