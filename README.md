@@ -10,16 +10,24 @@
 
 ## What is VibeSDK?
 
-VibeSDK is an **Outcome-First Agentic Software Platform**: tell it the outcome
-you want; it synthesizes the agentic system needed to achieve it, executes it
-durably, evaluates the result, and improves or repairs it. App generation is a
-first-class capability (and today's reference workload), not the platform
-identity. Canonical strategy: [`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md);
-current reality: [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
+VibeSDK is building toward an **AI-Native Business OS / Agent-as-a-Service**
+platform: the user asks for a business outcome (for example, *"build me an
+AI sales system that qualifies leads, follows up automatically, updates the
+CRM, and reports results"*), and the platform composes the agents, business
+functions and durable runtime needed to deliver it. Product strategy:
+[`docs/00-product-vision.md`](docs/00-product-vision.md); MVP wedge:
+[`docs/02-mvp.md`](docs/02-mvp.md); decision log:
+[`docs/10-decisions-and-open-questions.md`](docs/10-decisions-and-open-questions.md).
 
-Today this means: describe what you want, answer clarifying questions, and follow
-the agent team as it plans, edits files, deploys previews, inspects errors, and
-iterates with you in the loop.
+What runs **today** is the platform's first reference workload — an
+**agentic App Builder** on a dual-plane runtime: describe what you want,
+answer clarifying questions, and follow the agent team as it plans, edits
+files, deploys previews, inspects errors, and iterates with you in the loop.
+It continues the outcome-first principle of
+[`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md) (system model, moats,
+competitive analysis), and it is the seed of the eventual Autonomous Software
+Factory ([`docs/09-software-factory.md`](docs/09-software-factory.md)).
+Current reality: [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
 
 The platform runs as a **dual-plane** system:
 

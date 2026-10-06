@@ -6,6 +6,9 @@
 > [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
 > [`DEV_STATUS.md`](DEV_STATUS.md). Task-spec quality contract:
 > [`DEV_TASKS_SPEC.md`](DEV_TASKS_SPEC.md).
+> Product-phase roadmap (M0–M5 wedge strategy, mapped onto these engineering
+> layers): [`03-product-roadmap.md`](03-product-roadmap.md) — the phase model
+> below is unchanged by that strategy reframe.
 > Specs: [`DEV_SPEC_P1A.md`](DEV_SPEC_P1A.md) ·
 > [`DEV_SPEC_P1B.md`](DEV_SPEC_P1B.md) · [`DEV_SPEC_P2.md`](DEV_SPEC_P2.md) ·
 > [`DEV_SPEC_P3P4.md`](DEV_SPEC_P3P4.md) · [`DEV_SPEC_P5.md`](DEV_SPEC_P5.md) ·

@@ -1,13 +1,24 @@
 # VibeSDK Product Thesis — Outcome-First Agentic Software Platform
 
-> **Canonical product strategy.** This document defines what VibeSDK is, what it is not,
-> who it serves, and how it wins. It is strategy, not status: for what is actually
+> **Canonical platform thesis.** This document defines the agentic system model,
+> moats, competitive landscape and business-model considerations the platform
+> builds on. It is strategy, not status: for what is actually
 > built today versus what is planned, read [`DEV_STATUS.md`](DEV_STATUS.md); for the
 > ordered work, read [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md).
 >
-> **Status:** `current` — adopted 2026-10-01. Supersedes the implicit "AI App Builder"
-> framing of the pre-2026-10 roadmap documents (preserved with historical task IDs,
-> mapped into the new phase model in `DEV_CHECKLIST.md`). Last reviewed: 2026-10-01.
+> **2026-10-06 strategy revision:** the *product positioning and ICP* of this
+> thesis are superseded by the AI-Native Business OS / Agent-as-a-Service wedge
+> strategy — read [`00-product-vision.md`](00-product-vision.md) first, with the
+> decision log in [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)
+> (decision D1 revises the vertical-SaaS non-goal below). The agentic system
+> model, core abstractions, moats and competitive analysis in this document
+> remain canonical engineering input.
+>
+> **Status:** `current` (system model + analysis) / `superseded-in-part`
+> (positioning, ICP) — adopted 2026-10-01, revised 2026-10-06. Supersedes the
+> implicit "AI App Builder" framing of the pre-2026-10 roadmap documents
+> (preserved with historical task IDs, mapped into the new phase model in
+> `DEV_CHECKLIST.md`). Last reviewed: 2026-10-06.
 
 ## Contents
 
@@ -351,8 +362,12 @@ Considerations only — pricing is not decided here:
 ## Strategic non-goals
 
 - Becoming a general IDE or replacing the developer's editor.
-- Becoming a vertical SaaS in sales, support, or research (reference systems
-  prove the platform; productizing them is a separate decision).
+- Becoming a vertical SaaS in sales, support, or research ~~(reference systems
+  prove the platform; productizing them is a separate decision)~~ — **revised
+  2026-10-06 by decision D1** ([`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)):
+  the AI Sales outcome is now the *chosen MVP wedge*
+  ([`02-mvp.md`](02-mvp.md)); other verticals remain reference systems until a
+  validated wedge decision says otherwise.
 - Owning foundation models or model hosting.
 - Owning undifferentiated infrastructure (regions, cold starts, storage
   engines) — adopt the substrate, don't rebuild it.

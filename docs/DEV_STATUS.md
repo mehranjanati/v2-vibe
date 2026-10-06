@@ -61,15 +61,23 @@ and Worker bindings:
 
 ## Current Product Thesis
 
-VibeSDK is an **Outcome-First Agentic Software Platform**: tell it the
-outcome you want; it synthesizes the agentic system to achieve it, executes
-it durably, evaluates the result, and improves or repairs it. Graph/node
-editing is an advanced inspection/debugging representation, not the product.
-App generation ("App Builder") is a first-class **capability and reference
-workload**, not the platform identity. Cloudflare/serverless is the
-**execution substrate**; VibeSDK owns the agentic control plane above it.
-Canonical definitions, market entry, reference systems, competitive
-landscape, and moat hypotheses:
+**Revised 2026-10-06:** the product direction is now an **AI-Native Business
+OS / Agent-as-a-Service** platform with one explicit MVP wedge — the AI Sales
+outcome (lead qualification + follow-up + CRM update + reporting). Product
+vision: [`00-product-vision.md`](00-product-vision.md); wedge definition:
+[`02-mvp.md`](02-mvp.md); decision log:
+[`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md).
+
+The platform thesis underneath is unchanged in its engineering shape: the
+user requests an **outcome**; the system synthesizes the agentic system to
+achieve it, executes it durably, evaluates the result, and improves or
+repairs it. Graph/node editing remains an inspection/debugging
+representation, not the product. App generation ("App Builder") is a
+first-class **capability and reference workload** — and the seed of the
+Autonomous Software Factory ([`09-software-factory.md`](09-software-factory.md)).
+Cloudflare/serverless remains the **execution substrate**; VibeSDK owns the
+agentic control plane above it. Canonical definitions, market entry,
+reference systems, competitive landscape, and moat hypotheses:
 [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md).
 
 <a id="current-implementation-state"></a>
