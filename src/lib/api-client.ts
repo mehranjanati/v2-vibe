@@ -5,6 +5,7 @@
  */
 
 import { authPlane, controlPlane } from '@/config/api';
+import { readControlPlaneSessionToken } from '@/lib/control-plane-session';
 
 import type{
 	ApiResponse,
@@ -182,7 +183,7 @@ class ApiClient {
 
 		// Add session token for anonymous users if not authenticated
 		// This will be handled automatically by cookies/credentials for authenticated users
-		const sessionToken = localStorage.getItem('anonymous_session_token');
+		const sessionToken = readControlPlaneSessionToken();
 		if (sessionToken && !document.cookie.includes('session=')) {
 			headers['X-Session-Token'] = sessionToken;
 		}

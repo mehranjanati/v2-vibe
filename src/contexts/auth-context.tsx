@@ -19,6 +19,10 @@ import {
 } from '@tanstack/react-query';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { authPlane } from '@/config/api';
+import {
+	clearControlPlaneSessionToken,
+	storeControlPlaneSessionToken,
+} from '@/lib/control-plane-session';
 import { useSentryUser } from '@/hooks/useSentryUser';
 import { queryKeys } from '@/lib/query-keys';
 import type {
@@ -252,6 +256,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 	const applyAuthenticatedSession = useCallback(
 		async (data: LoginResponseData) => {
+			// P0.3: mirror the Edge session token for the Go control-plane
+			// boundary. Absent when the auth response did not mint one (the Go
+			// handlers never do), in which case the boundary stays unsatisfied
+			// until the P0.9 identity decision lands.
+			storeControlPlaneSessionToken(data.accessToken);
 			// Cancel any in-flight validation so a late response cannot clobber
 			// the session we just established.
 			await queryClient.cancelQueries({
@@ -266,6 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	);
 
 	const clearAuthenticatedSession = useCallback(async () => {
+		clearControlPlaneSessionToken();
 		// Cancel first: an in-flight profile refetch landing after this write
 		// would otherwise resurrect the session we are tearing down.
 		await queryClient.cancelQueries({

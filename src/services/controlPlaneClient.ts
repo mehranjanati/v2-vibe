@@ -11,6 +11,7 @@
  */
 
 import { controlPlane, wsControlPlaneUrl } from '@/config/api';
+import { readControlPlaneSessionToken } from '@/lib/control-plane-session';
 
 /** Generic JSON response envelope from the Go backend. */
 export interface ControlPlaneResponse<T = unknown> {
@@ -50,10 +51,16 @@ async function request<T>(
 	path: string,
 	init?: RequestInit,
 ): Promise<ControlPlaneResponse<T>> {
+	// P0.3: present the caller's session to the control-plane boundary. When no
+	// token exists the header is omitted and the boundary answers 401/503 —
+	// never a silent anonymous allow once it is switched on.
+	const sessionToken = readControlPlaneSessionToken();
 	const res = await fetch(`${controlPlane.baseUrl}${path}`, {
 		...init,
+		credentials: 'include',
 		headers: {
 			'Content-Type': 'application/json',
+			...(sessionToken ? { 'X-Session-Token': sessionToken } : {}),
 			...(init?.headers ?? {}),
 		},
 	});

@@ -117,6 +117,8 @@ OAuth token from wrangler, validates it with a read-only `SELECT 1`, and rewrite
 | `AI_GATEWAY_API_KEY` | Bearer token for the gateway (falls back to `CLOUDFLARE_API_TOKEN`) |
 | `DEFAULT_MODEL` | Fallback model when a role has no explicit model |
 | `PORT` | API port (default `8080`) |
+| `CONTROL_PLANE_REQUIRE_SESSION` | Opt-in P0.3 session boundary. `1`/`true`/`yes` makes every mutating route require a session token (401 when absent/unknown, 503 when the session store is unreachable); unset keeps the boundary off |
+| `VIBECODER_STORE_KV_ID` | Edge `VibecoderStore` KV namespace id the boundary verifies session tokens against (`session:token:<token>` → userId). Required when `CONTROL_PLANE_REQUIRE_SESSION` is on; unset makes guarded routes fail closed with 503 |
 
 ### Domain and network
 

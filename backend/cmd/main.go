@@ -100,6 +100,25 @@ func main() {
 	// the VibeWorkflow runtime) that POST /api/workflows/trigger starts.
 	hub.SetWorkflowName(hub.Cfg("WORKFLOWS_NAME", "vibesdk-v2-workflows"))
 
+	// P0.3 control-plane session boundary. Enforcement is opt-in via
+	// CONTROL_PLANE_REQUIRE_SESSION so an existing deployment keeps working
+	// until the P0.9 identity decision lands; when it is on the boundary
+	// fails closed — a missing Edge session store answers 503 instead of
+	// letting the request through.
+	if isTruthy(os.Getenv("CONTROL_PLANE_REQUIRE_SESSION")) {
+		kvNamespaceID := os.Getenv("VIBECODER_STORE_KV_ID")
+		accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+		apiToken := os.Getenv("CLOUDFLARE_API_TOKEN")
+		if kvNamespaceID == "" || accountID == "" || apiToken == "" {
+			log.Println("WARNING: CONTROL_PLANE_REQUIRE_SESSION is on but the Edge session store is not configured " +
+				"(VIBECODER_STORE_KV_ID / CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN) — guarded routes fail closed with 503")
+			hub.SetSessionVerifier(api.NewUnavailableSessionVerifier())
+		} else {
+			hub.SetSessionVerifier(api.NewEdgeKVVerifier(cloudflare.NewKVClient(accountID, apiToken), kvNamespaceID))
+			log.Printf("control-plane session boundary enabled (Edge KV namespace %s)", kvNamespaceID)
+		}
+	}
+
 	// R3: rooms plan with the structured ExecutionPlan contract when the
 	// planner skill (01_planner.md) loaded; otherwise the legacy prose
 	// planner stays active.
@@ -148,6 +167,16 @@ func main() {
 	log.Printf("VibeSDK Go backend listening on :%s", port)
 	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("server error: %v", err)
+	}
+}
+
+// isTruthy reports whether an env value means "on" (1/true/yes, any case).
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
 	}
 }
 

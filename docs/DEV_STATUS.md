@@ -1,4 +1,4 @@
-# DEV STATUS — Current-State Dashboard (2026-10-01)
+# DEV STATUS — Current-State Dashboard (2026-10-04)
 
 > Single concise current-state dashboard. This file describes **current reality**
 > and points elsewhere; it does not duplicate the backlog
@@ -9,7 +9,7 @@
 > `verified` | `blocked` | `obsolete`.
 > Truth hierarchy: live code > tests/CI > schema/migrations > config >
 > active docs > archive.
-> Last reviewed: 2026-10-01.
+> Last reviewed: 2026-10-04.
 
 ## Contents
 
@@ -45,7 +45,9 @@ and Worker bindings:
   `/api/capabilities`, `/api/limits/usage`. Unknown `/api/*` → JSON 404;
   chat/project/WS → JSON 503.
 - Control plane: Go Fiber (`backend/pkg/api/routes.go`) — sessions,
-  rooms/VFS, LLM streaming, Pages deploys, workflow runs. Redis
+  rooms/VFS, LLM streaming, Pages deploys, workflow runs, plus the opt-in
+  session boundary (`backend/pkg/api/auth.go`, `CONTROL_PLANE_REQUIRE_SESSION`).
+  Redis
   (`vfs:{chatId}`, `vfs:snap:{genID}` 7-day TTL); lineage D1 tables
   (`generations`, `generation_files`, `generation_audits`).
 - Execution plane: Cloudflare Workflow `VibeWorkflow` (schema v2, 7 node
@@ -82,9 +84,10 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 - Verified history: P0.1 skeleton, P0.2 DeepAgent + Eino bump, P1.0.0 D1
   tooling, P1.0.1–P1.0.3 cleanup, P1.1 tables + migration, P1.2 recorder,
   P1.3.0 D1-CAS decision, P1.3.1/P1.3.2 run hooks.
-- Implemented but unverified: author threading (P1.3.3 scope), team E2E
-  approve path (P0.2 scope).
-- Still open: P0.3–P0.9 security/tenancy/identity foundation, internal Git
+- Implemented but unverified: control-plane auth boundary (P0.3 scope,
+  opt-in), author threading (P1.3.3 scope), team E2E approve path (P0.2 scope).
+- Still open: P0.4–P0.9 security/tenancy/identity foundation (P0.3 landed as
+  an opt-in boundary), internal Git
   (P1.3.4–P1.3.6), History API/UI (P1.4/P1.5), reviewer/gate/claim/identity
   (P1.6–P1.10), maxTokens fix (P1.11), and everything in P2–P6 (specs only,
   except live 7-type validation in `worker/workflow/VibeWorkflow.ts` +
@@ -108,6 +111,7 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 
 ## Implemented But Unverified
 
+- **P0.3 control-plane auth boundary (new, 2026-10-04; checklist P0 block).** `RequireSession`/`RequireOwner` (`backend/pkg/api/auth.go`) now guard the seven mutating/project routes with an Edge-KV-backed verifier, failing closed (401/503) and attaching the identity for P0.4/P0.7. Verified by unit tests + `go vet/test` + `typecheck/lint/build`, but NOT verified end-to-end: enforcement is opt-in (`CONTROL_PLANE_REQUIRE_SESSION`), no staging deployment has run with it on, and the browser→Go Edge-token path still depends on the P0.9 identity decision (a Go-login session mints no Edge token, so sign-in via the control plane cannot satisfy the boundary yet).
 - P1.3.3 author threading — code present, missing: (a) test proving every path records its expected non-empty author into `generation_files.author_agent`, (b) fork flag on concurrent manual write, (c) `author` from editor/import channels (today only agent paths pass it). Not `verified` until that test lands.
 - P0.2 team E2E approve path — build green, full run manual-only (no live engine in tests, `canRunTeam` false). See `docs/MULTI_AGENT.md` Known gaps 1.
 
@@ -115,9 +119,11 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 
 ## In Progress
 
-Nothing is actively `in_progress` as of 2026-10-01. The last merged work was
-the DeepAgent migration (P0.2) and the generation lineage recorder (P1.2);
-all open checklist items are `planned` or `blocked`. Claim `in_progress`
+Nothing is actively `in_progress` as of 2026-10-04. The last merged work was
+the control-plane auth boundary (P0.3, `implemented_unverified`), the Edge
+`GET /api/auth/session` route, the DeepAgent migration (P0.2) and the
+generation lineage recorder (P1.2); all open checklist items are `planned` or
+`blocked`. Claim `in_progress`
 only while code is being written, and move the item back to `planned`
 (or forward to `implemented_unverified` with its test) when the session ends.
 
@@ -148,16 +154,16 @@ deletion.
 
 Ordered, dependency-driven. Open `docs/DEV_CHECKLIST.md`, take the first unblocked item, open its one spec:
 
-1. P0.3 control-plane auth boundary (new) — checklist P0 block.
+0. P0.9 identity source-of-truth decision (now on the critical path) — the P0.3 boundary can only be switched on once the SPA/Worker can present the Edge token to Go; checklist P0 block.
+1. P0.3 rollout verification — enable `CONTROL_PLANE_REQUIRE_SESSION` against a real KV namespace and prove 401/503/403 on the seven guarded routes; checklist P0 block.
 2. P0.4 resource ownership model (new) — prerequisite for P2.7/P5.
 3. P0.5 WebSocket authorization (new).
 4. P0.6 credential hardening incl. GitHub token off plaintext D1 (new).
 5. P0.7 workflow tenant isolation (new).
 6. P0.8 room lifecycle/eviction/quotas (new).
-7. P0.9 identity source-of-truth decision (new).
-8. P1.3.3 verify (author E2E test + fork flag) — `docs/DEV_SPEC_P1A.md` P1.3.3.
-9. P1.3.4 internal Git D1-CAS (`backend/pkg/engine/gitrepo.go`) — `docs/DEV_SPEC_P1A.md` P1.3.4.
-10. P1.11 maxTokens via `model.WithMaxTokens` + `adk.WithChatModelOptions` — checklist P1.11, background in `docs/MULTI_AGENT.md` gap 6.
+7. P1.3.3 verify (author E2E test + fork flag) — `docs/DEV_SPEC_P1A.md` P1.3.3.
+8. P1.3.4 internal Git D1-CAS (`backend/pkg/engine/gitrepo.go`) — `docs/DEV_SPEC_P1A.md` P1.3.4.
+9. P1.11 maxTokens via `model.WithMaxTokens` + `adk.WithChatModelOptions` — checklist P1.11, background in `docs/MULTI_AGENT.md` gap 6.
 
 <a id="dependency-graph"></a>
 
@@ -179,7 +185,7 @@ P2 ─> P3/P4; P5 + P6.7 ─> P4 verifier thresholds
 ## Known Architecture Risks
 
 1. Split-brain identity: Edge KV sessions (`session:token:*`) vs Go PG register/login returning bare `sessionId` (live) plus unregistered Go D1 handlers (`handleRegisterD1`/`handleLoginD1` dead code). No Go handler reads the Edge cookie. Task P0.9 decides; do not invent unification.
-2. Open control plane: room/project/deploy/workflow/WS routes mutate without ownership/session checks. Edge auth does not protect Go. Tasks P0.3-P0.5.
+2. Control plane session boundary is provisional: `CONTROL_PLANE_REQUIRE_SESSION` is opt-in and resolves tokens against the Edge KV store, so a deployment that logs in through the Go handlers (no Edge token) cannot satisfy it until P0.9 decides the identity contract; `GET /ws/:id` is still ungated (P0.5) and per-resource ownership is not wired yet (P0.4/P0.7). Tasks P0.4-P0.5, P0.9.
 3. Plaintext provider tokens: `github_tokens.access_token` in D1 (Edge `storeGitHubToken`/`getGitHubToken`). Task P0.6 moves to encrypted storage / vault-reference model.
 4. Workflow tenant gap: `workflow_dags.workflow_id` is chat/project id, no `user_id`; trigger/get skip ownership. Task P0.7 gates multi-tenant exposure.
 5. Unbounded rooms: `EngineHub` never evicts; no idle TTL, no quota. Task P0.8.

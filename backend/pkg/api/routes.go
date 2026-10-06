@@ -291,31 +291,49 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 		})
 	})
 
+	// P0.3: every mutating (and project-reading) control-plane route runs the
+	// session boundary first. When no SessionVerifier is installed the guard
+	// is a no-op — the boundary is opt-in until the P0.9 identity decision
+	// lands (docs/DEV_CHECKLIST.md P0.3/P0.9).
+	guard := sessionGuard(hub)
+
 	// REST: create a new agent session. Returns the WebSocket URL the
 	// React frontend connects to.
-	app.Post("/api/agent/session", handleCreateSession(hub))
+	app.Post("/api/agent/session", guard, handleCreateSession(hub))
 
 	// REST: connect to an existing agent session.
-	app.Get("/api/agent/:id/connect", handleConnectAgent(hub))
+	app.Get("/api/agent/:id/connect", guard, handleConnectAgent(hub))
 
 	// REST: deploy a project's VFS to Cloudflare Pages.
-	app.Post("/api/projects/:id/deploy", handleDeployProject(hub))
+	app.Post("/api/projects/:id/deploy", guard, handleDeployProject(hub))
 
 	// REST: return a project's VFS files as a flat map of path -> contents.
 	// Used by the light Worker (Edge) to push generated files to GitHub.
-	app.Get("/api/projects/:id/files", handleGetProjectFiles(hub))
+	app.Get("/api/projects/:id/files", guard, handleGetProjectFiles(hub))
 
 	// REST: export a project's VFS to a GitHub repository (push files).
-	app.Post("/api/projects/:id/github-export", handleGitHubExport(hub))
+	app.Post("/api/projects/:id/github-export", guard, handleGitHubExport(hub))
 
 	// REST: trigger a workflow run (validates the DAG, records the run,
 	// starts the Cloudflare Workflow execution) and inspect a workflow's
 	// runs + per-step logs. See workflows.go.
-	app.Post("/api/workflows/trigger", handleWorkflowTrigger(hub))
-	app.Get("/api/workflows/:workflowId", handleWorkflowGet(hub))
+	app.Post("/api/workflows/trigger", guard, handleWorkflowTrigger(hub))
+	app.Get("/api/workflows/:workflowId", guard, handleWorkflowGet(hub))
 
 	// WebSocket: real-time agent channel.
 	app.Get("/ws/:id", websocket.New(handleWebSocket(hub)))
+}
+
+// sessionGuard returns the middleware every guarded control-plane route runs
+// before its handler. With no SessionVerifier attached to the hub the guard
+// is a no-op handler so the pre-existing (unauthenticated) behaviour is
+// preserved; installing a verifier turns the boundary on.
+func sessionGuard(hub *engine.EngineHub) fiber.Handler {
+	verifier := hub.SessionVerifier()
+	if verifier == nil {
+		return func(c *fiber.Ctx) error { return c.Next() }
+	}
+	return RequireSession(verifier)
 }
 
 // buildWebSocketURL derives the ws:// URL the frontend should connect to,

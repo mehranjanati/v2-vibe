@@ -69,6 +69,13 @@ export interface SessionResponse {
 	user: AuthUser;
 	sessionId: string;
 	expiresAt: Date | null;
+	/**
+	 * Edge session token. The light Worker returns it from register/login so
+	 * the SPA can present it to the Go control-plane boundary
+	 * (`src/lib/control-plane-session.ts`, P0.3). Optional: the Go auth
+	 * handlers do not mint it.
+	 */
+	accessToken?: string;
 }
 
 /**

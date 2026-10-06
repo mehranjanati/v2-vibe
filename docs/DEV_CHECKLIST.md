@@ -70,14 +70,15 @@ phase; nothing in P2–P6 ships to other users' data without it.
 
 ### P0.3 — Control-plane auth boundary
 
-- **id:** P0.3 · **phase:** P0 · **title:** Control-plane auth boundary · **status:** `planned`.
+- **id:** P0.3 · **phase:** P0 · **title:** Control-plane auth boundary · **status:** `implemented_unverified`.
 - **Goal:** every mutating control-plane route enforces an explicit session/ownership check.
 - **Why:** Edge auth does not protect Go; without this, multi-tenancy is fiction.
-- **Dependencies:** P0.9 decision informs the mechanism; implementable with a provisional check first.
-- **Affected files:** `backend/pkg/api/routes.go`, `backend/pkg/engine/hub.go`.
-- **Implementation notes:** routes in `backend/pkg/api/routes.go:296`, `backend/pkg/api/routes.go:299`, `backend/pkg/api/routes.go:302`, `backend/pkg/api/routes.go:306`, `backend/pkg/api/routes.go:309`, `backend/pkg/api/routes.go:314`, `backend/pkg/api/routes.go:315` (`POST /api/agent/session`, `GET /api/agent/:id/connect`, `GET /api/projects/:id/files`, `POST /api/projects/:id/deploy`, `POST /api/projects/:id/github-export`, `POST /api/workflows/trigger`, `GET /api/workflows/:workflowId`).
-- **Acceptance criteria:** unauthenticated mutate → 401/403; authenticated cross-user access → 403/empty.
-- **Verification:** new Go tests per route + `go vet ./... && go test ./...`.
+- **Dependencies:** P0.9 decision informs the final mechanism; the provisional check landed first (see notes).
+- **Affected files:** `backend/pkg/api/auth.go`, `backend/pkg/api/routes.go`, `backend/pkg/api/auth_test.go`, `backend/pkg/cloudflare/kv.go`, `backend/pkg/engine/hub.go`, `backend/cmd/main.go`, `src/services/controlPlaneClient.ts`, `src/lib/control-plane-session.ts`, `src/lib/api-client.ts`, `src/contexts/auth-context.tsx`, `worker/types/auth-types.ts`.
+- **Implementation notes:** `sessionGuard` (`backend/pkg/api/routes.go`) now runs `RequireSession` (`backend/pkg/api/auth.go`) in front of the seven routes at `backend/pkg/api/routes.go:302`, `backend/pkg/api/routes.go:305`, `backend/pkg/api/routes.go:308`, `backend/pkg/api/routes.go:312`, `backend/pkg/api/routes.go:315`, `backend/pkg/api/routes.go:320`, `backend/pkg/api/routes.go:321` (`POST /api/agent/session`, `GET /api/agent/:id/connect`, `POST /api/projects/:id/deploy`, `GET /api/projects/:id/files`, `POST /api/projects/:id/github-export`, `POST /api/workflows/trigger`, `GET /api/workflows/:workflowId`). Token sources: `Authorization: Bearer`, `X-Session-Token`, `session` cookie. Provisional verifier = `EdgeKVVerifier` reading `session:token:<token>` from the Edge `VibecoderStore` KV namespace (`backend/pkg/cloudflare/kv.go`), i.e. the split is **contracted** (Edge stays the identity authority), not unified — the P0.9 record still owns the final choice. Enforcement is opt-in: `CONTROL_PLANE_REQUIRE_SESSION` (`backend/cmd/main.go`), and it fails closed (503) when the KV namespace/credentials are missing. `RequireOwner` is the reusable ownership primitive for P0.4/P0.7.
+- **Acceptance criteria:** passed for the guarded surface when the boundary is installed — anonymous mutate → 401, unknown token → 401, cross-user resource → 403 (owner middleware), store outage/misconfiguration → 503, valid token → handler runs. NOT yet closed: the boundary is opt-in (a deployment that does not set `CONTROL_PLANE_REQUIRE_SESSION` keeps the old behaviour), `GET /ws/:id` is still ungated (P0.5), and per-resource ownership wiring + the Edge-token propagation for a Go-login deployment are open (P0.4/P0.9).
+- **Verification:** `backend/pkg/api/auth_test.go` (11 cases: the 7 guarded routes anonymous, unknown token, valid token, three token transports, fail-closed 503 twice, owner 401/403/404/200, identity locals) + `backend/pkg/cloudflare/kv_test.go` (4 cases) green; `cd backend && go vet ./... && go test ./...` green; `bun run typecheck && bun run lint && bun run build` green.
+
 
 ### P0.4 — Resource ownership model
 
