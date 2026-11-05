@@ -9,7 +9,7 @@
 >
 > **Status:** `proposed` — full multi-tenancy is not implemented; the live
 > system has per-user auth (D1-backed) and an opt-in control-plane session
-> boundary (P0.3). Last reviewed: 2026-10-06.
+> boundary (P0.3). Last reviewed: 2026-11-05.
 
 ## Tenant model (required by design)
 
@@ -41,7 +41,7 @@
 | Function authorization | Capability + tenant + role checked in the execution path — never only in prompts (unchanged platform principle). |
 | Credentials | Stored as references in a vault, never plaintext in functions or agent context. |
 | Human approval | External side effects (email, message, payment) require approval or an explicit tenant policy — logged either way. |
-| Audit | Every function call records tenant, user/agent identity, function, approval state, result. |
+| Audit | Every function call records tenant, user/agent identity, function, approval state, result. The *target* audit trail must also be signable for third-party verification (W3.1 provenance, W3.3 proof-of-run) — gated to M4, not implemented, and never at the cost of moving business data off the platform data layer ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)). |
 | Rate limiting & quotas | Per tenant and per function; abuse of one tenant cannot degrade others. |
 | Data ownership | Business data lives in the platform's data layer; orchestration vendors (e.g. a candidate Dify deployment) never hold the source of truth. |
 | Isolation of generated apps | Tenant applications run sandboxed and tenant-scoped (the live per-project VFS isolation is the seed). |

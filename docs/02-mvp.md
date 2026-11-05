@@ -11,7 +11,7 @@
 >
 > **Status:** `planned` — one explicit wedge; nothing in this scope is
 > built yet beyond what the live App Builder already provides. Last
-> reviewed: 2026-10-06.
+> reviewed: 2026-11-05.
 
 ## The wedge (one concrete business outcome)
 
@@ -77,6 +77,11 @@ The MVP delivers exactly one measurable outcome for one ICP.
   `create_customer`, `update_customer`, `search_products`-style typed
   functions with tenant context, audit and approval hooks.
 - Durable execution minimum for follow-up sequences (engineering P3 slice).
+- Measured against the outcome metrics defined at the M0 exit gate, never seats
+  or MAU (decision D6). Pricing follows the AaaS direction — outcome plus
+  metered run cost — and is finalized only when O6 evidence exists
+  ([`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md),
+  [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)).
 
 ## What remains intentionally unbuilt
 

@@ -9,7 +9,7 @@
 >
 > **Status:** `planned` (destination) — NOT part of the MVP. What exists
 > today is the App Builder reference workload described in
-> [`DEV_STATUS.md`](DEV_STATUS.md). Last reviewed: 2026-10-06.
+> [`DEV_STATUS.md`](DEV_STATUS.md). Last reviewed: 2026-11-05.
 
 ## Goal
 
@@ -45,6 +45,11 @@ capability layer + agent behavior, per
   factory-loop tasks in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)).
 - Tenant-scoped deployment and rollback of generated systems
   ([`07-multitenancy-security.md`](07-multitenancy-security.md)).
+- **Proof-of-run trust anchors (W3.3, gated to M4–M5):** a hash of the
+  generation/run record anchored on chain while the record itself stays in the
+  platform data layer, so a factory-built system is verifiable without custody
+  transfer ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)). No chain is
+  chosen and no implementation is authorized here.
 
 ## Preconditions
 

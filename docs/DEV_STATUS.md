@@ -1,4 +1,4 @@
-# DEV STATUS — Current-State Dashboard (2026-10-04)
+# DEV STATUS — Current-State Dashboard (2026-11-05)
 
 > Single concise current-state dashboard. This file describes **current reality**
 > and points elsewhere; it does not duplicate the backlog
@@ -9,7 +9,7 @@
 > `verified` | `blocked` | `obsolete`.
 > Truth hierarchy: live code > tests/CI > schema/migrations > config >
 > active docs > archive.
-> Last reviewed: 2026-10-04.
+> Last reviewed: 2026-11-05.
 
 ## Contents
 
@@ -225,6 +225,20 @@ owner document, so the next docs pass can close it without archaeology:
    [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Specs are implementation
    contracts first — reframe them only when the task is touched, and never
    renumber historical IDs to "look cleaner".
+5. D6 (AaaS-only + Web3 as next plan) landed 2026-11-05 as strategy only.
+   The cross-document integration pass added direction call-outs to
+   [`01-problem-and-icp.md`](01-problem-and-icp.md),
+   [`02-mvp.md`](02-mvp.md),
+   [`04-system-architecture.md`](04-system-architecture.md),
+   [`06-functions-and-tools.md`](06-functions-and-tools.md),
+   [`07-multitenancy-security.md`](07-multitenancy-security.md),
+   [`08-marketplace.md`](08-marketplace.md),
+   [`09-software-factory.md`](09-software-factory.md),
+   [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) and
+   [`usage-limits-ui.md`](usage-limits-ui.md). Still open: no runtime support
+   for outcome/run metering (the live `UsageSummary` surface stays
+   chat/credits-based), no Web3 code of any kind, and no decision on O7/O8.
+   Owner: the M1 metering slice and the M4 Web3 ADRs, in that order.
 
 <a id="verification-commands"></a>
 

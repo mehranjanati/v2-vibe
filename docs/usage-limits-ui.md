@@ -3,6 +3,14 @@
 > Billing-surface direction: usage UI aligns to runs/systems as the platform
 > matures — see [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Business model
 > considerations). Current reality: [`DEV_STATUS.md`](DEV_STATUS.md).
+>
+> **AaaS metering direction (decision D6):** the target metering keys are
+> evaluated outcomes, durable runs with cost pass-through plus margin, and
+> marketplace take-rate — never seats
+> ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md) economic model).
+> Everything below still describes the *current* chat/credits-based
+> `UsageSummary` surface; it is not the target model and this document does
+> not implement the change.
 
 Defines when each limits-related UI element renders, based on `UsageSummary` from `GET /api/limits/usage`.
 

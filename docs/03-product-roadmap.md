@@ -10,6 +10,9 @@
 > breakdown stays in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md); this document
 > defines phase boundaries, value and non-goals, not task lists. Last
 > reviewed: 2026-10-06.
+>
+> AaaS-only direction with Web3 as next plan: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)
+> (decision D6 in [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
 
 ## Governing rule
 

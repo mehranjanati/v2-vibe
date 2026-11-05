@@ -18,7 +18,13 @@
 > (positioning, ICP) — adopted 2026-10-01, revised 2026-10-06. Supersedes the
 > implicit "AI App Builder" framing of the pre-2026-10 roadmap documents
 > (preserved with historical task IDs, mapped into the new phase model in
-> `DEV_CHECKLIST.md`). Last reviewed: 2026-10-06.
+> `DEV_CHECKLIST.md`). Last reviewed: 2026-11-05.
+>
+> **2026-11-05 (D6):** the legacy SaaS model is retired and Web3 is the next
+> plan — [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md), ADR
+> [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md).
+> The *pricing direction* is now decided (outcomes and runs, never seats);
+> final prices stay open as O6.
 
 ## Contents
 
@@ -346,7 +352,9 @@ Serverless execution cost/scale is an advantage, not a moat by itself.
 
 ## Business model considerations
 
-Considerations only — pricing is not decided here:
+Considerations only — pricing is not decided here. The *direction* is decided
+by D6: outcomes and runs, never seats; final prices stay open as O6
+([`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
 
 - Charge where durable value accrues: execution (runs, with cost pass-through
   plus margin), evaluated outcomes, and marketplace take-rate — not raw model

@@ -14,7 +14,7 @@
 > **Status:** `proposed` — nothing here is implemented. Technology candidates
 > are **assumptions under evaluation, not decisions** (constraint from the
 > strategy task: never hard-code them as irreversible; each adoption needs an
-> ADR). Last reviewed: 2026-10-06.
+> ADR). Last reviewed: 2026-11-05.
 
 ## Architecture principles
 
@@ -79,6 +79,8 @@ trail → the result is reported back as the outcome the user asked for.
 | Backend gateway | Go Fiber control plane | FastAPI or Rivet gateway | Open (O4). Decide with the runtime choice. |
 | Support surface | — | Chatwoot | Candidate; must stay independently deployable and operational. |
 | Function runtime | Go tools in the control plane | Bun-based execution where appropriate | Open (O2). Security boundary: sandboxed, tenant-scoped, audited. |
+| Agent/function identity | — (platform-internal ids only) | DID + verifiable credentials (W3.1) | Open (O7 is chain selection). Gated to M4; no chain chosen; must stay vendor-neutral (D5). |
+| Settlement rail | — (no payment rail for third-party supply) | Fiat first, then stablecoin escrow with revenue split (W3.2) | Open (O8). Gated to M4; no token in scope; interface must remain replaceable. |
 
 Reading rule: the "live today" column is verified in
 [`DEV_STATUS.md`](DEV_STATUS.md); every other cell is an option recorded for

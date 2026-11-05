@@ -5,10 +5,11 @@
 > Vision: [`00-product-vision.md`](00-product-vision.md). Register of
 > technology candidates: [`04-system-architecture.md`](04-system-architecture.md).
 >
-> **Status:** `proposed` — decisions D1–D5 are strategy direction adopted
-> 2026-10-06 (documentation only; no implementation). Open questions O1–O6
+> **Status:** `proposed` — decisions D1–D6 are strategy direction adopted
+> 2026-10-06 through 2026-11-05 (documentation only; no implementation).
+> Open questions O1–O8
 > are explicitly **unresolved — none may be treated as finalized**. Last
-> reviewed: 2026-10-06.
+> reviewed: 2026-11-05.
 
 ## Adopted decisions (strategy direction)
 
@@ -19,6 +20,7 @@
 | D3 | **Outcome-first interaction: users request outcomes; workflow/node design stays an inspection surface.** | Continues the existing thesis; also rules out a visual workflow editor in the MVP. |
 | D4 | **Multi-tenant by design; tenancy is a launch requirement of the wedge (M1), not later hardening.** | Product contract for engineering P0. |
 | D5 | **Vendor replaceability; no orchestration vendor owns business data.** | Dify (if adopted) orchestrates only; the data layer stays platform-owned. |
+| D6 | **AaaS-only; legacy SaaS ends; Web3 is next plan (M4–M5).** No new seat-based SaaS features; every capability ships as a versioned function; Web3 enters only via the marketplace trust and settlement gates. Strategy: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md); ADR: [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md). | Kills margin inversion and commoditization; preserves wedge focus; defers wallet, gas, and token risk until proven demand. |
 
 ## Open questions (unresolved — do not claim as decided)
 
@@ -30,6 +32,8 @@
 | O4 | Durable execution + gateway choice (Rivet or equivalent vs live Cloudflare Workflows; FastAPI vs Rivet gateway vs live Go Fiber). | Decide together with the runtime interface boundary; P3 checklist items are the first slice. |
 | O5 | AI orchestration (continue Eino-first vs adopt Dify for parts). | Boundary rule: agents must remain composable either way; pilot evidence from the wedge decides. |
 | O6 | Pricing / willingness-to-pay for the wedge. | Hypotheses in [`01-problem-and-icp.md`](01-problem-and-icp.md); price only after M0 evidence. |
+| O7 | Web3 chain selection (which L2, custody, gas abstraction). | Gated to M4; needs ADR with cost, latency, and vendor-neutrality criteria. No chain is chosen by this strategy. |
+| O8 | Web3 settlement currency (fiat vs stablecoin mix, escrow design). | Gated to M4 pilot; needs ADR with regulatory and treasury review. No token in scope. |
 
 ## Conflicts resolved by this reframe
 
@@ -41,9 +45,13 @@
 3. **Proposed candidate stack vs live stack** — resolved by the register in
    [`04-system-architecture.md`](04-system-architecture.md): live stack is
    truth, candidates are options pending ADRs; no rewrite is decided.
+4. **Legacy SaaS model vs outcome-first AaaS positioning** — resolved by D6:
+   seat-based SaaS is retired (no seat metrics, no new standalone SaaS pages)
+   and Web3 is deferred to the M4/M5 trust and settlement gates
+   ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)).
 
 ## Rule
 
-Any future ADR that resolves O1–O6 must update this log and the linked
+Any future ADR that resolves O1–O8 must update this log and the linked
 documents in the same change — unresolved questions must never be quoted
 as finalized decisions.

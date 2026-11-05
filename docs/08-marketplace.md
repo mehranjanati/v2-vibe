@@ -7,7 +7,7 @@
 > extends: [`06-functions-and-tools.md`](06-functions-and-tools.md).
 >
 > **Status:** `planned` (destination) — explicitly NOT part of the MVP
-> ([`02-mvp.md`](02-mvp.md) must-not-build). Last reviewed: 2026-10-06.
+> ([`02-mvp.md`](02-mvp.md) must-not-build). Last reviewed: 2026-11-05.
 
 ## Position
 
@@ -44,6 +44,30 @@ marketplace before a wedge proves usage produces empty shelves and
 integration burden with no demand — the classic cold-start failure. The
 wedge (AI Sales) is the demand-generation strategy the marketplace later
 harvests.
+
+## Settlement and trust (M4 — gated, not built)
+
+Marketplace supply is only half of the M4 problem; cross-border payouts and
+provenance are the other half. Both are **gated to M4** and are the entire
+reason Web3 is the next plan rather than MVP scope
+([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)):
+
+- **Settlement (W3.2).** Instant escrow and revenue split in stablecoin for
+  third-party function, agent and app sales, with the fiat path retained.
+  Chain selection (O7) and settlement currency (O8) stay **unresolved** —
+  no chain, rail or token is chosen by this document.
+- **Identity and provenance (W3.1).** DIDs plus verifiable credentials for
+  versioned agents, functions and apps, so a buyer can verify what it installs
+  and who authored it.
+- **Trust anchors (W3.3).** Proof-of-run hashes anchored on chain with the
+  underlying business data kept off chain in the platform data layer — audit
+  and insurance grade verifiability without custody transfer.
+
+Guard rules that do not change when Web3 lands: business data never leaves the
+platform data layer (decision D5), wallets stay invisible to business buyers
+(embedded wallet + gas abstraction), and every adoption needs its own ADR.
+Building settlement before M1–M3 demand exists is the same cold-start mistake
+described above.
 
 ## Value exchange
 

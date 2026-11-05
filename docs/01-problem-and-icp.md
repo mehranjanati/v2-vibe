@@ -8,7 +8,7 @@
 > **Status:** `planned` — every statement in this document is a **hypothesis
 > to validate through customer interviews before phase M1 scope is locked**.
 > Nothing here is a validated fact about any customer segment. Last
-> reviewed: 2026-10-06.
+> reviewed: 2026-11-05.
 
 ## Contents
 
@@ -83,8 +83,12 @@ Candidate shape (validate/narrow before M1):
 ## Willingness-to-pay hypothesis
 
 - WTP anchors to the *value of recovered leads*, not to tool cost: if the
-  wedge recovers even a few leads per month, a per-outcome or per-seat
-  monthly price in the low hundreds (USD) should be defensible.
+  wedge recovers even a few leads per month, a per-outcome monthly price in
+  the low hundreds (USD) should be defensible.
+- Seat-based pricing is out of scope by decision D6 (AaaS-only); the
+  sellable unit is a measured outcome plus metered run cost
+  ([`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md),
+  [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)).
 - Pricing is NOT decided here; hypothesis only. Charge where durable value
   accrues (aligned with the business-model considerations in
   [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md)).

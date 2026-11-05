@@ -10,7 +10,7 @@
 > Live tools today are the App Builder's VFS/REST toolset in the Go control
 > plane ([`MULTI_AGENT.md`](MULTI_AGENT.md)) and the 7 workflow node types
 > ([`DEV_CHECKLIST.md`](DEV_CHECKLIST.md) P2 registry content). Last
-> reviewed: 2026-10-06.
+> reviewed: 2026-11-05.
 
 ## Concept
 
@@ -52,6 +52,12 @@ side-effect level, required approvals, tenant-policy hooks, retry/idempotency
 policy, owner and provenance. This extends the capability-registry direction
 already planned as engineering P1/P2 content (node packages as first registry
 entries — [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)).
+
+Forward compatibility (not implemented): the manifest must stay able to accept a
+signed provenance claim for the publisher identity described as W3.1
+([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)) without changing its
+current shape — add the claim as an optional field with its own ADR when M4
+starts. No DID, chain or token field is introduced by this document.
 
 ## Relationship to today's tools
 

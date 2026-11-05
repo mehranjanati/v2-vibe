@@ -13,6 +13,9 @@
 > decision D1 in
 > [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md).
 > Last reviewed: 2026-10-06.
+>
+> AaaS-only direction with Web3 as next plan: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)
+> (decision D6); ADR: [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md).
 
 ## Contents
 
