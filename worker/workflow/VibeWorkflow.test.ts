@@ -31,6 +31,7 @@ interface FakeInstanceRow {
   workflow_id: string;
   status: string;
   input: string | null;
+  user_id: string | null;
 }
 
 interface StepCall {
@@ -139,6 +140,8 @@ async function runWorkflow(opts: {
   payload?: WorkflowInput;
   results?: Record<string, unknown>;
   invokeCallbacks?: boolean;
+  /** Owning tenant recorded on the DAG row (P0.7); null = unowned. */
+  dagTenant?: string | null;
 }): Promise<{
   outcome: RunResult;
   callNames: string[];
@@ -148,10 +151,14 @@ async function runWorkflow(opts: {
   const fakeDb = makeFakeDb({
     instance:
       opts.instance === undefined
-        ? { workflow_id: 'wf-1', status: 'pending', input: null }
+        ? { workflow_id: 'wf-1', status: 'pending', input: null, user_id: null }
         : opts.instance,
     dag: opts.dag
-      ? { schema_version: opts.dag.schemaVersion, dag_json: JSON.stringify(opts.dag) }
+      ? {
+          schema_version: opts.dag.schemaVersion,
+          dag_json: JSON.stringify(opts.dag),
+          user_id: opts.dagTenant ?? null,
+        }
       : null,
   });
   const step = makeStep({ results: opts.results, invokeCallbacks: opts.invokeCallbacks });
@@ -453,5 +460,65 @@ describe('VibeWorkflow — failure policies', () => {
     expect(outcome.error?.message).toContain('instance');
     // No DB writes: there is no instance row to update.
     expect(writes).toEqual([]);
+  });
+});
+
+describe('VibeWorkflow — tenant isolation (P0.7)', () => {
+  const singleStepDag = (): WorkflowV2Document => ({
+    schemaVersion: 2,
+    nodes: [{ id: 'trigger', type: 'trigger' }],
+    edges: [],
+  });
+
+  it('refuses to execute a DAG owned by another tenant', async () => {
+    const { outcome, callNames, writes } = await runWorkflow({
+      dag: singleStepDag(),
+      dagTenant: 'user-a',
+      instance: { workflow_id: 'wf-1', status: 'pending', input: null, user_id: 'user-b' },
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.error).toBeInstanceOf(NonRetryableError);
+    expect(outcome.error?.message).toContain('tenant mismatch');
+    // No step runs and the instance is marked failed, never running.
+    expect(callNames).toEqual([]);
+    expect(instanceStatus(writes, 'failed')).toBe(true);
+    expect(instanceStatus(writes, 'running')).toBe(false);
+  });
+
+  it('refuses an owned DAG when the run records no tenant', async () => {
+    const { outcome, callNames } = await runWorkflow({
+      dag: singleStepDag(),
+      dagTenant: 'user-a',
+      instance: { workflow_id: 'wf-1', status: 'pending', input: null, user_id: null },
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.error?.message).toContain('tenant mismatch');
+    expect(callNames).toEqual([]);
+  });
+
+  it('executes when the run tenant matches the DAG owner', async () => {
+    const { outcome, callNames } = await runWorkflow({
+      dag: singleStepDag(),
+      dagTenant: 'user-a',
+      instance: { workflow_id: 'wf-1', status: 'pending', input: null, user_id: 'user-a' },
+      results: { trigger: { ok: true } },
+    });
+
+    expect(outcome.success).toBe(true);
+    expect(callNames).toEqual(['trigger']);
+  });
+
+  it('executes an unowned DAG with an unowned run (pre-P0.7 rows)', async () => {
+    const { outcome, callNames } = await runWorkflow({
+      dag: singleStepDag(),
+      dagTenant: null,
+      instance: { workflow_id: 'wf-1', status: 'pending', input: null, user_id: null },
+      results: { trigger: { ok: true } },
+    });
+
+    expect(outcome.success).toBe(true);
+    expect(callNames).toEqual(['trigger']);
   });
 });

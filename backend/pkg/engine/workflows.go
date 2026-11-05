@@ -2,7 +2,11 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"backend/pkg/cloudflare"
 )
@@ -27,6 +31,7 @@ type WorkflowDagRow struct {
 	SchemaVersion int
 	DagJSON       string
 	Status        string
+	UserID        string      // Owning user id (P0.7); "" when the row is unowned
 	UpdatedAt     interface{} // epoch seconds (D1 CURRENT_TIMESTAMP)
 }
 
@@ -92,7 +97,7 @@ func wfAny(row map[string]interface{}, key string) interface{} {
 // workflow does not exist.
 func LoadWorkflowDag(ctx context.Context, d1 *cloudflare.D1Client, workflowID string) (*WorkflowDagRow, error) {
 	rows, err := d1.Query(ctx,
-		"SELECT workflow_id, schema_version, dag_json, status, updated_at FROM workflow_dags WHERE workflow_id = ? LIMIT 1",
+		"SELECT workflow_id, schema_version, dag_json, status, user_id, updated_at FROM workflow_dags WHERE workflow_id = ? LIMIT 1",
 		workflowID)
 	if err != nil {
 		return nil, fmt.Errorf("d1: load workflow_dags: %w", err)
@@ -106,17 +111,126 @@ func LoadWorkflowDag(ctx context.Context, d1 *cloudflare.D1Client, workflowID st
 		SchemaVersion: wfInt(row, "schema_version"),
 		DagJSON:       wfStr(row, "dag_json"),
 		Status:        wfStr(row, "status"),
+		UserID:        wfStr(row, "user_id"),
 		UpdatedAt:     wfAny(row, "updated_at"),
 	}, nil
 }
 
+// ---------- Workflow tenant scope (P0.7) ----------
+//
+// A workflow's tenant lives in workflow_dags.user_id, written by the DAG
+// upsert from the room's P0.4 owner claim (see (*ProjectRoom).persistWorkflowDag).
+// The route guard in backend/pkg/api resolves it through WorkflowOwner below;
+// rows written before the column existed fall back to the same claim in the
+// Redis `room:owner:` registry, so an upgrade does not orphan existing
+// workflows. A row that records no owner at all is unowned → 404 (never leak
+// another tenant's existence), exactly like an unowned room in P0.4.
+
+// RoomOwnerLookup resolves the P0.4 ownership record of a chat/project id.
+// It is satisfied by (*EngineHub).RoomOwner. A non-nil error means the
+// ownership store is unreachable; callers must fail closed (503) rather than
+// treat it as "unowned".
+type RoomOwnerLookup func(chatID string) (owner string, claimed bool, err error)
+
+// WorkflowOwner resolves the user id that owns workflowID.
+//
+// Resolution order:
+//  1. workflow_dags.user_id (authoritative; written at DAG upsert);
+//  2. the P0.4 room ownership record of the chat the workflow id names
+//     (migration fallback for rows written before the column existed);
+//  3. no owner recorded → (found=false) → the route answers 404.
+//
+// A workflow that has no workflow_dags row is reported as not found, so a
+// caller never learns whether another tenant's workflow exists. D1 and the
+// ownership registry are both fail-closed: any lookup error is returned and
+// the guard answers 503.
+func WorkflowOwner(ctx context.Context, d1 *cloudflare.D1Client, workflowID string, roomOwner RoomOwnerLookup) (string, bool, error) {
+	workflowID = strings.TrimSpace(workflowID)
+	if workflowID == "" {
+		return "", false, nil
+	}
+	if d1 == nil {
+		return "", false, fmt.Errorf("d1: workflow ownership store is not configured")
+	}
+
+	rows, err := d1.Query(ctx,
+		"SELECT user_id FROM workflow_dags WHERE workflow_id = ? LIMIT 1", workflowID)
+	if err != nil {
+		return "", false, fmt.Errorf("d1: load workflow_dags user_id: %w", err)
+	}
+	if len(rows) == 0 {
+		return "", false, nil // no such workflow → 404, existence never leaked
+	}
+	if recorded := strings.TrimSpace(wfStr(rows[0], "user_id")); recorded != "" {
+		return recorded, true, nil
+	}
+
+	if roomOwner == nil {
+		return "", false, nil
+	}
+	owner, claimed, err := roomOwner(workflowID)
+	if err != nil {
+		return "", false, err
+	}
+	if !claimed || strings.TrimSpace(owner) == "" {
+		return "", false, nil // unowned → 404
+	}
+	return strings.TrimSpace(owner), true, nil
+}
+
+// WorkflowAccessDenial is one rejected cross-tenant workflow access attempt
+// (the P0.7 audit record). Operation is the HTTP method of the attempt.
+type WorkflowAccessDenial struct {
+	WorkflowID string
+	CallerID   string
+	OwnerID    string
+	Operation  string
+	IPAddress  string
+	UserAgent  string
+}
+
+// workflowAccessDeniedAction is the audit_logs.action of a rejected
+// cross-tenant workflow access (P0.7).
+const workflowAccessDeniedAction = "workflow.access_denied"
+
+// RecordWorkflowAccessDenial appends one cross-tenant workflow access attempt
+// to D1 audit_logs (entity_type 'workflow', entity_id = workflow id,
+// action 'workflow.access_denied', new_values = {operation, owner, caller}).
+// The caller id is the audit subject (user_id); when the caller is unknown to
+// D1 the insert is rejected by the FK and reported as an error.
+func RecordWorkflowAccessDenial(ctx context.Context, d1 *cloudflare.D1Client, denial WorkflowAccessDenial) error {
+	if d1 == nil {
+		return fmt.Errorf("d1: audit store is not configured")
+	}
+	detail, err := json.Marshal(map[string]string{
+		"operation": denial.Operation,
+		"owner":     denial.OwnerID,
+		"caller":    denial.CallerID,
+	})
+	if err != nil {
+		return fmt.Errorf("d1: marshal workflow access denial: %w", err)
+	}
+	ok, err := d1.Exec(ctx,
+		"INSERT INTO audit_logs (id, user_id, entity_type, entity_id, action, new_values, ip_address, user_agent, created_at) "+
+			"VALUES (?, ?, 'workflow', ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), CURRENT_TIMESTAMP)",
+		uuid.NewString(), denial.CallerID, denial.WorkflowID, workflowAccessDeniedAction, string(detail),
+		denial.IPAddress, denial.UserAgent)
+	if err != nil || !ok {
+		return fmt.Errorf("d1: insert audit_logs: %v", err)
+	}
+	return nil
+}
+
 // CreateWorkflowInstanceRow inserts the pending workflow_instances row a
 // run starts from. The runtime worker loads this row by id (workflow_id →
-// workflow_dags FK) when the Cloudflare event fires.
-func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, inputJSON string) error {
+// workflow_dags FK) when the Cloudflare event fires. ownerID is the run's
+// tenant (P0.7) — the DAG's owner, copied here so the runtime can refuse to
+// execute a run whose tenant no longer matches the DAG it points at; an
+// empty ownerID is stored as SQL NULL (unowned, pre-P0.7 behaviour).
+func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, ownerID, inputJSON string) error {
 	ok, err := d1.Exec(ctx,
-		"INSERT INTO workflow_instances (id, workflow_id, status, input, created_at) VALUES (?, ?, 'pending', ?, CURRENT_TIMESTAMP)",
-		instanceID, workflowID, inputJSON)
+		"INSERT INTO workflow_instances (id, workflow_id, status, user_id, input, created_at) VALUES (?, ?, 'pending', NULLIF(?, ''), ?, CURRENT_TIMESTAMP)",
+		instanceID, workflowID, ownerID, inputJSON)
 	if err != nil || !ok {
 		return fmt.Errorf("d1: insert workflow_instances: %v", err)
 	}

@@ -39,13 +39,6 @@ services:
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_PAGES_PROJECT: ${CLOUDFLARE_PAGES_PROJECT:-}
-      # PostgreSQL auth persistence (reaches the host Postgres from the container)
-      PG_HOST: ${PG_HOST:-192.168.65.254}
-      PG_PORT: ${PG_PORT:-5433}
-      PG_USER: ${PG_USER:-postgres}
-      PG_PASSWORD: ${PG_PASSWORD:-password}
-      PG_DATABASE: ${PG_DATABASE:-chatwoot_dev}
-      PG_SSLMODE: ${PG_SSLMODE:-disable}
       # Cloudflare D1 database ID — must be set in .env and match
       # wrangler.v2.jsonc d1_databases[0].database_id. No default on purpose:
       # a wrong id silently points the control plane at another database.

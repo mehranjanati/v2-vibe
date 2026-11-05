@@ -1,0 +1,16 @@
+# Keep the Docker build context small and never bake local secrets into the
+# image. The Dockerfile copies cmd/, pkg/, agent/, skills/, go.mod and go.sum
+# explicitly, so these entries only trim what Docker uploads.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.DS_Store
+
+e2e/
+docs/
+testdata/
+dist/
+bin/
+*.out

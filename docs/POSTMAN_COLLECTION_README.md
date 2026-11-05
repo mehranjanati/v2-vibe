@@ -20,7 +20,7 @@ There is **no valid single shared base URL**. Worker and Control/Go are distinct
 
 ### R2 answer — cross-plane auth/session dependency
 
-**Answer: the two planes do NOT share session state.** The Worker stores sessions in KV (`session:token:<token>` → userId, `worker/light/lightApp.ts:319-366`); Go register/login are backed by Postgres (`backend/pkg/api/auth_pg.go`) and return a bare `sessionId` with no cookie, and no Go handler reads the Worker cookie (grep of `backend/pkg/api/*.go` shows no `Cookie`/`Authorization` session check). The only cross-plane coupling is file flow: the Worker fetches generated files from Go (`GET /api/projects/:id/files`) for GitHub export — it does not forward user session.
+**Answer: the two planes do NOT share session state — and P0.9 (decided 2026-10-07) contracts that split: the Edge Worker stays the sole identity authority and Go only verifies Edge tokens via the P0.3 `EdgeKVVerifier` (see `docs/architecture/adr-identity-source-of-truth.md`).** The Worker stores sessions in KV (`session:token:<token>` → userId, `worker/light/lightApp.ts:319-366`); Go register/login are backed by Cloudflare D1 (`backend/pkg/api/auth_d1.go`) and return a bare `sessionId` with no cookie, and no Go handler reads the Worker cookie (grep of `backend/pkg/api/*.go` shows no `Cookie`/`Authorization` session check). The only cross-plane coupling is file flow: the Worker fetches generated files from Go (`GET /api/projects/:id/files`) for GitHub export — it does not forward user session.
 
 **Required execution order for a smoke run:** (1) run the **Worker Plane** folder first (CSRF → register/login → profile → OAuth helper → logout) to prove Worker auth; (2) then run the **Control Plane** folder (health → `POST /api/agent` → session → connect → app details) against the Go backend. Control requests must NOT depend on the Worker cookie, and the collection prerequest fetches CSRF from `workerUrl` only.
 
@@ -35,7 +35,7 @@ Every active request carries an explicit plane marker as a structured descriptio
 
 ## 3. NDJSON agent_id extraction rule (R1)
 
-`POST /api/agent` (`backend/pkg/api/routes.go:116-134`) returns **NDJSON, not the `{success, data.agentId}` envelope**: exactly one JSON object per line with `Content-Type: application/x-ndjson`, currently a single line `{"agentId": "<uuid>", "websocketUrl": "ws://<host>/ws/<uuid>", ...}`.
+`POST /api/agent` (`backend/pkg/api/routes.go:118-136`) returns **NDJSON, not the `{success, data.agentId}` envelope**: exactly one JSON object per line with `Content-Type: application/x-ndjson`, currently a single line `{"agentId": "<uuid>", "websocketUrl": "ws://<host>/ws/<uuid>", ...}`.
 
 The collection test script implements this rule:
 
@@ -75,13 +75,13 @@ Also out of scope (unchanged): `POST /api/ws-ticket` (referenced by `sdk/src/htt
 
 | Endpoint (active) | Plane | Source |
 |---|---|---|
-| `GET /api/auth/csrf-token` | Worker (+ Go dev stub) | `worker/light/lightApp.ts:188`, `backend/pkg/api/routes.go:61` |
-| `POST /api/auth/register`, `POST /api/auth/login` | Worker (D1/KV); Go has parallel PG handlers | `worker/light/lightApp.ts:198,258`, `backend/pkg/api/auth_pg.go:98,158` |
-| `GET /api/auth/profile`, `GET /api/auth/providers` | Worker (+ Go stubs) | `worker/light/lightApp.ts:336,368`, `backend/pkg/api/routes.go:67,70` |
+| `GET /api/auth/csrf-token` | Worker (+ Go dev stub) | `worker/light/lightApp.ts:188`, `backend/pkg/api/routes.go:63` |
+| `POST /api/auth/register`, `POST /api/auth/login` | Worker (D1/KV); Go has parallel D1 handlers | `worker/light/lightApp.ts:198,258`, `backend/pkg/api/auth_d1.go:96,152` |
+| `GET /api/auth/profile`, `GET /api/auth/providers` | Worker (+ Go stubs) | `worker/light/lightApp.ts:336,368`, `backend/pkg/api/routes.go:69,72` |
 | `GET /api/auth/session` | Worker only | `worker/light/lightApp.ts:393` |
 | `POST /api/auth/logout` | Worker only | `worker/light/lightApp.ts:319` |
 | `GET /api/auth/oauth/github` | Worker only | `worker/light/lightApp.ts:403` |
-| `GET /health` | Control/Go (Worker answers `/api/status`, not `/health`) | `backend/pkg/api/routes.go:49` |
-| `POST /api/agent` (NDJSON) | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:116` |
-| `POST /api/agent/session`, `GET /api/agent/:id/connect` | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:296,299` |
-| `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:253`, `worker/light/lightApp.ts:809` |
+| `GET /health` | Control/Go (Worker answers `/api/status`, not `/health`) | `backend/pkg/api/routes.go:51` |
+| `POST /api/agent` (NDJSON) | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:118` |
+| `POST /api/agent/session`, `GET /api/agent/:id/connect` | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:298,301` |
+| `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:255`, `worker/light/lightApp.ts:809` |

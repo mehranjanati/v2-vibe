@@ -25,7 +25,10 @@
   without affecting others (M4 marketplace direction:
   [`08-marketplace.md`](08-marketplace.md)).
 - **Tenant-specific workflows and agent behavior** — per-tenant config and
-  prompt/policy inputs, not code forks.
+  prompt/policy inputs, not code forks. Generated workflows are tenant-scoped
+  in D1: `workflow_dags.user_id` (owner, first-write-wins) and
+  `workflow_instances.user_id` per run; the control plane authorizes
+  trigger/get through `workflowGuard` (cross-tenant → 403 + `workflow.access_denied` audit, unknown/unowned → 404, outage → 503) and the runtime refuses tenant-mismatched runs — see `docs/DEV_CHECKLIST.md` P0.7.
 - **Tenant-specific data model where justified** — the default is a shared
   schema with a mandatory tenant column; a separate data model requires an
   explicit justification (constraint: do NOT assume every tenant needs a
@@ -47,7 +50,9 @@
 
 The engineering backlog already sequences this foundation as **P0 —
 Identity, Security, Tenancy** (`P0.3` control-plane session boundary is
-`implemented_unverified`; `P0.4–P0.9` planned —
+`implemented_unverified`; `P0.4` rooms/VFS/deploy ownership is
+`implemented_unverified`; `P0.5` WebSocket authorization is
+`implemented_unverified`; `P0.6–P0.9` planned —
 [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)). This document defines the *product
 contract* those tasks must satisfy: tenancy is a launch requirement for the
 wedge (M1), not a later hardening pass.

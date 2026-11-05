@@ -108,6 +108,13 @@ func RequireSession(verifier engine.SessionVerifier) fiber.Handler {
 	}
 }
 
+// ResourceOwnerLookup resolves the owning user id of the resource addressed by
+// the request. found=false means the resource does not exist or carries no
+// recorded owner (→ 404). A non-nil error means the ownership store is
+// unreachable; the guard fails closed with 503 rather than treating an outage
+// as "unowned".
+type ResourceOwnerLookup func(c *fiber.Ctx) (owner string, found bool, err error)
+
 // RequireOwner scopes a route to the caller's own resources. ownerOf reports
 // the owner id of the resource addressed by the request (false when the
 // resource does not exist or carries no owner). It must run after
@@ -118,19 +125,35 @@ func RequireSession(verifier engine.SessionVerifier) fiber.Handler {
 //     another tenant's existence via 403);
 //   - owner != caller           → 403.
 //
-// Per-resource owner lookups land with the ownership model (P0.4) and the
-// workflow tenant scope (P0.7); this middleware is the reusable primitive and
-// is exercised by its own tests.
+// It is the boolean adapter over RequireResourceOwner; the P0.4 room/VFS/deploy
+// routes install the error-aware RequireResourceOwner directly so an
+// unreachable ownership store fails closed.
 func RequireOwner(ownerOf func(*fiber.Ctx) (string, bool)) fiber.Handler {
+	return RequireResourceOwner(func(c *fiber.Ctx) (string, bool, error) {
+		owner, found := ownerOf(c)
+		return owner, found, nil
+	})
+}
+
+// RequireResourceOwner scopes a route to the caller's own resources using an
+// error-aware lookup. It carries the same 401/404/403 contract as RequireOwner
+// and additionally answers 503 when the lookup reports a store outage — so a
+// broken ownership store can never be mistaken for an unowned resource. This is
+// the ownership model of P0.4 (rooms/VFS/deploys) and the reusable primitive
+// P0.7 uses for workflow tenant scope.
+func RequireResourceOwner(lookup ResourceOwnerLookup) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		identity, ok := CurrentIdentity(c)
 		if !ok || identity.UserID == "" {
 			return unauthenticated(c)
 		}
-		if ownerOf == nil {
+		if lookup == nil {
 			return sessionStoreUnavailable(c)
 		}
-		ownerID, found := ownerOf(c)
+		ownerID, found, err := lookup(c)
+		if err != nil {
+			return sessionStoreUnavailable(c)
+		}
 		if !found || ownerID == "" {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 				"success": false,
@@ -222,4 +245,53 @@ func (v StaticSessionVerifier) VerifyUserID(_ context.Context, token string) (st
 		return "", nil
 	}
 	return v[token], nil
+}
+
+// P0.5 — WebSocket upgrade authorization.
+//
+// Browsers cannot set custom headers on a WebSocket handshake, so the session
+// token is carried on the URL as the `ticket` (or `token`) query parameter; the
+// Authorization: Bearer / X-Session-Token / `session` cookie transports that
+// sessionTokenFromRequest already understands are kept as fallbacks for
+// programmatic and same-origin clients.
+
+// wsTokenFromRequest extracts the session token a WebSocket upgrade presents.
+// Priority: the `ticket` query param, the `token` query param, then the
+// standard HTTP transports (Authorization: Bearer, X-Session-Token, `session`
+// cookie). The returned source is "query" for the URL transports.
+func wsTokenFromRequest(c *fiber.Ctx) (token, source string) {
+	if q := strings.TrimSpace(c.Query("ticket")); q != "" {
+		return q, "query"
+	}
+	if q := strings.TrimSpace(c.Query("token")); q != "" {
+		return q, "query"
+	}
+	return sessionTokenFromRequest(c)
+}
+
+// RequireWebSocketSession authenticates a WebSocket upgrade request before the
+// upgrader (websocket.New) runs. It shares RequireSession's contract — a nil
+// verifier and a store outage fail closed with 503, a missing/unknown token is
+// 401 — so a rejected upgrade never reaches the room. On success it attaches
+// the resolved Identity (CurrentIdentity), binding the socket to the same
+// caller as the HTTP control-plane routes.
+func RequireWebSocketSession(verifier engine.SessionVerifier) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		token, source := wsTokenFromRequest(c)
+		if token == "" {
+			return unauthenticated(c)
+		}
+		if verifier == nil {
+			return sessionStoreUnavailable(c)
+		}
+		userID, err := verifier.VerifyUserID(context.Background(), token)
+		if err != nil {
+			return sessionStoreUnavailable(c)
+		}
+		if userID == "" {
+			return unauthenticated(c)
+		}
+		c.Locals(identityLocals, Identity{UserID: userID, Token: token, Source: source})
+		return c.Next()
+	}
 }

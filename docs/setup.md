@@ -120,6 +120,8 @@ OAuth token from wrangler, validates it with a read-only `SELECT 1`, and rewrite
 | `CONTROL_PLANE_REQUIRE_SESSION` | Opt-in P0.3 session boundary. `1`/`true`/`yes` makes every mutating route require a session token (401 when absent/unknown, 503 when the session store is unreachable); unset keeps the boundary off |
 | `VIBECODER_STORE_KV_ID` | Edge `VibecoderStore` KV namespace id the boundary verifies session tokens against (`session:token:<token>` → userId). Required when `CONTROL_PLANE_REQUIRE_SESSION` is on; unset makes guarded routes fail closed with 503 |
 
+> Identity source of truth (P0.9, decided 2026-10-07): the Edge light Worker mints sessions, Go only verifies them — see `docs/architecture/adr-identity-source-of-truth.md`. A deployment that logs in through the Go PG handlers mints no Edge token and cannot satisfy the boundary; log in through the Worker.
+
 ### Domain and network
 
 No wildcard DNS, tunnel, Advanced Certificate Manager or dispatch-namespace setup is required:

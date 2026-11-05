@@ -223,6 +223,27 @@ describe('Light Worker — API route contract', () => {
 		});
 	});
 
+	describe('POST /api/github-app/revoke (P0.6 credential revoke)', () => {
+		it('returns 401 without a session', async () => {
+			const res = await makeRequest('/api/github-app/revoke', { method: 'POST' });
+			expect(res.status).toBe(401);
+			expect(res.headers.get('Content-Type')).toContain('application/json');
+			const body = await res.json();
+			expect(body.success).toBe(false);
+		});
+
+		it('revokes the stored credential for an authenticated user', async () => {
+			const res = await makeRequest(
+				'/api/github-app/revoke',
+				{ method: 'POST', headers: { Cookie: 'access_token=test-session-token' } },
+				{ sessionUserId: 'user-abc' },
+			);
+			expect(res.status).toBe(200);
+			const body = await res.json();
+			expect(body).toEqual({ success: true, data: { revoked: true } });
+		});
+	});
+
 	describe('SPA fallback', () => {
 		it('non-API routes fall back to ASSETS (HTML)', async () => {
 			const res = await makeRequest('/some/spa/route');

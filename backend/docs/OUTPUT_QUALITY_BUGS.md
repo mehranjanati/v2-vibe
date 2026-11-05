@@ -437,15 +437,10 @@
   - **پذیرش:** با یک ID واحد، کاربر ساخته‌شده توسط Worker در پلن Go
     (`lookUpUserByEmail`) پیدا می‌شود — تست e2e روی staging.
 
-- [ ] **G7** — مقادیر `PG_*` هاردکد مخصوص Docker Desktop مک
-  `docker-compose.yml:44-50`: `PG_HOST=192.168.65.254` (آدرس ویژهٔ Docker
-  Desktop روی macOS) و `PG_DATABASE=chatwoot_dev`. روی Coolify/لینوکس این
-  مقادیر غلط‌اند و auth پستگرس پلن کنترل بالا نمی‌آید.
-  - **رفع:** پیش‌فرض‌ها را بی‌طرف کن (`PG_HOST` بدون پیش‌فرض، `PG_DATABASE`
-    نام پروژه) و اتصال صحیح را در `docker-compose.prod.yml`/متغیرهای Coolify
-    بگذار؛ در `.env.example` توضیح بده.
-  - **پذیرش:** بالا آمدن compose روی لینوکس بدون override دستی + یک health
-    check سبک برای مسیر auth پستگرس.
+- [x] **G7** — (حل شد ۲۰۲۶-۱۱-۰۵) مقادیر `PG_*` هاردکد مخصوص Docker Desktop مک
+  از `docker-compose.yml` حذف شد و وابستگی PostgreSQL کامل حذف شد: auth پلن
+  کنترل اکنون از D1 استفاده می‌کند (`backend/pkg/api/auth_d1.go`)، بنابراین
+  مشکل اتصال پستگرس روی Coolify/لینوکس دیگر وجود ندارد.
 
 - [x] **G8** — هیچ تست فرانت/Worker در این محیط اجرا نمی‌شود
   `bun run test` بلافاصله با «Unsupported macOS version … minimum requirement
@@ -584,7 +579,7 @@
   سه پیاده‌سازی موازی auth وجود دارد: (۱) Worker سبک با bcrypt + کوکی
   `access_token` و session در KV (`session:v2:{userId}`,
   `lightApp.ts:228-229`)، (۲) `backend/pkg/api/auth_d1.go` (D1)، (۳)
-  `backend/pkg/api/auth_pg.go` (Postgres). جست‌وجو نشان می‌دهد **Go هیچ‌جا
+  `backend/pkg/api/auth_pg.go` (Postgres — حذف شد ۲۰۲۶-۱۱-۰۵). جست‌وجو نشان می‌دهد **Go هیچ‌جا
   کوکی `access_token` یا کلید `session:*` KV را نمی‌خواند** (grep خالی در
   `backend/pkg/api` و `backend/pkg/handler`) → درخواست‌های کاربر احراز‌شده در
   Worker، در پلن کنترل ناشناس‌اند (و برعکس) و `user_id` بین apps/envs یکی

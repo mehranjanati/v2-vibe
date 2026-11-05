@@ -1,0 +1,75 @@
+# Render Blueprint — deploys the Go control plane (backend/) plus a
+# Redis-compatible Key Value instance.
+#
+# Render reads this file from the repository root when you create a
+# Blueprint (Dashboard → New → Blueprint) or connect this repo. Every push
+# to the tracked branch triggers a Docker build of backend/Dockerfile.
+#
+# Docker is used on purpose: the image needs the per-role skill prompts
+# (backend/skills/) and a distroless runtime, both provided by the existing
+# Dockerfile.
+#
+# Secrets are marked `sync: false`: Render prompts for them on first sync and
+# stores them encrypted. Never commit real tokens here.
+
+services:
+  - type: web
+    name: vibesdk-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Render injects PORT automatically (default 10000); set it explicitly
+      # so the value the Go process reads is unambiguous.
+      - key: PORT
+        value: "10000"
+
+      # Redis-compatible Key Value, wired over Render's private network.
+      - key: REDIS_URL
+        fromService:
+          name: vibesdk-redis
+          type: keyvalue
+          property: connectionString
+
+      # LLM / Workers AI gateway (OpenAI-compatible endpoint).
+      - key: AI_GATEWAY_URL
+        sync: false
+      - key: AI_GATEWAY_API_KEY
+        sync: false
+      - key: DEFAULT_MODEL
+        value: "@cf/qwen/qwen2.5-coder-32b-instruct"
+
+      # Cloudflare control-plane credentials (D1 + Pages/Workflows).
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: D1_DATABASE_ID
+        sync: false
+      - key: WORKFLOWS_NAME
+        value: vibesdk-v2-workflows
+
+      # Skill prompts are baked into the image at /app/skills by the
+      # Dockerfile; pin the path so they load regardless of WORKDIR.
+      - key: SKILLS_DIR
+        value: /app/skills
+
+      # The Edge Worker remains the identity authority. Keep the opt-in
+      # control-plane boundary off for a standalone Render demo; flip to
+      # "true" and provide VIBECODER_STORE_KV_ID to enforce Edge sessions.
+      - key: CONTROL_PLANE_REQUIRE_SESSION
+        value: "false"
+      # - key: VIBECODER_STORE_KV_ID
+      #   sync: false
+
+  - type: keyvalue
+    name: vibesdk-redis
+    plan: free
+    region: oregon
+    # [] = internal/private connections only (the web service reaches it over
+    # Render's private network in the same region).
+    ipAllowList: []

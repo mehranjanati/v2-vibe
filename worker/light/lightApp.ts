@@ -14,6 +14,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import bcrypt from 'bcryptjs';
 
 import type { LightWorkerBindings } from '../types/bindings';
+import { getGitHubToken, revokeGitHubToken, sealGitHubToken, storeGitHubToken } from './tokenVault';
 
 const SESSION_COOKIE = 'access_token';
 const CSRF_COOKIE = 'csrf_token';
@@ -456,11 +457,12 @@ export function buildLightApp(): Hono<LightAppEnv> {
 					.bind(userId, email, gh.login || '', gh.name || gh.login || 'GitHub User', String(gh.id), 'oauth', new Date().toISOString())
 					.run();
 			}
+			// P0.6: the linked identity stores an `enc:v1:` envelope, never plaintext.
 			await c.env.DB.prepare(
 				`INSERT INTO linked_identities (user_id, provider, provider_user_id, access_token, created_at)
 				 VALUES (?, 'github', ?, ?, ?)`,
 			)
-				.bind(userId, String(gh.id), accessToken, new Date().toISOString())
+				.bind(userId, String(gh.id), await sealGitHubToken(c.env, userId, accessToken), new Date().toISOString())
 				.run();
 		} catch {
 			// ignore failure; we still redirect
@@ -560,25 +562,8 @@ export function buildLightApp(): Hono<LightAppEnv> {
 		return true;
 	}
 
-	/** Store the GitHub token in D1 for a user. */
-	async function storeGitHubToken(env: LightWorkerBindings, userId: string, token: string, username: string): Promise<void> {
-		await env.DB.prepare(
-			`INSERT INTO github_tokens (user_id, access_token, username, created_at)
-			 VALUES (?, ?, ?, ?)
-			 ON CONFLICT (user_id) DO UPDATE SET access_token = excluded.access_token, username = excluded.username`,
-		)
-			.bind(userId, token, username, new Date().toISOString())
-			.run();
-	}
-
-	/** Get the stored GitHub token for a user from D1. */
-	async function getGitHubToken(env: LightWorkerBindings, userId: string): Promise<{ token: string; username: string } | null> {
-		const row = await env.DB.prepare('SELECT access_token, username FROM github_tokens WHERE user_id = ?')
-			.bind(userId)
-			.first();
-		if (!row) return null;
-		return { token: row.access_token as string, username: row.username as string };
-	}
+	// GitHub token storage / resolve / revoke live in `./tokenVault` (P0.6:
+	// D1 only ever holds `enc:v1:` AES-256-GCM envelopes, never plaintext).
 
 	// POST /api/github-app/export — initiate GitHub export
 	app.post('/api/github-app/export', async (c) => {
@@ -768,6 +753,37 @@ export function buildLightApp(): Hono<LightAppEnv> {
 			aheadBy: Object.keys(files).length,
 			divergedCommits: [],
 		}));
+	});
+
+	// POST /api/github-app/revoke — revoke the stored GitHub credential (P0.6)
+	app.post('/api/github-app/revoke', async (c) => {
+		const userId = await getUserId(c);
+		if (!userId) return c.json(fail('Authentication required', 401), 401);
+
+		// Best-effort provider-side revocation first (it needs the plaintext
+		// token, which we still hold in memory here); the local delete below is
+		// what the export routes actually gate on, so it runs regardless.
+		const stored = await getGitHubToken(c.env, userId);
+		if (stored && c.env.GITHUB_EXPORTER_CLIENT_ID && c.env.GITHUB_EXPORTER_CLIENT_SECRET) {
+			try {
+				await fetch(`https://api.github.com/applications/${c.env.GITHUB_EXPORTER_CLIENT_ID}/token`, {
+					method: 'DELETE',
+					headers: {
+						Authorization: `Basic ${b64encode(
+							`${c.env.GITHUB_EXPORTER_CLIENT_ID}:${c.env.GITHUB_EXPORTER_CLIENT_SECRET}`,
+						)}`,
+						Accept: 'application/vnd.github+json',
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ access_token: stored.token }),
+				});
+			} catch {
+				// Network failure — still revoke locally below.
+			}
+		}
+
+		await revokeGitHubToken(c.env, userId);
+		return c.json(ok({ revoked: true }));
 	});
 
 	// -------------------------------------------------------------------------

@@ -123,9 +123,16 @@ export async function healthCheck(): Promise<boolean> {
 /**
  * Open a WebSocket to the control plane for a given agent/room.
  * Returns a native WebSocket (or partysocket-compatible) connection.
+ *
+ * P0.5: the control-plane upgrade is authenticated with the same session the
+ * HTTP client presents. A WebSocket handshake cannot set headers, so the token
+ * is carried as the `ticket` query parameter — the guard
+ * (backend/pkg/api/auth.go RequireWebSocketSession) accepts it.
  */
 export function openControlPlaneSocket(agentId: string): WebSocket {
-	return new WebSocket(`${wsControlPlaneUrl}/ws/${agentId}`);
+	const sessionToken = readControlPlaneSessionToken();
+	const ticket = sessionToken ? `?ticket=${encodeURIComponent(sessionToken)}` : '';
+	return new WebSocket(`${wsControlPlaneUrl}/ws/${agentId}${ticket}`);
 }
 
 /** Convenience accessor for the control-plane base URL. */

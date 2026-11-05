@@ -48,23 +48,33 @@ func (k *KVClient) SetBaseURL(rawURL string) {
 	k.baseURL = strings.TrimRight(rawURL, "/")
 }
 
-// Get reads one key from a KV namespace. A missing key surfaces as
-// ErrKVKeyNotFound; any other failure (credentials, transport, upstream
-// status) is returned as a plain error so callers can fail closed.
-func (k *KVClient) Get(ctx context.Context, namespaceID, key string) (string, error) {
+// valuesURL builds the Cloudflare KV single-value endpoint for a key. It
+// validates that the client is configured (account id + token + namespace)
+// so callers never issue an unauthenticated request, and is shared by
+// Get/Put/Delete. Tests override the API root via SetBaseURL.
+func (k *KVClient) valuesURL(namespaceID, key string) (string, error) {
 	if k.accountID == "" || k.apiToken == "" {
 		return "", errors.New("kv: accountID and apiToken are required")
 	}
 	if namespaceID == "" {
 		return "", errors.New("kv: namespaceID is required")
 	}
-
 	base := k.baseURL
 	if base == "" {
 		base = "https://api.cloudflare.com/client/v4"
 	}
-	endpoint := fmt.Sprintf("%s/accounts/%s/storage/kv/namespaces/%s/values/%s",
-		base, k.accountID, url.PathEscape(namespaceID), url.PathEscape(key))
+	return fmt.Sprintf("%s/accounts/%s/storage/kv/namespaces/%s/values/%s",
+		base, k.accountID, url.PathEscape(namespaceID), url.PathEscape(key)), nil
+}
+
+// Get reads one key from a KV namespace. A missing key surfaces as
+// ErrKVKeyNotFound; any other failure (credentials, transport, upstream
+// status) is returned as a plain error so callers can fail closed.
+func (k *KVClient) Get(ctx context.Context, namespaceID, key string) (string, error) {
+	endpoint, err := k.valuesURL(namespaceID, key)
+	if err != nil {
+		return "", err
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -89,4 +99,70 @@ func (k *KVClient) Get(ctx context.Context, namespaceID, key string) (string, er
 		return "", fmt.Errorf("kv: status %d: %s", resp.StatusCode, string(raw))
 	}
 	return string(raw), nil
+}
+
+// Put writes one key into a KV namespace. Cloudflare stores the raw request
+// body as the value (there is no JSON envelope on the write path) and
+// answers 200 with {"success":true}. Any non-2xx status is returned as an
+// error so callers fail loudly instead of assuming the write landed.
+//
+// The control plane does not mint Edge sessions at runtime (Edge stays the
+// identity authority — P0.9), but it needs Put to provision and clean up the
+// `session:token:<token>` keys used by the P0.3 rollout-verification harness
+// (backend/e2e/p03_session_boundary_test.go).
+func (k *KVClient) Put(ctx context.Context, namespaceID, key, value string) error {
+	endpoint, err := k.valuesURL(namespaceID, key)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, strings.NewReader(value))
+	if err != nil {
+		return fmt.Errorf("kv: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+k.apiToken)
+	req.Header.Set("Content-Type", "text/plain")
+
+	resp, err := k.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("kv: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kv: put status %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// Delete removes one key from a KV namespace. Deletion is idempotent: a
+// missing key (404) is reported as success so callers can clean up without
+// first checking existence. Any other failure is returned as an error.
+func (k *KVClient) Delete(ctx context.Context, namespaceID, key string) error {
+	endpoint, err := k.valuesURL(namespaceID, key)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("kv: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+k.apiToken)
+
+	resp, err := k.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("kv: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kv: delete status %d: %s", resp.StatusCode, string(raw))
+	}
+	return nil
 }

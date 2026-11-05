@@ -182,6 +182,16 @@ func (h *EngineHub) GetOrCreateRoom(chatID string) *ProjectRoom {
 		return room
 	}
 
+	// P0.7: resolve the room's tenant before creating it so a regenerating
+	// session stamps workflow_dags.user_id correctly. This also warms the
+	// in-memory registry from Redis after a restart. A lookup failure is not
+	// fatal here (the room is created unowned); the ownership guards that
+	// authorize caller access still fail closed on their own lookups.
+	owner, claimed, oerr := h.RoomOwner(chatID)
+	if oerr != nil {
+		log.Printf("[hub] owner lookup for room %s failed: %v", chatID, oerr)
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -193,6 +203,9 @@ func (h *EngineHub) GetOrCreateRoom(chatID string) *ProjectRoom {
 	room = NewProjectRoom(chatID, h.rdb, h.llm, h.eng)
 	room.SetCloudflareClient(h.cf)
 	room.SetD1Client(h.d1)
+	if claimed && owner != "" {
+		room.SetOwner(owner)
+	}
 	if h.plannerPrompt != "" {
 		room.SetPlannerPrompt(h.plannerPrompt)
 	}
@@ -270,6 +283,7 @@ func (h *EngineHub) ClaimRoomOwner(chatID, userID string) (owner string, ok bool
 	defer h.mu.Unlock()
 
 	if existing, claimed := h.roomOwners[chatID]; claimed {
+		h.mirrorRoomOwnerLocked(chatID, existing)
 		return existing, existing == userID, nil
 	}
 	// In-memory registry is authoritative for the race: a concurrent claim
@@ -280,12 +294,23 @@ func (h *EngineHub) ClaimRoomOwner(chatID, userID string) (owner string, ok bool
 	}
 	if persisted != "" {
 		h.roomOwners[chatID] = persisted
+		h.mirrorRoomOwnerLocked(chatID, persisted)
 		return persisted, persisted == userID, nil
 	}
 
 	h.roomOwners[chatID] = userID
 	h.storeRoomOwnerLocked(chatID, userID)
+	h.mirrorRoomOwnerLocked(chatID, userID)
 	return userID, true, nil
+}
+
+// mirrorRoomOwnerLocked copies an ownership claim onto the live room so the
+// room stamps the workflow DAGs it generates with the same tenant (P0.7).
+// Must be called with h.mu held.
+func (h *EngineHub) mirrorRoomOwnerLocked(chatID, userID string) {
+	if room, ok := h.rooms[chatID]; ok {
+		room.SetOwner(userID)
+	}
 }
 
 // RoomOwner returns the owning user id of chatID. The second return reports
@@ -319,6 +344,7 @@ func (h *EngineHub) RoomOwner(chatID string) (owner string, claimed bool, err er
 		return "", false, nil
 	}
 	h.roomOwners[chatID] = owner
+	h.mirrorRoomOwnerLocked(chatID, owner)
 	return owner, true, nil
 }
 

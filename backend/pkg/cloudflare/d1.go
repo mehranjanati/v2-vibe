@@ -123,12 +123,18 @@ func (d *D1Client) Exec(ctx context.Context, sql string, args ...interface{}) (b
 // workflow_dags table (D1). The table is created by the worker migration
 // (worker/database/schema.ts → migrations/); a missing table is reported as
 // an error the caller logs and continues past (never fatal to generation).
-func (d *D1Client) UpsertWorkflowDag(ctx context.Context, workflowID string, schemaVersion int, dagJSON string) error {
-	const sql = "INSERT INTO workflow_dags (workflow_id, schema_version, dag_json, status, updated_at) " +
-		"VALUES (?, ?, ?, 'generated', CURRENT_TIMESTAMP) " +
+//
+// ownerID is the DAG's tenant (P0.7) and is written first-write-wins:
+// COALESCE keeps the owner already stored on the row, so regenerating a
+// workflow never transfers it to another user, and an empty ownerID is
+// stored as SQL NULL (unowned) instead of "".
+func (d *D1Client) UpsertWorkflowDag(ctx context.Context, workflowID string, schemaVersion int, dagJSON, ownerID string) error {
+	const sql = "INSERT INTO workflow_dags (workflow_id, schema_version, dag_json, status, user_id, updated_at) " +
+		"VALUES (?, ?, ?, 'generated', NULLIF(?, ''), CURRENT_TIMESTAMP) " +
 		"ON CONFLICT(workflow_id) DO UPDATE SET schema_version = excluded.schema_version, " +
-		"dag_json = excluded.dag_json, status = 'generated', updated_at = CURRENT_TIMESTAMP"
-	_, err := d.Exec(ctx, sql, workflowID, schemaVersion, dagJSON)
+		"dag_json = excluded.dag_json, status = 'generated', " +
+		"user_id = COALESCE(workflow_dags.user_id, excluded.user_id), updated_at = CURRENT_TIMESTAMP"
+	_, err := d.Exec(ctx, sql, workflowID, schemaVersion, dagJSON, ownerID)
 	if err != nil {
 		return fmt.Errorf("d1: upsert workflow_dags: %w", err)
 	}

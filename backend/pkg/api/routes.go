@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
@@ -70,8 +73,12 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	app.Get("/api/auth/providers", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": true, "data": []string{}})
 	})
-	app.Post("/api/auth/register", handleRegisterPG(hub))
-	app.Post("/api/auth/login", handleLoginPG(hub))
+	// Auth (email/password) is backed by Cloudflare D1, the same database the
+	// Edge light Worker uses (worker/database/schema.ts → `users`). The former
+	// PostgreSQL handlers were removed on 2026-11-05; the Edge Worker remains
+	// the identity authority (docs/architecture/adr-identity-source-of-truth.md).
+	app.Post("/api/auth/register", handleRegisterD1(hub))
+	app.Post("/api/auth/login", handleLoginD1(hub))
 	app.Post("/api/auth/verify-email", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"success": true,
@@ -291,37 +298,41 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 		})
 	})
 
-	// P0.3: every mutating (and project-reading) control-plane route runs the
-	// session boundary first. When no SessionVerifier is installed the guard
-	// is a no-op — the boundary is opt-in until the P0.9 identity decision
-	// lands (docs/DEV_CHECKLIST.md P0.3/P0.9).
+	// P0.3/P0.4: every mutating (and project-reading) control-plane route runs
+	// the session boundary first; the room/VFS/deploy routes are then scoped to
+	// the caller's own resources. Both guards are no-ops when no SessionVerifier
+	// is installed (opt-in until the P0.9 identity decision; P0.3/P0.4/P0.9).
 	guard := sessionGuard(hub)
 
 	// REST: create a new agent session. Returns the WebSocket URL the
-	// React frontend connects to.
+	// React frontend connects to. Creation claims the room for its caller.
 	app.Post("/api/agent/session", guard, handleCreateSession(hub))
 
 	// REST: connect to an existing agent session.
-	app.Get("/api/agent/:id/connect", guard, handleConnectAgent(hub))
+	app.Get("/api/agent/:id/connect", guard, ownerGuard(hub), handleConnectAgent(hub))
 
 	// REST: deploy a project's VFS to Cloudflare Pages.
-	app.Post("/api/projects/:id/deploy", guard, handleDeployProject(hub))
+	app.Post("/api/projects/:id/deploy", guard, ownerGuard(hub), handleDeployProject(hub))
 
 	// REST: return a project's VFS files as a flat map of path -> contents.
 	// Used by the light Worker (Edge) to push generated files to GitHub.
-	app.Get("/api/projects/:id/files", guard, handleGetProjectFiles(hub))
+	app.Get("/api/projects/:id/files", guard, ownerGuard(hub), handleGetProjectFiles(hub))
 
 	// REST: export a project's VFS to a GitHub repository (push files).
-	app.Post("/api/projects/:id/github-export", guard, handleGitHubExport(hub))
+	app.Post("/api/projects/:id/github-export", guard, ownerGuard(hub), handleGitHubExport(hub))
 
 	// REST: trigger a workflow run (validates the DAG, records the run,
 	// starts the Cloudflare Workflow execution) and inspect a workflow's
-	// runs + per-step logs. See workflows.go.
-	app.Post("/api/workflows/trigger", guard, handleWorkflowTrigger(hub))
-	app.Get("/api/workflows/:workflowId", guard, handleWorkflowGet(hub))
+	// runs + per-step logs. See workflows.go. P0.7: both routes are scoped
+	// to the workflow's tenant (workflow_dags.user_id) by workflowGuard.
+	app.Post("/api/workflows/trigger", guard, workflowGuard(hub), handleWorkflowTrigger(hub))
+	app.Get("/api/workflows/:workflowId", guard, workflowGuard(hub), handleWorkflowGet(hub))
 
-	// WebSocket: real-time agent channel.
-	app.Get("/ws/:id", websocket.New(handleWebSocket(hub)))
+	// WebSocket: real-time agent channel. P0.5: the upgrade runs the session
+	// boundary first (a no-op until CONTROL_PLANE_REQUIRE_SESSION installs a
+	// verifier), so a connection without a valid ticket/session is rejected
+	// before the room is touched.
+	app.Get("/ws/:id", wsGuard(hub), websocket.New(handleWebSocket(hub)))
 }
 
 // sessionGuard returns the middleware every guarded control-plane route runs
@@ -334,6 +345,133 @@ func sessionGuard(hub *engine.EngineHub) fiber.Handler {
 		return func(c *fiber.Ctx) error { return c.Next() }
 	}
 	return RequireSession(verifier)
+}
+
+// ownerGuard returns the P0.4 ownership middleware installed (after the session
+// guard) on the room/VFS/deploy routes. It resolves the owning user id of the
+// addressed project/agent through the hub — the in-memory registry backed by the
+// Redis `room:owner:<chatId>` key — and enforces that the caller is that owner.
+//
+// Like sessionGuard it is a no-op when no SessionVerifier is installed, so a
+// deployment that has not turned the boundary on keeps its previous behaviour.
+// An unowned/unknown project answers 404 (never leaking another tenant's
+// existence) and an unreachable ownership store fails closed with 503.
+func ownerGuard(hub *engine.EngineHub) fiber.Handler {
+	if hub.SessionVerifier() == nil {
+		return func(c *fiber.Ctx) error { return c.Next() }
+	}
+	return RequireResourceOwner(func(c *fiber.Ctx) (string, bool, error) {
+		chatID := c.Params("id")
+		if chatID == "" {
+			return "", false, nil
+		}
+		owner, claimed, err := hub.RoomOwner(chatID)
+		if err != nil {
+			log.Printf("[api] owner lookup failed for project %s: %v", chatID, err)
+			return "", false, err
+		}
+		return owner, claimed, nil
+	})
+}
+
+// workflowGuard returns the P0.7 ownership middleware installed (after the
+// session guard) on the workflow routes. It resolves the addressed workflow's
+// tenant — workflow_dags.user_id, falling back to the P0.4 room ownership
+// record for rows written before the column existed (engine.WorkflowOwner) —
+// and enforces that the caller is that tenant.
+//
+// Contract (identical to ownerGuard): no identity → 401, unknown/unowned
+// workflow → 404 (another tenant's existence is never leaked), owner ≠ caller
+// → 403, ownership-store outage → 503. Every cross-tenant attempt is recorded
+// in D1 audit_logs (action `workflow.access_denied`) before the 403 is
+// returned; the audit write is best-effort — a rejected request is never
+// turned into an allow because auditing failed.
+//
+// Like the other guards it is a no-op when no SessionVerifier is installed, so
+// a deployment that has not turned the P0.3 boundary on keeps its previous
+// behaviour (single-tenant dev/CI).
+func workflowGuard(hub *engine.EngineHub) fiber.Handler {
+	if hub.SessionVerifier() == nil {
+		return func(c *fiber.Ctx) error { return c.Next() }
+	}
+	return RequireResourceOwner(func(c *fiber.Ctx) (string, bool, error) {
+		workflowID := workflowIDFromRequest(c)
+		if workflowID == "" {
+			// Unresolvable target: fail closed as not-found. (With the
+			// boundary off the handler keeps answering its own 400.)
+			return "", false, nil
+		}
+		identity, _ := CurrentIdentity(c)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		owner, found, err := engine.WorkflowOwner(ctx, hub.D1Client(), workflowID, hub.RoomOwner)
+		if err != nil {
+			log.Printf("[api] workflow owner lookup failed for %s: %v", workflowID, err)
+			return "", false, err
+		}
+		if !found || owner == "" {
+			return "", false, nil
+		}
+
+		if identity.UserID != "" && identity.UserID != owner {
+			auditWorkflowAccessDenial(hub, c, workflowID, identity.UserID, owner)
+		}
+		return owner, true, nil
+	})
+}
+
+// workflowIDFromRequest resolves the workflow a workflow route addresses: the
+// `:workflowId` path parameter for GET /api/workflows/:workflowId and the JSON
+// body's `workflowId` for POST /api/workflows/trigger. Parsing the body here
+// does not consume it, so the handler parses the same bytes afterwards.
+func workflowIDFromRequest(c *fiber.Ctx) string {
+	if id := strings.TrimSpace(c.Params("workflowId")); id != "" {
+		return id
+	}
+	var body workflowTriggerRequest
+	if err := c.BodyParser(&body); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(body.WorkflowID)
+}
+
+// auditWorkflowAccessDenial records a rejected cross-tenant workflow access
+// (P0.7 acceptance: 403 + audit). Best effort by design, mirroring the
+// generation lineage recorder: an audit-store failure is logged, never
+// allowed to change the authorization outcome.
+func auditWorkflowAccessDenial(hub *engine.EngineHub, c *fiber.Ctx, workflowID, callerID, ownerID string) {
+	d1 := hub.D1Client()
+	if d1 == nil {
+		log.Printf("[api] workflow access denial by %s on %s not audited: D1 is not configured", callerID, workflowID)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := engine.RecordWorkflowAccessDenial(ctx, d1, engine.WorkflowAccessDenial{
+		WorkflowID: workflowID,
+		CallerID:   callerID,
+		OwnerID:    ownerID,
+		Operation:  c.Method(),
+		IPAddress:  c.IP(),
+		UserAgent:  c.Get(fiber.HeaderUserAgent),
+	}); err != nil {
+		log.Printf("[api] failed to audit workflow access denial for %s: %v", workflowID, err)
+	}
+}
+
+// wsGuard returns the P0.5 middleware the /ws/:id upgrade route runs before
+// websocket.New performs the handshake. Like sessionGuard it is a no-op when no
+// SessionVerifier is installed, so the pre-P0.5 behaviour is preserved until
+// CONTROL_PLANE_REQUIRE_SESSION turns the boundary on; when it is on the guard
+// authenticates the ticket/session and rejects the upgrade (401/503) before the
+// room is touched.
+func wsGuard(hub *engine.EngineHub) fiber.Handler {
+	verifier := hub.SessionVerifier()
+	if verifier == nil {
+		return func(c *fiber.Ctx) error { return c.Next() }
+	}
+	return RequireWebSocketSession(verifier)
 }
 
 // buildWebSocketURL derives the ws:// URL the frontend should connect to,
@@ -349,7 +487,16 @@ func buildWebSocketURL(c *fiber.Ctx, chatID string) string {
 	if host == "" {
 		host = "localhost:8080"
 	}
-	return "ws://" + host + "/ws/" + chatID
+	base := "ws://" + host + "/ws/" + chatID
+	// P0.5: when the request is authenticated (the boundary is on), carry the
+	// session token as the WebSocket ticket on the URL the browser already
+	// connects to — a WebSocket handshake cannot set headers, so this is how a
+	// same-flow caller satisfies RequireWebSocketSession. With the boundary off
+	// there is no identity and the URL is unchanged.
+	if identity, ok := CurrentIdentity(c); ok && identity.Token != "" {
+		base += "?ticket=" + url.QueryEscape(identity.Token)
+	}
+	return base
 }
 
 // handleCreateSession implements POST /api/agent/session.
@@ -359,6 +506,20 @@ func handleCreateSession(hub *engine.EngineHub) fiber.Handler {
 
 		// Create (and start) the room actor for this session.
 		hub.GetOrCreateRoom(chatID)
+
+		// P0.4: claim ownership of the fresh room for the authenticated
+		// caller (first write wins). A store outage fails the request closed
+		// (503) rather than minting an unowned room. With the boundary off
+		// there is no identity and no claim — the pre-P0.4 behaviour.
+		if identity, ok := CurrentIdentity(c); ok && identity.UserID != "" {
+			if _, _, err := hub.ClaimRoomOwner(chatID, identity.UserID); err != nil {
+				log.Printf("[api] failed to claim owner of session %s: %v", chatID, err)
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+					"success": false,
+					"error":   "ownership store unavailable",
+				})
+			}
+		}
 
 		log.Printf("[api] created agent session %s", chatID)
 		return c.JSON(fiber.Map{

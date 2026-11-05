@@ -10,7 +10,7 @@
 ## P2.2 — Registry-aware Go validation
 
 - `backend/pkg/engine/nodepkg.go`: `LoadRegistry(ctx)`, `ResolveNode(name@version)`, `ValidateWithRegistry(wf, registry) error`.
-- P2.2.2: در `backend/pkg/engine/workflowschema.go`: متد موجود `wf.Validate()` (`backend/pkg/engine/workflowschema.go:296`) **بدون تغییر بماند** — Go overload ندارد و چهار فراخوان دارد (`backend/agent/planner.go:115`، `backend/pkg/engine/room.go:822,840,1143`). تابع جدا اضافه کن: `ValidateWithRegistry(wf, registry) error` (هم‌نام P2.2.1) که `type` ناشناس یا `pkg@version` ناموجود → خطای salvage (preview/viz زنده، runtime بلاک).
+- P2.2.2: در `backend/pkg/engine/workflowschema.go`: متد موجود `wf.Validate()` (`backend/pkg/engine/workflowschema.go:296`) **بدون تغییر بماند** — Go overload ندارد و چهار فراخوان دارد (`backend/agent/planner.go:115`، `backend/pkg/engine/room.go:848,866,1193`). تابع جدا اضافه کن: `ValidateWithRegistry(wf, registry) error` (هم‌نام P2.2.1) که `type` ناشناس یا `pkg@version` ناموجود → خطای salvage (preview/viz زنده، runtime بلاک).
 - تست: (۱) فلو با نود موجود → ok؛ (۲) `pkg` ناموجود → خطای مشخص با نام نود؛ (۳) `params` خلاف schema → خطا با path فیلد.
 
 ## P2.3 — Table-driven TS dispatch
@@ -21,7 +21,7 @@
 
 ## P2.4 — Catalog API
 
-- لایهٔ اجرا: این اندپوینت‌ها روی **Go control plane** می‌نشینند (`backend/pkg/api/nodes.go` + ثبت در `backend/pkg/api/routes.go`) — کنار `/api/workflows/*` موجود (`backend/pkg/api/routes.go:314`). روی Worker نگذار.
+- لایهٔ اجرا: این اندپوینت‌ها روی **Go control plane** می‌نشینند (`backend/pkg/api/nodes.go` + ثبت در `backend/pkg/api/routes.go`) — کنار `/api/workflows/*` موجود (`backend/pkg/api/routes.go:324`). روی Worker نگذار.
 - `GET /api/nodes` (لیست name+version+kind+توضیح، pagination)؛ `GET /api/nodes/:name@:version` (manifest کامل)؛ `POST /api/workflows/validate` (body=DAG → `{ok, errors[]}` با همان منطق P2.2، آینه TS).
 - ⚠️ اگر روزی این را روی light Worker هم سرو کردی: fallback `app.all('*')` در `worker/light/lightApp.ts:920` همان HTML اپلیکیشن (۲۰۰) را برای مسیرهای غیر-`/api/*` برمی‌گرداند؛ برای `/api/*` ناشناس از قبل catch-all موجود در `worker/light/lightApp.ts:906` فعال است که JSON ۴۰۴ می‌دهد (اصلاح T1 در `docs/DOCS_AUDIT_BACKLOG.md`). مسیر جدید را **قبل از** `worker/light/lightApp.ts:920` ثبت کن.
 - تست: typecheck + unit با D1 لوکال؛ validate فلو خراب → errors با path دقیق.

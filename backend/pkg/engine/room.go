@@ -65,6 +65,13 @@ type ProjectRoom struct {
 	// eng is the unified eino engine; nil ⇒ legacy llm.Client fallback.
 	eng *agent.Engine
 
+	// owner is the user id that owns this room (P0.4), mirroring the hub's
+	// roomOwners registry so a generation inside the room can stamp the
+	// workflow DAG it persists with its tenant (P0.7). Written by the hub on
+	// claim/room creation, read by persistWorkflowDag.
+	ownerMu sync.RWMutex
+	owner   string
+
 	// plannerPrompt is the structured Chain-of-Thought planner system
 	// prompt (skills/01_planner.md, decoded by backend/agent). Empty ⇒
 	// the room plans with the legacy prose-architect prompt.
@@ -150,6 +157,25 @@ func (r *ProjectRoom) SetCloudflareClient(cf *cloudflare.Client) {
 // workflow DAGs. Safe to call before any generation runs.
 func (r *ProjectRoom) SetD1Client(d1 *cloudflare.D1Client) {
 	r.d1 = d1
+}
+
+// SetOwner records the user id that owns this room (P0.4 claim, mirrored here
+// by the hub — see (*EngineHub).ClaimRoomOwner). Guarded by ownerMu because
+// the claim arrives from the HTTP goroutine while generation reads it. The
+// owner is what the workflow DAG upsert stamps into workflow_dags.user_id
+// (P0.7), so a room without a claim leaves generated DAGs unowned.
+func (r *ProjectRoom) SetOwner(userID string) {
+	r.ownerMu.Lock()
+	defer r.ownerMu.Unlock()
+	r.owner = strings.TrimSpace(userID)
+}
+
+// Owner returns the owning user id recorded for this room ("" when the room
+// has no claim, i.e. the boundary is off or the caller was never claimed).
+func (r *ProjectRoom) Owner() string {
+	r.ownerMu.RLock()
+	defer r.ownerMu.RUnlock()
+	return r.owner
 }
 
 // SetPlannerPrompt attaches the structured planner system prompt loaded
@@ -1192,11 +1218,13 @@ func (r *ProjectRoom) persistWorkflowDag() {
 		log.Printf("[room:%s] failed to persist workflow DAG to Redis: %v", r.chatID, err)
 	}
 
-	// Sync to D1 (best-effort; never fails the generation).
+	// Sync to D1 (best-effort; never fails the generation). P0.7: the DAG
+	// carries its tenant — the room's P0.4 owner claim — so the workflow
+	// routes can authorize trigger/get against workflow_dags.user_id.
 	if r.d1 != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if cerr := r.d1.UpsertWorkflowDag(ctx, r.chatID, WorkflowSchemaV2, encoded); cerr != nil {
+		if cerr := r.d1.UpsertWorkflowDag(ctx, r.chatID, WorkflowSchemaV2, encoded, r.Owner()); cerr != nil {
 			log.Printf("[room:%s] failed to sync workflow DAG to D1: %v", r.chatID, cerr)
 		}
 	}

@@ -19,11 +19,18 @@ import (
 // registrations (RegisterRoutes), so the tests exercise the wiring, not a
 // stand-in router.
 func guardedTestApp(tokens map[string]string) *fiber.App {
+	app, _ := guardedTestAppWithHub(tokens)
+	return app
+}
+
+// guardedTestAppWithHub is guardedTestApp plus the hub, so ownership tests can
+// seed room ownership (P0.4) before driving the real routes.
+func guardedTestAppWithHub(tokens map[string]string) (*fiber.App, *engine.EngineHub) {
 	app := fiber.New()
 	hub := engine.NewEngineHub(nil, nil, nil)
 	hub.SetSessionVerifier(NewStaticSessionVerifier(tokens))
 	RegisterRoutes(app, hub)
-	return app
+	return app, hub
 }
 
 func doRequest(t *testing.T, app *fiber.App, method, path string, headers map[string]string) int {
@@ -77,18 +84,26 @@ func TestSessionBoundaryRejectsUnknownToken(t *testing.T) {
 }
 
 // TestSessionBoundaryAcceptsValidToken proves the boundary is not a blanket
-// deny: a known token passes the guard and the route handler runs.
+// deny: a known token passes the guard and the route handler runs on a
+// resource the caller owns (the P0.4 owner guard is satisfied).
 func TestSessionBoundaryAcceptsValidToken(t *testing.T) {
-	app := guardedTestApp(map[string]string{"valid-token": "user-a"})
+	app, hub := guardedTestAppWithHub(map[string]string{"valid-token": "user-a"})
+	if _, ok, err := hub.ClaimRoomOwner("proj-owned", "user-a"); err != nil || !ok {
+		t.Fatalf("failed to claim room ownership: ok=%v err=%v", ok, err)
+	}
 	headers := map[string]string{"X-Session-Token": "valid-token"}
-	if status := doRequest(t, app, http.MethodGet, "/api/projects/does-not-exist/files", headers); status != http.StatusOK {
-		t.Fatalf("expected 200 for a valid token, got %d", status)
+	if status := doRequest(t, app, http.MethodGet, "/api/projects/proj-owned/files", headers); status != http.StatusOK {
+		t.Fatalf("expected 200 for a valid token on an owned resource, got %d", status)
 	}
 }
 
 // TestSessionTokenSources pins the three accepted transports.
 func TestSessionTokenSources(t *testing.T) {
-	app := guardedTestApp(map[string]string{"valid-token": "user-a"})
+	app, hub := guardedTestAppWithHub(map[string]string{"valid-token": "user-a"})
+	// The addressed project must be owned by the caller (P0.4 owner guard).
+	if _, ok, err := hub.ClaimRoomOwner("p", "user-a"); err != nil || !ok {
+		t.Fatalf("claim project p for user-a: ok=%v err=%v", ok, err)
+	}
 	cases := []struct {
 		name    string
 		headers map[string]string
@@ -269,5 +284,100 @@ func TestEdgeKVVerifierResolvesEdgeSession(t *testing.T) {
 	}
 	if _, err := NewEdgeKVVerifier(nil, "ns-1").VerifyUserID(ctx, "good-token"); !errors.Is(err, engine.ErrSessionStoreUnavailable) {
 		t.Fatalf("expected ErrSessionStoreUnavailable without a KV client, got %v", err)
+	}
+}
+
+// TestProjectRoutesScopeToOwner is the P0.4 acceptance proof on the live
+// routes: user B cannot read or mutate user A's project (403), an unowned
+// project is hidden (404), and the owner keeps access (200).
+func TestProjectRoutesScopeToOwner(t *testing.T) {
+	app, hub := guardedTestAppWithHub(map[string]string{
+		"tok-a": "user-a",
+		"tok-b": "user-b",
+	})
+	if _, ok, err := hub.ClaimRoomOwner("proj-a", "user-a"); err != nil || !ok {
+		t.Fatalf("claim proj-a for user-a: ok=%v err=%v", ok, err)
+	}
+
+	a := map[string]string{"X-Session-Token": "tok-a"}
+	b := map[string]string{"X-Session-Token": "tok-b"}
+
+	// Owner: read allowed.
+	if status := doRequest(t, app, http.MethodGet, "/api/projects/proj-a/files", a); status != http.StatusOK {
+		t.Fatalf("owner read: expected 200, got %d", status)
+	}
+	// Cross-user read: forbidden.
+	if status := doRequest(t, app, http.MethodGet, "/api/projects/proj-a/files", b); status != http.StatusForbidden {
+		t.Fatalf("cross-user read: expected 403, got %d", status)
+	}
+	// Cross-user mutate (deploy): forbidden — the handler never runs.
+	if status := doRequest(t, app, http.MethodPost, "/api/projects/proj-a/deploy", b); status != http.StatusForbidden {
+		t.Fatalf("cross-user deploy: expected 403, got %d", status)
+	}
+	// Cross-user github-export: forbidden.
+	if status := doRequest(t, app, http.MethodPost, "/api/projects/proj-a/github-export", b); status != http.StatusForbidden {
+		t.Fatalf("cross-user github-export: expected 403, got %d", status)
+	}
+	// Cross-user agent reconnect: forbidden.
+	if status := doRequest(t, app, http.MethodGet, "/api/agent/proj-a/connect", b); status != http.StatusForbidden {
+		t.Fatalf("cross-user agent connect: expected 403, got %d", status)
+	}
+	// Unowned project: hidden from everyone (404, never 403).
+	if status := doRequest(t, app, http.MethodGet, "/api/projects/ghost/files", a); status != http.StatusNotFound {
+		t.Fatalf("unowned project: expected 404, got %d", status)
+	}
+	// Anonymous: rejected before the owner check.
+	if status := doRequest(t, app, http.MethodGet, "/api/projects/proj-a/files", nil); status != http.StatusUnauthorized {
+		t.Fatalf("anonymous read: expected 401, got %d", status)
+	}
+}
+
+// TestCreateSessionClaimsOwnership pins the write side of the ownership model:
+// POST /api/agent/session records the caller as owner of the new room.
+func TestCreateSessionClaimsOwnership(t *testing.T) {
+	app, hub := guardedTestAppWithHub(map[string]string{"tok-a": "user-a"})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/session", nil)
+	req.Header.Set("X-Session-Token", "tok-a")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("create session: expected 200, got %d", resp.StatusCode)
+	}
+	var body struct {
+		AgentID string `json:"agentId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode create-session body: %v", err)
+	}
+	if body.AgentID == "" {
+		t.Fatal("create session returned an empty agentId")
+	}
+	owner, claimed, err := hub.RoomOwner(body.AgentID)
+	if err != nil {
+		t.Fatalf("room owner lookup: %v", err)
+	}
+	if !claimed || owner != "user-a" {
+		t.Fatalf("expected owner user-a, got owner=%q claimed=%v", owner, claimed)
+	}
+}
+
+// TestRequireResourceOwnerStoreOutageIs503 pins the fail-closed rule of the
+// error-aware ownership middleware: an unreachable ownership store is a 503,
+// never a silent allow and never a misleading 404.
+func TestRequireResourceOwnerStoreOutageIs503(t *testing.T) {
+	app := fiber.New()
+	app.Get("/own/:id",
+		RequireSession(NewStaticSessionVerifier(map[string]string{"tok-a": "user-a"})),
+		RequireResourceOwner(func(*fiber.Ctx) (string, bool, error) {
+			return "", false, errors.New("redis: connection refused")
+		}),
+		func(c *fiber.Ctx) error { return c.SendStatus(http.StatusOK) },
+	)
+	if status := doRequest(t, app, http.MethodGet, "/own/x", map[string]string{"X-Session-Token": "tok-a"}); status != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on an ownership store outage, got %d", status)
 	}
 }

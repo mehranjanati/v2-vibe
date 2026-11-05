@@ -8,14 +8,14 @@
 
 - P6.1.1: `WorkflowVisualizer` را به state مدیریت‌شده ببر (`useNodesState`/`useEdgesState` + sync با `files[WORKFLOW_FILE_PATH]`)؛ سپس `onNodeClick` → انتخاب؛ `onConnect` → چک cycle (DFS روی DAG؛ cycle → reject + toast علت)؛ Delete → حذف نود + edgeها + هشدار orphan (نود بی‌ورودی/خروجی).
 - P6.1.1b: هم‌ترازی تایپ‌ها قبل از ساخت پالت: `nodeTypes` فعلی فقط `trigger/function/http/db/condition` است (`src/components/workflow/WorkflowVisualizer.tsx:206-212`) — `ai`، `email`، `sleep` رندرر ندارند و `function` در مجموعهٔ بستهٔ `backend/pkg/engine/workflowschema.go:24-30` نیست. رندرر ۷ تایپ مجاز را کامل کن و `function` را حذف کن (وگرنه پالت ۷ تایپ روی کانواس ناقص می‌افتد).
-- P6.1.2: پالت ۷ تایپ با drag → نود جدید `{id: uuid, position: drop-point, params: defaults[type]}` (defaults در یک فایل `src/components/workflow/node-defaults.ts`، هم‌راستا با `backend/pkg/engine/workflowschema.go` و `validateNodeParams` در `worker/workflow/VibeWorkflow.ts:312`).
+- P6.1.2: پالت ۷ تایپ با drag → نود جدید `{id: uuid, position: drop-point, params: defaults[type]}` (defaults در یک فایل `src/components/workflow/node-defaults.ts`، هم‌راستا با `backend/pkg/engine/workflowschema.go` و `validateNodeParams` در `worker/workflow/VibeWorkflow.ts:318`).
 - P6.1.3: ذخیره → `workflow.json` در VFS + generation جدید `author=user` + lineage (P1.1) + کامیت Git (P1.3.5).
 - تست: (۱) unit cycle-check (DAG خطی ok؛ back-edge reject؛ self-loop reject)؛ (۲) unit: هر ۷ تایپ مجاز رندرر دارد و `function` دیگر نودی نمی‌سازد؛ (۳) دستی: drag→connect→delete→save→History ردیف جدید.
 
 ## P6.2 — Params panel (L1)
 
-- P6.2.1: فرم داینامیک از `validateNodeParams` (`worker/workflow/VibeWorkflow.ts:312`) هر تایپ (فیلدها: text/number/select/secret-ref)؛ بعد از P2: از manifest نود (بدون تغییر کامپوننت — فقط datasource عوض شود).
-- P6.2.2: قبل از ذخیره `validateWorkflowV2` (`worker/workflow/VibeWorkflow.ts:402`) اجرا شود؛ خطا → فیلد قرمز + پیام، ذخیره بلاک (نه silent).
+- P6.2.1: فرم داینامیک از `validateNodeParams` (`worker/workflow/VibeWorkflow.ts:318`) هر تایپ (فیلدها: text/number/select/secret-ref)؛ بعد از P2: از manifest نود (بدون تغییر کامپوننت — فقط datasource عوض شود).
+- P6.2.2: قبل از ذخیره `validateWorkflowV2` (`worker/workflow/VibeWorkflow.ts:408`) اجرا شود؛ خطا → فیلد قرمز + پیام، ذخیره بلاک (نه silent).
 - تست: typecheck + دستی هر ۷ تایپ (فرم باز → ذخیره → validate سبز).
 
 ## P6.3 — JSON editing (L3, parallel)
@@ -33,7 +33,7 @@
 ## P6.5 — Test-run
 
 - P6.5.1: فیلد `sideEffect` در manifest (P2.1): `safe` اجرا واقعی / `mocked` فقط لاگ `«[dry-run] می‌فرستادم به X با {...}»` / `blocked` در test خطا.
-- P6.5.2: `POST /api/workflows/trigger` **از قبل وجود دارد** (`backend/pkg/api/routes.go:314` → `backend/pkg/api/workflows.go`, `handleWorkflowTrigger`) — همان هندلر را با `{dryRun: true, sampleInput}` گسترش بده، روت جدید نساز. رفتار: validate + اجرای شبیه‌سازی بدون commit بیرونی؛ نتیجه `{steps: [{node, status, mocked, output}]}`.
+- P6.5.2: `POST /api/workflows/trigger` **از قبل وجود دارد** (`backend/pkg/api/routes.go:324` → `backend/pkg/api/workflows.go`, `handleWorkflowTrigger`) — همان هندلر را با `{dryRun: true, sampleInput}` گسترش بده، روت جدید نساز. رفتار: validate + اجرای شبیه‌سازی بدون commit بیرونی؛ نتیجه `{steps: [{node, status, mocked, output}]}`.
 - P6.5.3: UI: دکمه Test + فرم ورودی نمونه + لیست اجراها + لاگ per-step (خواندن از `workflow_instances/step_logs` موجود — بک جدید نزن).
 - تست: (۱) فلو با email-mocked در dryRun → صفر ایمیل واقعی + لاگ mocked؛ (۲) نود blocked در dryRun → خطای مشخص؛ (۳) دستی: Test → Active.
 

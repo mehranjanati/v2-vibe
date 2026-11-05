@@ -39,6 +39,10 @@ const workflowInstanceLimit = 20
 // (3) the Cloudflare Workflow instance is created via the REST API with the
 // same instance id. If (3) fails the row is marked 'failed' so GET reflects
 // reality instead of leaving a zombie 'pending' run.
+//
+// Tenant scope (P0.7): the route runs workflowGuard (routes.go) after the
+// session boundary, so only the workflow's owner reaches this handler; the
+// recorded run copies the DAG's owner (dag.UserID) as its tenant.
 func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		d1 := hub.D1Client()
@@ -79,7 +83,10 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 		if jerr != nil {
 			return c.Status(400).JSON(fiber.Map{"success": false, "error": "input is not JSON-serializable"})
 		}
-		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, string(inputJSON)); err != nil {
+		// P0.7: the run carries its tenant (workflow_dags.user_id, resolved by
+		// workflowGuard) so the runtime refuses to execute a DAG that belongs
+		// to someone else. An unowned workflow records a NULL tenant.
+		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, dag.UserID, string(inputJSON)); err != nil {
 			return c.Status(500).JSON(fiber.Map{"success": false, "error": "failed to record the workflow run"})
 		}
 

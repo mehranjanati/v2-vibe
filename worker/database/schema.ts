@@ -630,12 +630,22 @@ export const systemSettings = sqliteTable('system_settings', {
  * plane upserts each generated DAG here (keyed by the source project/chat
  * id) so the Phase-2 runtime worker can execute it. `workflow_id` is both
  * the natural key and the ON CONFLICT target of the Go upsert.
+ *
+ * Tenant scope (P0.7): `user_id` is the owning user recorded by the control
+ * plane at upsert time (from the room's P0.4 owner claim). It is the
+ * authoritative ownership record POST /api/workflows/trigger and
+ * GET /api/workflows/:workflowId authorize against; first write wins, so a
+ * later regeneration never transfers a workflow to another tenant. NULL
+ * means the row predates the column (or the room had no recorded owner) —
+ * the routes then fall back to the Redis `room:owner:` record and finally
+ * answer 404 rather than allow an unscoped read.
  */
 export const workflowDags = sqliteTable('workflow_dags', {
     workflowId: text('workflow_id').primaryKey(), // Source chat/project id
     schemaVersion: integer('schema_version').notNull().default(2), // WorkflowSchemaV2 = 2
     dagJson: text('dag_json', { mode: 'json' }).notNull(),
     status: text('status', { enum: WORKFLOW_DAG_STATUS_VALUES }).notNull().default('generated'),
+    userId: text('user_id'), // Owning user id (P0.7); NULL = unowned/legacy row
     
     // Metadata
     createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
@@ -643,17 +653,24 @@ export const workflowDags = sqliteTable('workflow_dags', {
 }, (table) => ({
     statusIdx: index('workflow_dags_status_idx').on(table.status),
     updatedAtIdx: index('workflow_dags_updated_at_idx').on(table.updatedAt),
+    userIdx: index('workflow_dags_user_idx').on(table.userId),
 }));
 
 /**
  * Workflow Instances table - A single execution of a workflow DAG.
- * The runtime worker creates one row per run and advances its status as
- * steps execute (pending → running → succeeded|failed|cancelled).
+ * The Go control plane creates the 'pending' row per run; the runtime worker
+ * advances its status as steps execute (pending → running →
+ * succeeded|failed|cancelled).
+ *
+ * Tenant scope (P0.7): `user_id` is copied from the DAG's owner when the run
+ * is recorded, so `VibeWorkflow` can refuse to execute a run whose tenant no
+ * longer matches the DAG it points at (worker/workflow/VibeWorkflow.ts).
  */
 export const workflowInstances = sqliteTable('workflow_instances', {
     id: text('id').primaryKey(),
     workflowId: text('workflow_id').notNull().references(() => workflowDags.workflowId, { onDelete: 'cascade' }),
     status: text('status', { enum: WORKFLOW_INSTANCE_STATUS_VALUES }).notNull().default('pending'),
+    userId: text('user_id'), // Run tenant, copied from workflow_dags.user_id (P0.7)
     
     // Execution payload
     input: text('input', { mode: 'json' }),

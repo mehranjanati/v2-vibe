@@ -19,6 +19,12 @@
  * in D1 and throws `NonRetryableError` so the Cloudflare runtime does not
  * schedule spurious retries.
  *
+ * Tenant isolation (P0.7): the run's tenant (`workflow_instances.user_id`,
+ * copied from `workflow_dags.user_id` by the Go control plane at trigger
+ * time) must match the DAG's owner. A mismatch — or an owned DAG with an
+ * unowned run — fails the instance with `NonRetryableError` before any step
+ * executes, so a run can never execute another tenant's DAG.
+ *
  * Persistence: instance transitions (`running` / `succeeded` / `failed`) are
  * awaited so the terminal D1 state is guaranteed; per-step log rows are
  * written fire-and-forget via `ctx.waitUntil`.
@@ -524,11 +530,13 @@ interface WorkflowInstanceRow {
   workflow_id: string;
   status: string;
   input: string | null;
+  user_id: string | null;
 }
 
 interface WorkflowDagRow {
   schema_version: number;
   dag_json: string;
+  user_id: string | null;
 }
 
 /** WorkflowStep.do is generic over the serializable result; narrow it here. */
@@ -574,6 +582,20 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
       const dagRow = await this.loadDag(instance.workflow_id);
       if (!dagRow) {
         const message = `vibe-workflow: workflow DAG not found for workflow_id "${instance.workflow_id}"`;
+        await this.markFailed(instanceId, message);
+        throw new NonRetryableError(message);
+      }
+
+      // P0.7 tenant isolation: a run executes only its own tenant's DAG. The
+      // control plane copies workflow_dags.user_id onto the run
+      // (workflow_instances.user_id) when it records the trigger, so a
+      // mismatch — or an owned DAG with a run that records no tenant — means
+      // the run was not authorized for this workflow: fail it before any step
+      // executes. Unowned/unowned (pre-P0.7 rows) keeps running unchanged.
+      const dagTenant = (dagRow.user_id ?? '').trim();
+      const runTenant = (instance.user_id ?? '').trim();
+      if (dagTenant !== '' && dagTenant !== runTenant) {
+        const message = `vibe-workflow: tenant mismatch — workflow "${instance.workflow_id}" is owned by another tenant`;
         await this.markFailed(instanceId, message);
         throw new NonRetryableError(message);
       }
@@ -914,7 +936,7 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
 
   private async loadInstance(instanceId: string): Promise<WorkflowInstanceRow | null> {
     const row = await this.env.DB.prepare(
-      'SELECT workflow_id, status, input FROM workflow_instances WHERE id = ?',
+      'SELECT workflow_id, status, input, user_id FROM workflow_instances WHERE id = ?',
     )
       .bind(instanceId)
       .first<WorkflowInstanceRow>();
@@ -923,7 +945,7 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
 
   private async loadDag(workflowId: string): Promise<WorkflowDagRow | null> {
     const row = await this.env.DB.prepare(
-      'SELECT schema_version, dag_json FROM workflow_dags WHERE workflow_id = ?',
+      'SELECT schema_version, dag_json, user_id FROM workflow_dags WHERE workflow_id = ?',
     )
       .bind(workflowId)
       .first<WorkflowDagRow>();
