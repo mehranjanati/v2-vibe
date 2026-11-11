@@ -20,27 +20,63 @@ import (
 	"backend/pkg/models"
 )
 
+// defaultCORSOrigins are the SPA hosts this plane is developed and deployed
+// against: the Vite dev/preview servers and the Cloudflare Worker hosts that
+// serve the dashboard.
+var defaultCORSOrigins = []string{
+	"http://localhost:5173",
+	"http://localhost:4173",
+	"https://vibeos-dda.pages.dev",
+	"https://production.vibeos-dda.pages.dev",
+	"https://*.vibeos-dda.pages.dev",
+	"https://vibesdk-v2.mehranjannati.workers.dev",
+	"https://vibesdk-v2.apjkala25.workers.dev",
+}
+
+// corsAllowedOrigins returns the effective browser allow-list. The defaults
+// above always apply; CORS_ALLOWED_ORIGINS adds deployment-specific origins
+// (comma-separated, scheme + host, no trailing slash) so a Worker custom domain
+// — or the Render + Cloudflare split in docs/DEPLOY_RENDER_CLOUDFLARE.md — does
+// not need a code change to the Go service. Entries are trimmed, de-duplicated
+// and blanks ignored.
+func corsAllowedOrigins() []string {
+	out := make([]string, 0, len(defaultCORSOrigins)+4)
+	seen := make(map[string]struct{}, len(defaultCORSOrigins)+4)
+	add := func(origin string) {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin == "" {
+			return
+		}
+		if _, ok := seen[origin]; ok {
+			return
+		}
+		seen[origin] = struct{}{}
+		out = append(out, origin)
+	}
+	for _, origin := range defaultCORSOrigins {
+		add(origin)
+	}
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		add(origin)
+	}
+	return out
+}
+
 // RegisterRoutes wires up CORS, logging, the REST session endpoints, and
 // the WebSocket route onto the Fiber app.
 func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// Logging middleware.
 	app.Use(logger.New())
 
-	// CORS: allow the SPA origins for local dev and the Cloudflare Pages
-	// hosts, and expose the headers the React frontend relies on.
+	// CORS: allow the SPA origins for local dev and the Cloudflare Worker
+	// hosts that serve the dashboard, extended by CORS_ALLOWED_ORIGINS.
 	// AllowCredentials must be true because the frontend sends requests
 	// with credentials:'include'; Fiber requires explicit (non-wildcard)
 	// origins when credentials are enabled.
+	corsOrigins := corsAllowedOrigins()
+	log.Printf("CORS allow-list: %s", strings.Join(corsOrigins, ", "))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: strings.Join([]string{
-			"http://localhost:5173",
-			"http://localhost:4173",
-			"https://vibeos-dda.pages.dev",
-			"https://production.vibeos-dda.pages.dev",
-			"https://*.vibeos-dda.pages.dev",
-			"https://vibesdk-v2.mehranjannati.workers.dev",
-			"https://vibesdk-v2.apjkala25.workers.dev",
-		}, ","),
+		AllowOrigins:     strings.Join(corsOrigins, ","),
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Requested-With, X-Session-Token, X-CSRF-Token",
 		ExposeHeaders:    "Content-Length, Content-Type",

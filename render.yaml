@@ -1,13 +1,19 @@
-# Render Blueprint — deploys the Go control plane (backend/) plus a
-# Redis-compatible Key Value instance.
+# Render Blueprint — the Go control plane (backend/) plus a Redis-compatible
+# Key Value instance.
 #
-# Render reads this file from the repository root when you create a
-# Blueprint (Dashboard → New → Blueprint) or connect this repo. Every push
-# to the tracked branch triggers a Docker build of backend/Dockerfile.
+# This is one half of the split deployment documented in
+# docs/DEPLOY_RENDER_CLOUDFLARE.md:
+#   - Cloudflare Worker `vibesdk-v2` serves the SPA, auth (D1/KV) and Workflows
+#   - Render runs this Go service + Key Value (rooms, VFS, LLM streaming,
+#     Pages deploys)
 #
-# Docker is used on purpose: the image needs the per-role skill prompts
-# (backend/skills/) and a distroless runtime, both provided by the existing
-# Dockerfile.
+# Render reads this file when you create a Blueprint (Dashboard → New →
+# Blueprint → this repository). Every push to `main` rebuilds the Docker image
+# from backend/Dockerfile.
+#
+# Free-plan caveats: the web service spins down after idle (expect a cold start)
+# and a Free Key Value is in-memory only, so rooms/VFS do not survive a restart.
+# Move to a paid plan when always-on WebSockets matter.
 #
 # Secrets are marked `sync: false`: Render prompts for them on first sync and
 # stores them encrypted. Never commit real tokens here.
@@ -18,22 +24,29 @@ services:
     runtime: docker
     plan: free
     region: oregon
+    branch: main
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /health
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
-      # Render injects PORT automatically (default 10000); set it explicitly
-      # so the value the Go process reads is unambiguous.
+      # Render also injects PORT; pinning it keeps the Go listener unambiguous.
       - key: PORT
         value: "10000"
 
-      # Redis-compatible Key Value, wired over Render's private network.
+      # Internal Key Value URL (redis://red-…:6379). backend/cmd/main.go parses
+      # either that URL form or a bare host:port, so no rewriting is needed.
       - key: REDIS_URL
         fromService:
           name: vibesdk-redis
           type: keyvalue
           property: connectionString
+
+      # Browser origins allowed to call this plane. The built-in list already
+      # covers the known workers.dev hosts; add the dashboard origin here when
+      # it moves to a custom domain (comma-separated, scheme + host).
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
 
       # LLM / Workers AI gateway (OpenAI-compatible endpoint).
       - key: AI_GATEWAY_URL
@@ -53,13 +66,12 @@ services:
       - key: WORKFLOWS_NAME
         value: vibesdk-v2-workflows
 
-      # Skill prompts are baked into the image at /app/skills by the
-      # Dockerfile; pin the path so they load regardless of WORKDIR.
+      # Skill prompts are baked into the image at /app/skills by the Dockerfile.
       - key: SKILLS_DIR
         value: /app/skills
 
       # The Edge Worker remains the identity authority. Keep the opt-in
-      # control-plane boundary off for a standalone Render demo; flip to
+      # control-plane boundary off for a standalone Render deployment; set it to
       # "true" and provide VIBECODER_STORE_KV_ID to enforce Edge sessions.
       - key: CONTROL_PLANE_REQUIRE_SESSION
         value: "false"

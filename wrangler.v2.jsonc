@@ -60,7 +60,10 @@
 		"TEMPLATES_REPOSITORY": "https://github.com/cloudflare/vibesdk-templates",
 		"CLOUDFLARE_AI_GATEWAY": "v2-vibe",
 		"CUSTOM_DOMAIN": "vibesdk-v2.apjkala25.workers.dev",
-		"CONTROL_PLANE_URL": "http://localhost:8080"
+		// Server-side fetch target for GitHub export (project files). Production
+		// uses the Render deployment (docs/DEPLOY_RENDER_CLOUDFLARE.md); local
+		// dev overrides it with CONTROL_PLANE_URL in .dev.vars.
+		"CONTROL_PLANE_URL": "https://vibesdk-backend.onrender.com"
 	},
 	"workers_dev": true,
 	"preview_urls": true

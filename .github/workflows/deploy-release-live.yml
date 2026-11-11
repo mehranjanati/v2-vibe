@@ -209,4 +209,10 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           AI_PROXY_JWT_SECRET: ${{ secrets.AI_PROXY_JWT_SECRET }}
+
+          # Build-time browser config (Vite inlines VITE_* into the bundle).
+          # A repo variable wins; the defaults point at the Render service in
+          # render.yaml and the production Worker origin.
+          VITE_CONTROL_PLANE_URL: ${{ vars.VITE_CONTROL_PLANE_URL || 'https://vibesdk-backend.onrender.com' }}
+          VITE_AUTH_PLANE_URL: ${{ vars.VITE_AUTH_PLANE_URL || 'https://vibesdk-v2.apjkala25.workers.dev' }}
         run: bun run build && bunx wrangler deploy --config wrangler.v2.jsonc

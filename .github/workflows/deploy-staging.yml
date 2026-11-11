@@ -214,4 +214,10 @@ jobs:
           JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           AI_PROXY_JWT_SECRET: ${{ secrets.AI_PROXY_JWT_SECRET }}
+
+          # Build-time browser config (Vite inlines VITE_* into the bundle).
+          # Staging shares the Render control plane by default; set the repo
+          # variables to point it at a separate Render service/Worker.
+          VITE_CONTROL_PLANE_URL: ${{ vars.VITE_CONTROL_PLANE_URL || 'https://vibesdk-backend.onrender.com' }}
+          VITE_AUTH_PLANE_URL: ${{ vars.VITE_AUTH_PLANE_URL || 'https://staging.build.cloudflare.dev' }}
         run: bun run build && bunx wrangler deploy --config wrangler.v2.jsonc

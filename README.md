@@ -129,6 +129,11 @@ The platform deploys as two planes — the light Worker and the control plane:
 2. **Go control plane**: build the Go service in `backend/` and run it next to a Redis instance with the RediSearch module — `docker compose up -d redis backend`, or `redis-server` plus `cd backend && go run ./cmd` (Fiber on `:8080`). Point the SPA at it with `VITE_CONTROL_PLANE_URL`.
 3. **D1 schema**: generate and apply the light Worker's migrations with `bun run db:generate` and `bun run db:migrate:remote`.
 
+For a hosted split —
+
+- **Go control plane + Redis on Render**: the committed [`render.yaml`](render.yaml) creates the Docker web service plus a Redis-compatible Key Value instance. Full walkthrough (secrets, CORS, Worker wiring, free-plan caveats): [`docs/DEPLOY_RENDER_CLOUDFLARE.md`](docs/DEPLOY_RENDER_CLOUDFLARE.md).
+- **Dashboard on Cloudflare**: `bun run build` with `VITE_CONTROL_PLANE_URL` set (the deploy workflows read it from a repo variable and default to the Render URL), then `bun run deploy`; the Worker serves the SPA and auth while the browser calls the Render service.
+
 You will need:
 
 - A Cloudflare account with an API token that covers the resources created by setup. `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` and `CLOUDFLARE_API_TOKEN` live in the **repo-root `.env`**; refresh the token with `bun run d1:token`.

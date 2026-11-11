@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/gofiber/fiber/v2"
@@ -43,13 +44,23 @@ func main() {
 	}
 
 	// ---- Redis client ----
-	redisAddr := os.Getenv("REDIS_URL")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
+	// REDIS_URL accepts both a full URL (Render Key Value, Upstash, Heroku:
+	// redis://[user:pass@]host:port[/db], rediss:// for TLS) and a bare
+	// host:port pair (docker compose). ParseURL handles credentials, TLS and
+	// the database index; handing a redis:// URL to Addr would make go-redis
+	// dial "redis://…" as a hostname.
+	rdb, redisAddr, err := newRedisClient()
+	if err != nil {
+		log.Fatalf("invalid REDIS_URL: %v", err)
 	}
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
-	})
+	// Surface a dead Redis at boot instead of on the first chat request.
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if pingErr := rdb.Ping(pingCtx).Err(); pingErr != nil {
+		log.Printf("WARNING: Redis is not reachable at startup: %v (rooms/VFS will fail until it is)", pingErr)
+	} else {
+		log.Printf("Redis connected at %s", redisAddr)
+	}
+	pingCancel()
 
 	// ---- LLM / AI Gateway client ----
 	llmCfg := llm.NewConfigFromEnv()
@@ -168,6 +179,26 @@ func main() {
 	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// newRedisClient builds the Redis client from REDIS_URL. Managed providers
+// (Render Key Value, Upstash, Heroku) hand out a full URL —
+// redis://red-…:6379 or rediss://user:pass@host:6379 — while docker compose
+// uses a bare host:port. Both forms are accepted; the returned address never
+// contains credentials, so it is safe to log.
+func newRedisClient() (*redis.Client, string, error) {
+	raw := strings.TrimSpace(os.Getenv("REDIS_URL"))
+	if raw == "" {
+		raw = "localhost:6379"
+	}
+	if !strings.Contains(raw, "://") {
+		return redis.NewClient(&redis.Options{Addr: raw}), raw, nil
+	}
+	opts, err := redis.ParseURL(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	return redis.NewClient(opts), opts.Addr, nil
 }
 
 // isTruthy reports whether an env value means "on" (1/true/yes, any case).

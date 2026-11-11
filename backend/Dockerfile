@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Build stage
-FROM golang:1.25-alpine AS build
+# Pinned to the patch release required by go.mod (`go 1.25.5`); a floating
+# 1.25 tag could resolve to an older patch and fail the toolchain check.
+FROM golang:1.25.5-alpine AS build
 
 WORKDIR /app
 

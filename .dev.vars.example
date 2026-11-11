@@ -2,6 +2,10 @@
 #CUSTOM_DOMAIN="your-domain.com" # Your custom domain for CORS
 #ENVIRONMENT="prod" # Options: dev, staging, prod
 
+# Control plane the Worker fetches from server-side (GitHub export project
+# files). Overrides the production URL in wrangler.v2.jsonc during local dev.
+CONTROL_PLANE_URL="http://localhost:8080"
+
 # Feature flags
 
 # Cloudflare Credentials (Required for manual deployment via `bun run deploy`)
