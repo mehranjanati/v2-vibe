@@ -510,8 +510,13 @@ func wsGuard(hub *engine.EngineHub) fiber.Handler {
 	return RequireWebSocketSession(verifier)
 }
 
-// buildWebSocketURL derives the ws:// URL the frontend should connect to,
-// preferring the incoming request host so it works behind a proxy.
+// buildWebSocketURL derives the ws:// or wss:// URL the frontend should
+// connect to, preferring the incoming request host so it works behind a proxy.
+// The scheme follows the *client-facing* protocol: TLS-terminating proxies
+// (Render, Coolify, Cloudflare) forward plain HTTP, so X-Forwarded-Proto — not
+// the raw request scheme — decides ws vs wss. A ws:// URL returned to an
+// https page is blocked as mixed content, which is exactly the failure mode
+// this guards against.
 func buildWebSocketURL(c *fiber.Ctx, chatID string) string {
 	host := c.Get("X-Forwarded-Host")
 	if host == "" {
@@ -523,7 +528,18 @@ func buildWebSocketURL(c *fiber.Ctx, chatID string) string {
 	if host == "" {
 		host = "localhost:8080"
 	}
-	base := "ws://" + host + "/ws/" + chatID
+	scheme := "ws"
+	// X-Forwarded-Proto can be a comma-separated chain ("https,http") when
+	// several proxies are stacked; the first hop from the browser is what the
+	// page was loaded over, so take the left-most value.
+	proto := strings.ToLower(strings.TrimSpace(strings.Split(c.Get("X-Forwarded-Proto"), ",")[0]))
+	if proto == "" {
+		proto = strings.ToLower(c.Protocol())
+	}
+	if proto == "https" {
+		scheme = "wss"
+	}
+	base := scheme + "://" + host + "/ws/" + chatID
 	// P0.5: when the request is authenticated (the boundary is on), carry the
 	// session token as the WebSocket ticket on the URL the browser already
 	// connects to — a WebSocket handshake cannot set headers, so this is how a

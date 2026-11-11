@@ -372,6 +372,15 @@ export function useChat({
 
 			try {
 				logger.debug('🔗 Attempting WebSocket connection to:', wsUrl);
+				// Mixed-content guard: a browser refuses ws:// from an https page.
+				// The control plane sits behind a TLS-terminating proxy, so a
+				// ws:// URL can slip through (older server, WS_HOST override);
+				// upgrade it to wss whenever the page itself is https.
+				if (window.location.protocol === 'https:' && wsUrl.startsWith('ws://')) {
+					const upgraded = `wss://${wsUrl.slice('ws://'.length)}`;
+					logger.warn('🔒 Upgrading insecure WebSocket URL to wss (https page):', upgraded);
+					wsUrl = upgraded;
+				}
 				const ws = new WebSocket(wsUrl);
 				setWebsocket(ws);
 

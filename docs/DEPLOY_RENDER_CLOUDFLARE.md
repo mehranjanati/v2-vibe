@@ -230,10 +230,11 @@ persistent Key Value) before pointing users at it.
 | Browser: “blocked by CORS policy” | The dashboard origin is missing from `CORS_ALLOWED_ORIGINS`; add scheme + host exactly (no trailing slash) and let Render redeploy |
 | `401` on mutating routes | `X-Session-Token` missing/expired in `localStorage`, or the boundary is enabled without `VIBECODER_STORE_KV_ID` |
 | Chat works but the WebSocket never opens | Service asleep (cold start) or `VITE_CONTROL_PLANE_URL` was not rebuilt into the bundle |
+| Chat shows `This feature requires the full backend …` (503 `NOT_AVAILABLE`) | The SPA bundle was built without `VITE_CONTROL_PLANE_URL`, so chat hit the Worker origin; make sure the built commit contains `.env.production` (or set the Build variable) and rebuild — then chat requests must target the Render URL in the Network tab |
 | Boot log: `invalid REDIS_URL` | Malformed scheme; copy the Key Value connection string as-is (`redis://red-…:6379`) |
 | Boot log: `vector index not created` | Expected with Render Key Value (no RediSearch); code RAG is disabled, everything else works |
 | D1 `401`/`403` from Render | The API token lacks D1 `Edit` on the account that owns `v2-vibe` |
 | GitHub export has no files | `CONTROL_PLANE_URL` in `wrangler.v2.jsonc` (or `.prod.vars`) does not point at the Render service |
-| Chat shows `This feature requires the full backend …` (503 `NOT_AVAILABLE`) | The SPA bundle was built without `VITE_CONTROL_PLANE_URL`, so chat hit the Worker origin; make sure the built commit contains `.env.production` (or set the Build variable) and rebuild — then chat requests must target the Render URL in the Network tab |
+| WebSocket: `Mixed Content … ws://` blocked / `connection failed permanently` | The control plane returned an insecure `ws://` URL from behind the TLS proxy; fixed server-side (`X-Forwarded-Proto` decides ws/wss) and the SPA upgrades `ws://`→`wss://` on https pages — redeploy both planes if you still see it |
 | Dashboard shows an old var value (e.g. `CONTROL_PLANE_URL: http://localhost:8080`) or a stray variable (e.g. one named `vibesdk-backend`) | That is the previous deploy's state; the next git build applies the repo's `wrangler.v2.jsonc` and deletes non-config plain vars — fix values in the repo, then push |
 
