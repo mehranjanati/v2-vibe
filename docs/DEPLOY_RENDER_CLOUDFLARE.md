@@ -120,6 +120,16 @@ Where the value comes from:
 
 Changing any of these requires a rebuild and redeploy of the Worker.
 
+### Dashboard drift: the repo config wins
+
+With Workers Builds, `wrangler.v2.jsonc` is authoritative on every git build:
+the `CONTROL_PLANE_URL` (and every other var) from the repo replaces what the
+dashboard shows, and **plain-text dashboard variables that are not in the
+config are deleted** by `wrangler deploy` (`keep_vars` defaults to `false`;
+secrets are kept). So never patch var values in the dashboard for a
+git-connected Worker — fix them in the repo and push; the stale values you see
+in the dashboard belong to the previous deploy and disappear with the next one.
+
 ## Step 4 — Git-integrated builds: no CI pipeline needed
 
 Both platforms rebuild on every push to `main` on their own:
@@ -222,4 +232,5 @@ persistent Key Value) before pointing users at it.
 | Boot log: `vector index not created` | Expected with Render Key Value (no RediSearch); code RAG is disabled, everything else works |
 | D1 `401`/`403` from Render | The API token lacks D1 `Edit` on the account that owns `v2-vibe` |
 | GitHub export has no files | `CONTROL_PLANE_URL` in `wrangler.v2.jsonc` (or `.prod.vars`) does not point at the Render service |
+| Dashboard shows an old var value (e.g. `CONTROL_PLANE_URL: http://localhost:8080`) or a stray variable (e.g. one named `vibesdk-backend`) | That is the previous deploy's state; the next git build applies the repo's `wrangler.v2.jsonc` and deletes non-config plain vars — fix values in the repo, then push |
 
