@@ -32,6 +32,11 @@ dist
 .prod.vars
 .env
 .env.*
+# .env.production is committed on purpose: it carries only public VITE_*
+# build-time URLs (control plane / auth plane) so git-integrated builds
+# (Cloudflare Workers Builds) bake them without dashboard variables.
+# Keep it VITE_-only — never put secrets in this file.
+!.env.production
 
 runner/downloads
 /generated/prisma

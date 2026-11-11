@@ -106,10 +106,12 @@ Set `VITE_AUTH_PLANE_URL` only if auth ever moves to a different origin.
 
 Where the value comes from:
 
-- **Git-integrated build** (recommended, step 4): a Cloudflare **Build
-  variable** named `VITE_CONTROL_PLANE_URL` in the Worker's build settings.
-- **Manual deploy**: `.env.production` (git-ignored, local only) before
-  `bun run build`.
+- **Default for every build**: the committed `.env.production` — Vite loads it
+  in production mode, so Cloudflare git builds, CI and local `bun run build`
+  all bake the Render URL with no dashboard setup.
+- **Optional override**: a Cloudflare **Build variable** named
+  `VITE_CONTROL_PLANE_URL` (Settings → Builds → Build variables) wins over the
+  file. Runtime Variables under Settings → Variables do nothing for the bundle.
 - **GitHub Actions** (optional): the deploy workflows already default to the
   Render URL and accept `VITE_CONTROL_PLANE_URL` / `VITE_AUTH_PLANE_URL` repo
   variables as overrides.
@@ -232,5 +234,6 @@ persistent Key Value) before pointing users at it.
 | Boot log: `vector index not created` | Expected with Render Key Value (no RediSearch); code RAG is disabled, everything else works |
 | D1 `401`/`403` from Render | The API token lacks D1 `Edit` on the account that owns `v2-vibe` |
 | GitHub export has no files | `CONTROL_PLANE_URL` in `wrangler.v2.jsonc` (or `.prod.vars`) does not point at the Render service |
+| Chat shows `This feature requires the full backend …` (503 `NOT_AVAILABLE`) | The SPA bundle was built without `VITE_CONTROL_PLANE_URL`, so chat hit the Worker origin; make sure the built commit contains `.env.production` (or set the Build variable) and rebuild — then chat requests must target the Render URL in the Network tab |
 | Dashboard shows an old var value (e.g. `CONTROL_PLANE_URL: http://localhost:8080`) or a stray variable (e.g. one named `vibesdk-backend`) | That is the previous deploy's state; the next git build applies the repo's `wrangler.v2.jsonc` and deletes non-config plain vars — fix values in the repo, then push |
 
