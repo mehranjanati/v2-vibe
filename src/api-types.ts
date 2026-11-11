@@ -328,6 +328,149 @@ export interface ApiKeysData {
   }>;
 }
 
+// ========================================
+// Outcome Runs (M1.1)
+// ========================================
+//
+// One `OutcomeRun` is the execution record of an outcome and mirrors the
+// workflow-run contract 1:1 (`workflow_instances` + `workflow_step_logs`):
+// the control plane records the pending run, the runtime advances it
+// (pending → running → succeeded | failed | cancelled) and writes one
+// `OutcomeRunStep` per node attempt. Payloads are decoded JSON columns
+// (`decodeJSONField` in backend/pkg/api/workflows.go) and timestamps are
+// epoch milliseconds, null while a run has not started/finished.
+//
+// Contract-first: the matching `/api/outcomes/*` control-plane routes land in
+// a later M1 task; until then the api-client calls answer 404/503 instead of
+// the SPA HTML.
+
+/** In-flight + terminal states of an outcome run (workflow_instances.status). */
+export type OutcomeRunStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+/** Per-step states of an outcome run (workflow_step_logs.status). */
+export type OutcomeRunStepStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped';
+
+/** Node type executed by an outcome run step (WORKFLOW_NODE_TYPE_VALUES). */
+export type OutcomeRunStepNodeType =
+  | 'trigger'
+  | 'http'
+  | 'db'
+  | 'ai'
+  | 'email'
+  | 'condition'
+  | 'sleep';
+
+/** Live Cloudflare Workflows status merged into a pending/running run. */
+export type OutcomeRunCloudflareStatus =
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'errored'
+  | 'terminated'
+  | 'complete';
+
+/** Readiness of the stored outcome definition (workflow_dags.status). */
+export type OutcomeRunDefinitionStatus = 'generated' | 'invalid';
+
+/**
+ * A decoded JSON column: object, array, raw string (scalars/non-JSON) or
+ * null for SQL NULL — the values `decodeJSONField` returns.
+ */
+export type OutcomeRunPayload =
+  | Record<string, unknown>
+  | unknown[]
+  | string
+  | null;
+
+/**
+ * One step log of an outcome run. Mirrors `buildStepMap` in
+ * backend/pkg/api/workflows.go (`workflow_step_logs` row).
+ */
+export interface OutcomeRunStep {
+  id: string;
+  /** DAG node id; maps 1:1 to the Workflow step name at runtime. */
+  stepName: string;
+  nodeType: OutcomeRunStepNodeType | null;
+  status: OutcomeRunStepStatus;
+  /** 1-based attempt counter (retries produce additional rows). */
+  attempt: number;
+  input: OutcomeRunPayload;
+  output: OutcomeRunPayload;
+  error: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+}
+
+/**
+ * One outcome run. Mirrors `buildInstanceMap` in
+ * backend/pkg/api/workflows.go (`workflow_instances` row); tenant scope
+ * (`user_id`) stays server-side and is never part of the response.
+ */
+export interface OutcomeRun {
+  id: string;
+  outcomeId: string;
+  status: OutcomeRunStatus;
+  input: OutcomeRunPayload;
+  output: OutcomeRunPayload;
+  error: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  createdAt: number | null;
+  /** Number of step-log rows; present on the single-run response only. */
+  stepCount?: number;
+  /** Present only while the run is pending/running and Cloudflare answers. */
+  cloudflareStatus?: OutcomeRunCloudflareStatus;
+}
+
+/**
+ * The outcome a run belongs to. Mirrors the `workflow` object of
+ * GET /api/workflows/:workflowId (`workflow_dags` row + parsed DAG).
+ */
+export interface OutcomeRunDefinition {
+  outcomeId: string;
+  schemaVersion: number;
+  status: OutcomeRunDefinitionStatus;
+  updatedAt: number | null;
+  /** Compiled plan/DAG; malformed JSON comes back as the raw string. */
+  dag: OutcomeRunPayload;
+}
+
+/** Response of POST /api/outcomes/trigger (mirrors the workflow trigger). */
+export interface OutcomeRunTriggerData {
+  outcomeId: string;
+  runId: string;
+  status: OutcomeRunStatus;
+}
+
+/**
+ * Response of GET /api/outcomes/:outcomeId — the outcome plus its most
+ * recent runs, newest first (server caps the list at 20).
+ */
+export interface OutcomeRunsData {
+  outcome: OutcomeRunDefinition;
+  runs: OutcomeRun[];
+}
+
+/**
+ * Response of GET /api/outcomes/:outcomeId?runId=<id> — one run plus its
+ * per-step logs in execution order.
+ */
+export interface OutcomeRunDetailData {
+  outcome: OutcomeRunDefinition;
+  run: OutcomeRun;
+  steps: OutcomeRunStep[];
+}
+
 export type {
     GitHubExportOptions,
     GitHubExportResult,

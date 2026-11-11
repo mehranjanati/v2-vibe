@@ -65,6 +65,9 @@ import type{
 	ListAppTablesResponse,
 	QueryAppTableResponse,
 	WipeAppDatabaseResponse,
+	OutcomeRunDetailData,
+	OutcomeRunsData,
+	OutcomeRunTriggerData,
 } from '@/api-types';
 import {
 	RateLimitExceededError,
@@ -1136,6 +1139,59 @@ class ApiClient {
 				method: 'POST',
 				body: JSON.stringify(body),
 			},
+		);
+	}
+
+	// ===============================
+	// Outcome Run API Methods (M1.1)
+	// ===============================
+	//
+	// Mirror of the workflow-run surface (POST /api/workflows/trigger and
+	// GET /api/workflows/:workflowId): one trigger call records a pending
+	// run, then the caller lists/polls runs and fetches a run with its
+	// per-step logs. The `/api/outcomes/*` control-plane routes are the M1
+	// contract; until they are registered these calls answer 404/503 with a
+	// JSON error (never the SPA HTML).
+
+	/**
+	 * Start an outcome run and return its pending run id.
+	 *
+	 * Mirrors POST /api/workflows/trigger: requires the outcome definition to
+	 * be runnable (`status: 'generated'`), records a pending run, starts the
+	 * execution and answers `{ outcomeId, runId, status: 'pending' }`.
+	 */
+	async triggerOutcomeRun(
+		outcomeId: string,
+		input: Record<string, unknown> = {},
+	): Promise<ApiResponse<OutcomeRunTriggerData>> {
+		return this.request<OutcomeRunTriggerData>('/api/outcomes/trigger', {
+			method: 'POST',
+			body: { outcomeId, input },
+		});
+	}
+
+	/**
+	 * List an outcome's most recent runs (newest first, server-capped at 20)
+	 * together with the outcome definition they execute.
+	 */
+	async getOutcomeRuns(
+		outcomeId: string,
+	): Promise<ApiResponse<OutcomeRunsData>> {
+		return this.request<OutcomeRunsData>(
+			`/api/outcomes/${encodeURIComponent(outcomeId)}`,
+		);
+	}
+
+	/**
+	 * Get one outcome run plus its per-step logs.
+	 */
+	async getOutcomeRun(
+		outcomeId: string,
+		runId: string,
+	): Promise<ApiResponse<OutcomeRunDetailData>> {
+		const params = new URLSearchParams({ runId });
+		return this.request<OutcomeRunDetailData>(
+			`/api/outcomes/${encodeURIComponent(outcomeId)}?${params.toString()}`,
 		);
 	}
 
