@@ -11,6 +11,13 @@ const WORKFLOW_INSTANCE_STATUS_VALUES = ['pending', 'running', 'succeeded', 'fai
 const WORKFLOW_STEP_STATUS_VALUES = ['pending', 'running', 'succeeded', 'failed', 'skipped'] as const;
 const WORKFLOW_NODE_TYPE_VALUES = ['trigger', 'http', 'db', 'ai', 'email', 'condition', 'sleep'] as const;
 
+// Outcome execution enum values (M1.2) — the same vocabulary as the workflow
+// tables so the `OutcomeRun*` API contract (src/api-types.ts) maps 1:1.
+const OUTCOME_DEFINITION_STATUS_VALUES = ['generated', 'invalid'] as const;
+const OUTCOME_RUN_STATUS_VALUES = ['pending', 'running', 'succeeded', 'failed', 'cancelled'] as const;
+const OUTCOME_RUN_STEP_STATUS_VALUES = ['pending', 'running', 'succeeded', 'failed', 'skipped'] as const;
+const OUTCOME_RUN_NODE_TYPE_VALUES = ['trigger', 'http', 'db', 'ai', 'email', 'condition', 'sleep'] as const;
+
 // ========================================
 // CORE USER AND IDENTITY MANAGEMENT
 // ========================================
@@ -715,6 +722,103 @@ export const workflowStepLogs = sqliteTable('workflow_step_logs', {
     instanceIdx: index('workflow_step_logs_instance_id_idx').on(table.instanceId),
     instanceStepIdx: index('workflow_step_logs_instance_step_idx').on(table.instanceId, table.stepName),
     statusIdx: index('workflow_step_logs_status_idx').on(table.status),
+}));
+
+// ========================================
+// OUTCOME EXECUTION (M1: definitions + runs + step logs)
+// ========================================
+//
+// Mirrors the workflow triad 1:1 so the M1.1 API contract (OutcomeRun* in
+// src/api-types.ts) maps onto the same D1 shapes: the control plane records
+// the pending run, the runtime advances it and writes one step row per node
+// attempt. Statuses, payload columns and timestamps intentionally match
+// workflow_instances / workflow_step_logs.
+
+/**
+ * Outcome Definitions table - the compiled, validated plan (DAG) of one
+ * outcome, keyed by the source project/chat id. The equivalent of
+ * `workflow_dags` for business outcomes: an upsert target for the compiler
+ * and the runnable artifact POST /api/outcomes/trigger validates.
+ *
+ * Tenant scope: `user_id` is the owning user, copied from the source room's
+ * owner claim; it is the value the outcome routes authorize against and is
+ * never returned to the client.
+ */
+export const outcomeDefinitions = sqliteTable('outcome_definitions', {
+    outcomeId: text('outcome_id').primaryKey(), // Source chat/project id
+    schemaVersion: integer('schema_version').notNull().default(2), // WorkflowSchemaV2 = 2
+    dagJson: text('dag_json', { mode: 'json' }).notNull(),
+    status: text('status', { enum: OUTCOME_DEFINITION_STATUS_VALUES }).notNull().default('generated'),
+    userId: text('user_id'), // Owning user id (tenant scope); NULL = unowned/legacy row
+
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    statusIdx: index('outcome_definitions_status_idx').on(table.status),
+    updatedAtIdx: index('outcome_definitions_updated_at_idx').on(table.updatedAt),
+    userIdx: index('outcome_definitions_user_idx').on(table.userId),
+}));
+
+/**
+ * Outcome Runs table - a single execution of an outcome definition.
+ * The control plane creates the 'pending' row per run; the runtime advances
+ * its status (pending → running → succeeded|failed|cancelled).
+ *
+ * Tenant scope: `user_id` is copied from the definition's owner when the run
+ * is recorded, so the runtime can refuse to execute a run whose tenant no
+ * longer matches the definition it points at.
+ */
+export const outcomeRuns = sqliteTable('outcome_runs', {
+    id: text('id').primaryKey(),
+    outcomeId: text('outcome_id').notNull().references(() => outcomeDefinitions.outcomeId, { onDelete: 'cascade' }),
+    status: text('status', { enum: OUTCOME_RUN_STATUS_VALUES }).notNull().default('pending'),
+    userId: text('user_id'), // Run tenant, copied from outcome_definitions.user_id
+
+    // Execution payload
+    input: text('input', { mode: 'json' }),
+    output: text('output', { mode: 'json' }),
+    error: text('error'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    outcomeIdx: index('outcome_runs_outcome_id_idx').on(table.outcomeId),
+    statusIdx: index('outcome_runs_status_idx').on(table.status),
+    startedAtIdx: index('outcome_runs_started_at_idx').on(table.startedAt),
+}));
+
+/**
+ * Outcome Run Steps table - per-step execution record for an outcome run
+ * (one row per node-id + attempt). Node ids map 1:1 to runtime step names,
+ * exactly like workflow_step_logs. This is the execution history the M1 exit
+ * gate requires (tenant/agent/function identity + verdict per action).
+ */
+export const outcomeRunSteps = sqliteTable('outcome_run_steps', {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull().references(() => outcomeRuns.id, { onDelete: 'cascade' }),
+    stepName: text('step_name').notNull(), // Node id from the definition DAG
+    nodeType: text('node_type', { enum: OUTCOME_RUN_NODE_TYPE_VALUES }),
+    status: text('status', { enum: OUTCOME_RUN_STEP_STATUS_VALUES }).notNull().default('pending'),
+    attempt: integer('attempt').notNull().default(0),
+
+    // Step payload
+    input: text('input', { mode: 'json' }),
+    output: text('output', { mode: 'json' }),
+    error: text('error'),
+    startedAt: integer('started_at', { mode: 'timestamp' }),
+    completedAt: integer('completed_at', { mode: 'timestamp' }),
+
+    // Metadata
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    runIdx: index('outcome_run_steps_run_id_idx').on(table.runId),
+    runStepIdx: index('outcome_run_steps_run_step_idx').on(table.runId, table.stepName),
+    statusIdx: index('outcome_run_steps_status_idx').on(table.status),
 }));
 
 // ========================================
