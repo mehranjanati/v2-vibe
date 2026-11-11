@@ -96,17 +96,23 @@ Expect `Access-Control-Allow-Origin:` echoing the origin and
 ## Step 3 — Point the SPA at Render
 
 The control-plane URL is **baked into the bundle at build time** (`VITE_*` is
-read by Vite, not by the Worker):
+read by Vite, not by the Worker). Only one value is required:
 
-- **Manual deploy**: `.env.production` (git-ignored, local only) is the easiest
-  place — set `VITE_CONTROL_PLANE_URL` and `VITE_AUTH_PLANE_URL` there before
+- `VITE_CONTROL_PLANE_URL=https://vibesdk-backend.onrender.com`
+
+Auth needs nothing: `authPlane.baseUrl` falls back to the page's own origin, and
+the Worker that serves the SPA also serves `/api/auth/*` (`src/config/api.ts`).
+Set `VITE_AUTH_PLANE_URL` only if auth ever moves to a different origin.
+
+Where the value comes from:
+
+- **Git-integrated build** (recommended, step 4): a Cloudflare **Build
+  variable** named `VITE_CONTROL_PLANE_URL` in the Worker's build settings.
+- **Manual deploy**: `.env.production` (git-ignored, local only) before
   `bun run build`.
-- **CI deploy** (`.github/workflows/deploy-release-live.yml` and
-  `deploy-staging.yml`): the build step sets both from repository variables and
-  defaults to `https://vibesdk-backend.onrender.com` plus the Worker origin.
-  Override them in **Settings → Secrets and variables → Actions → Variables**
-  (`VITE_CONTROL_PLANE_URL`, `VITE_AUTH_PLANE_URL`) when your Render or Worker
-  URL differs.
+- **GitHub Actions** (optional): the deploy workflows already default to the
+  Render URL and accept `VITE_CONTROL_PLANE_URL` / `VITE_AUTH_PLANE_URL` repo
+  variables as overrides.
 - `wrangler.v2.jsonc` `vars.CONTROL_PLANE_URL` must match the Render URL — the
   Worker uses it server-side for GitHub export (`GET /api/projects/:id/files`).
 - Local development overrides the Worker's var with `CONTROL_PLANE_URL` in
@@ -114,18 +120,48 @@ read by Vite, not by the Worker):
 
 Changing any of these requires a rebuild and redeploy of the Worker.
 
-## Step 4 — Apply D1 migrations and deploy the Worker
+## Step 4 — Git-integrated builds: no CI pipeline needed
+
+Both platforms rebuild on every push to `main` on their own:
+
+### Cloudflare — Workers Builds (serves the dashboard)
+
+1. Dashboard → **Workers & Pages → `vibesdk-v2` → Settings → Builds → Connect**
+   the GitHub repository, production branch `main`.
+2. Build configuration:
+
+| Field | Value |
+|---|---|
+| Build command | `bun install --frozen-lockfile && bun run build` |
+| Deploy command | `npx wrangler deploy --config wrangler.v2.jsonc` |
+| Build variables | `VITE_CONTROL_PLANE_URL=https://vibesdk-backend.onrender.com` |
+
+   The build image ships Bun, so no custom setup is needed; the build variable
+   is exported into the build process, and Vite inlines it into the bundle.
+   Commits to other branches produce Previews instead of deploys.
+3. Worker **runtime** variables/secrets (JWT_SECRET, OAuth apps, AI gateway,
+   feature toggles) are not part of the repo — set them once in the Worker's
+   **Settings → Variables** (`.prod.vars` only feeds the manual `bun run deploy`
+   path). The bindings themselves (D1/KV/Workflows/Assets) come from
+   `wrangler.v2.jsonc`, so a dashboard-managed deploy stays in sync with the
+   repo.
+
+### Render — Blueprint auto-deploy (runs the control plane)
+
+`render.yaml` already carries `autoDeployTrigger: commit` and `branch: main`:
+every push rebuilds `backend/Dockerfile` and redeploys `vibesdk-backend` plus
+`vibesdk-redis`. Nothing else to wire.
+
+### Manual fallback
 
 ```bash
 bun run db:migrate:remote          # applies migrations/ to D1 v2-vibe
-bun run build                      # vite build → dist/client (uses .env.production)
+bun run build                      # vite build → dist/client
 bun run deploy                     # wrangler deploy --config wrangler.v2.jsonc
 ```
 
 `bun run deploy` reads `.prod.vars` and neither typechecks nor migrates; run
-those steps explicitly. Pushing to `release-live` or `staging` also deploys the
-Worker through `.github/workflows/deploy-release-live.yml` and
-`deploy-staging.yml`, which run `bun run build` with the same `.env.production`.
+those steps explicitly.
 
 ## Step 5 — Verification checklist
 

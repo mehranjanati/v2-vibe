@@ -292,7 +292,8 @@ Deploy the two planes separately:
 For the hosted split (Go control plane + Redis on Render, dashboard on Cloudflare) use the committed
 [`render.yaml`](../render.yaml) and the step-by-step guide
 [`DEPLOY_RENDER_CLOUDFLARE.md`](DEPLOY_RENDER_CLOUDFLARE.md): it covers the Blueprint secrets, the
-`CORS_ALLOWED_ORIGINS` variable, the `VITE_CONTROL_PLANE_URL` build-time value and the free-plan caveats.
+`CORS_ALLOWED_ORIGINS` variable, the Workers Builds setup with the `VITE_CONTROL_PLANE_URL` build
+variable (git-integrated auto-deploys on both platforms, no CI pipeline required) and the free-plan caveats.
 
 `bun run deploy` neither typechecks nor applies migrations: run `bun run typecheck`, `bun run test` and
 the migration command explicitly.

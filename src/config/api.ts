@@ -55,15 +55,17 @@ export const controlPlane = {
 };
 
 /**
- * Auth plane configuration (light Worker on Edge, D1-backed). Falls back
- * to the control plane base URL so production same-origin deployments
- * (where the Worker serves the SPA and auth) keep working without setting
- * VITE_AUTH_PLANE_URL.
+ * Auth plane configuration (light Worker on Edge, D1-backed). Falls back to
+ * the same origin: the Worker that serves the SPA also owns auth — including
+ * the split deployment where the control plane lives on Render
+ * (docs/DEPLOY_RENDER_CLOUDFLARE.md). Set VITE_AUTH_PLANE_URL only when auth
+ * is served from a different origin than the page itself; without it the
+ * Cloudflare git build needs just VITE_CONTROL_PLANE_URL.
  */
 export const authPlane = {
 	baseUrl: AUTH_PLANE_URL
 		? trimTrailingSlash(AUTH_PLANE_URL)
-		: controlPlane.baseUrl,
+		: trimTrailingSlash(window.location.origin),
 	isConfigured: Boolean(AUTH_PLANE_URL),
 };
 

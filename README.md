@@ -132,7 +132,7 @@ The platform deploys as two planes — the light Worker and the control plane:
 For a hosted split —
 
 - **Go control plane + Redis on Render**: the committed [`render.yaml`](render.yaml) creates the Docker web service plus a Redis-compatible Key Value instance. Full walkthrough (secrets, CORS, Worker wiring, free-plan caveats): [`docs/DEPLOY_RENDER_CLOUDFLARE.md`](docs/DEPLOY_RENDER_CLOUDFLARE.md).
-- **Dashboard on Cloudflare**: `bun run build` with `VITE_CONTROL_PLANE_URL` set (the deploy workflows read it from a repo variable and default to the Render URL), then `bun run deploy`; the Worker serves the SPA and auth while the browser calls the Render service.
+- **Dashboard on Cloudflare**: connect the Worker to this repo with Workers Builds — build `bun install --frozen-lockfile && bun run build`, deploy `npx wrangler deploy --config wrangler.v2.jsonc`, and a build variable `VITE_CONTROL_PLANE_URL` pointing at the Render URL. No CI pipeline needed; `bun run build` + `bun run deploy` also work manually. The Worker serves the SPA and auth while the browser calls the Render service.
 
 You will need:
 
