@@ -45,10 +45,10 @@ detail — see step 2.
 
 | Key | Required | Value |
 |---|---|---|
-| `AI_GATEWAY_URL` | yes | `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>` |
-| `AI_GATEWAY_API_KEY` | yes | static token with Workers AI + AI Gateway access |
-| `CLOUDFLARE_ACCOUNT_ID` | yes | account id used by Pages/D1/Workflows |
-| `CLOUDFLARE_API_TOKEN` | yes | D1 `Edit` + Pages `Edit` + Workflows `Edit` |
+| `AI_GATEWAY_URL` | yes — **or** the Workers AI fallback below | `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>` |
+| `AI_GATEWAY_API_KEY` | yes — **or** the fallback below | static token with Workers AI + AI Gateway access |
+| `CLOUDFLARE_ACCOUNT_ID` | yes | account id used by Pages/D1/Workflows — **also enables the LLM fallback**: with `AI_GATEWAY_URL` empty, `backend/pkg/llm` uses Workers AI's OpenAI-compatible endpoint and `CLOUDFLARE_API_TOKEN` as the bearer (the token then needs Workers AI **Run** too) |
+| `CLOUDFLARE_API_TOKEN` | yes | D1 `Edit` + Pages `Edit` + Workflows `Edit` (+ Workers AI `Run` when using the fallback) |
 | `D1_DATABASE_ID` | yes | `d1_databases[0].database_id` from `wrangler.v2.jsonc` |
 | `CORS_ALLOWED_ORIGINS` | only for a custom dashboard domain | comma-separated origins, e.g. `https://vibe.example.com` |
 | `CONTROL_PLANE_REQUIRE_SESSION` | no | preset to `false` (see “Cross-origin auth”) |
