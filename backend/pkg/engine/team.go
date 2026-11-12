@@ -175,14 +175,17 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 	//   - coder/reviewer become SubAgents reached through the built-in `task`
 	//     tool (task{subagent_type, description}); each keeps its own
 	//     instruction, tool set and context, exactly as before;
-	//   - the built-in write_todos handler gives the coordinator a plan
-	//     checklist without us shipping a tool for it;
 	//   - deep supplies its own GenModelInput, which — like noFormatInstruction
 	//     below — never runs the ADK default's FString pass over the prompt.
 	//
 	// WithoutGeneralSubAgent keeps the delegation surface to exactly the two
-	// roles we defined. MaxIteration sits above the old 24 because a deep run
-	// now spends turns on write_todos in addition to delegating.
+	// roles we defined. WithoutWriteTodos disables deep's built-in todo tool:
+	// the model emits arguments its handler cannot unmarshal ("failed to
+	// unmarshal arguments in json, toolName=write_todos: Mismatch type"), which
+	// aborts the whole run AFTER the coder already wrote the files. The
+	// approved plan is already in the instruction, so the checklist tool adds
+	// nothing but a failure mode; the tool contract below no longer mentions
+	// it.
 	coordinator, err := deep.New(vfsCtx, &deep.Config{
 		Name:                   "coordinator",
 		Description:            "Supervises the code-generation team: delegates file work to coder, quality-gates via reviewer.",
@@ -191,6 +194,7 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 		SubAgents:              []adk.Agent{coder, reviewer},
 		MaxIteration:           30,
 		WithoutGeneralSubAgent: true,
+		WithoutWriteTodos:      true,
 		ToolsConfig: adk.ToolsConfig{
 			EmitInternalEvents: true,
 		},
@@ -320,10 +324,10 @@ func (r *ProjectRoom) roleModel(ctx context.Context, reg skills.Registry, role s
 // The ADK default (adk.defaultGenModelInput) pushes the instruction through
 // prompt.FromMessages(schema.FString, ...) as soon as ANY session value is
 // present, and hard-fails the entire run when the text contains literal curly
-// braces. The DeepAgent coordinator's built-in write_todos handler calls
-// adk.AddSessionValue(ctx, SessionKeyTodos, ...) (deep.go), and the task tool
-// runs every sub-agent with withSharedParentSession() (agent_tool.go) — so the
-// sub-agents DO see that session value. skills/02_coder.md contains
+// braces. DeepAgent runs every sub-agent with withSharedParentSession()
+// (agent_tool.go), so any session value its runtime sets — the built-in
+// write_todos handler used to set one before it was disabled — is visible to
+// the sub-agents. skills/02_coder.md contains
 // `if (el) { ... }` and skills/01_planner.md a full JSON example, either of
 // which would therefore break FString parsing and kill the run.
 //
@@ -360,8 +364,6 @@ const teamToolContract = `
 - Delegate with the built-in "task" tool:
   task{subagent_type: "coder", description: "<the full per-file brief>"}.
   The only valid subagent_type values are "coder" and "reviewer".
-- Track progress with the built-in "write_todos" tool: mark a file step
-  in_progress before its coder call and completed once the file lands.
 - You have no file tools yourself — every file operation goes through "task".
 - OVERRIDE — do NOT parallelize: issue exactly ONE "task" call per turn and
   wait for its result before the next. The plan's steps are dependency-ordered
