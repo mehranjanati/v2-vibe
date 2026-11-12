@@ -88,10 +88,16 @@ func NewEngine(ctx context.Context, cfg EngineConfig) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent: create chat model: %w", err)
 	}
+	// Workers AI's OpenAI-compatible endpoint rejects the multi-part content
+	// shape the adapter emits; rewrite the payload for that provider only.
+	var chatModel model.ChatModel = cm
+	if needsWorkersAIPayloadCompat(cfg.BaseURL) {
+		chatModel = newWorkersAISafeModel(chatModel)
+	}
 	// Wrap with malformed-chunk tolerance so a single bad stream frame
 	// (e.g. numeric "content" from Workers AI) ends the stream gracefully
 	// instead of surfacing as a NodeRunError through the ADK graph.
-	return &Engine{chatModel: newTolerantStreamModel(cm), cfg: cfg}, nil
+	return &Engine{chatModel: newTolerantStreamModel(chatModel), cfg: cfg}, nil
 }
 
 // ChatModel exposes the underlying tool-calling chat model for advanced
@@ -172,7 +178,11 @@ func (e *Engine) NewRoleModel(ctx context.Context, cfg RoleModelConfig) (model.C
 	if err != nil {
 		return nil, fmt.Errorf("agent: create role chat model %q: %w", modelID, err)
 	}
-	return newTolerantStreamModel(cm), nil
+	var chatModel model.ChatModel = cm
+	if needsWorkersAIPayloadCompat(e.cfg.BaseURL) {
+		chatModel = newWorkersAISafeModel(chatModel)
+	}
+	return newTolerantStreamModel(chatModel), nil
 }
 
 // RunStep executes one full ReAct step for the session using the engine's
