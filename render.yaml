@@ -54,7 +54,13 @@ services:
       - key: AI_GATEWAY_API_KEY
         sync: false
       - key: DEFAULT_MODEL
-        value: "@cf/qwen/qwen2.5-coder-32b-instruct"
+        value: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+      # Per-role override for the agent team. Workers AI's qwen2.5-coder
+      # endpoint loops on tool calls through the OpenAI-compatible API
+      # (ErrExceedMaxIterations); llama-3.3 answers tool results reliably and
+      # is already the planner/reviewer default in backend/pkg/skills.
+      - key: CODER_MODEL
+        value: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
       # Cloudflare control-plane credentials (D1 + Pages/Workflows).
       - key: CLOUDFLARE_ACCOUNT_ID

@@ -194,7 +194,12 @@ func (r *ProjectRoom) runPlanExecute(ctx context.Context, prompt, plan string) e
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: execTools},
 		},
-		MaxIterations: 8,
+		// One executor step is "implement the next plan step": it typically
+		// needs several vfs_write calls (plus a read/list) before it can
+		// answer. 8 was tight enough that a multi-file step hit
+		// ErrExceedMaxIterations ("exceeds max iterations") mid-build; 12
+		// leaves room for a retry without letting a loop run away.
+		MaxIterations: 12,
 		GenInputFn: func(ctx context.Context, in *planexecute.ExecutionContext) ([]adk.Message, error) {
 			return []adk.Message{
 				schema.UserMessage("Original user request:\n" + prompt +
@@ -227,10 +232,14 @@ func (r *ProjectRoom) runPlanExecute(ctx context.Context, prompt, plan string) e
 	}
 
 	agent, err := planexecute.New(ctx, &planexecute.Config{
-		Planner:       planner,
-		Executor:      executor,
-		Replanner:     replanner,
-		MaxIterations: 4,
+		Planner:   planner,
+		Executor:  executor,
+		Replanner: replanner,
+		// The outer loop runs plan → execute → replan; 4 revisions was enough
+		// for a two-step page but not for a plan the replanner legitimately
+		// extends (a page + its stylesheet + its script). 8 keeps a runaway
+		// replanner bounded while letting a real build finish.
+		MaxIterations: 8,
 	})
 	if err != nil {
 		return fmt.Errorf("planexecute: build: %w", err)

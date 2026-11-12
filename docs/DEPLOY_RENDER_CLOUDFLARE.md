@@ -236,5 +236,6 @@ persistent Key Value) before pointing users at it.
 | D1 `401`/`403` from Render | The API token lacks D1 `Edit` on the account that owns `v2-vibe` |
 | GitHub export has no files | `CONTROL_PLANE_URL` in `wrangler.v2.jsonc` (or `.prod.vars`) does not point at the Render service |
 | WebSocket: `Mixed Content … ws://` blocked / `connection failed permanently` | The control plane returned an insecure `ws://` URL from behind the TLS proxy; fixed server-side (`X-Forwarded-Proto` decides ws/wss) and the SPA upgrades `ws://`→`wss://` on https pages — redeploy both planes if you still see it |
+| Generation fails with `exceeds max iterations` (node path `[…, ChatModel]`) | The agent's tool loop ran out of budget. The blueprint pins `DEFAULT_MODEL`/`CODER_MODEL` to llama-3.3 because Workers AI's qwen2.5-coder loops on tool results, and the coder/executor budgets are 12 (reviewer 8, plan loop 8). Raise the role budgets only if a legitimate build needs more steps |
 | Dashboard shows an old var value (e.g. `CONTROL_PLANE_URL: http://localhost:8080`) or a stray variable (e.g. one named `vibesdk-backend`) | That is the previous deploy's state; the next git build applies the repo's `wrangler.v2.jsonc` and deletes non-config plain vars — fix values in the repo, then push |
 

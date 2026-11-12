@@ -132,7 +132,11 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 		Instruction:   prompts.coder,
 		Model:         coderModel,
 		GenModelInput: noFormatInstruction,
-		MaxIterations: 8,
+		// A coder turn needs ~one tool call per file plus a read/list; 8
+		// iterations produced ErrExceedMaxIterations ("exceeds max
+		// iterations") on multi-file steps. 12 keeps a loop bounded while
+		// letting a real file set finish.
+		MaxIterations: 12,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig:    compose.ToolsNodeConfig{Tools: coderTools},
 			EmitInternalEvents: true,
@@ -147,7 +151,9 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 		Instruction:   prompts.reviewer,
 		Model:         reviewerModel,
 		GenModelInput: noFormatInstruction,
-		MaxIterations: 6,
+		// Reading a handful of files and answering is cheap; 8 covers a
+		// multi-file review with one re-read without letting it drift.
+		MaxIterations: 8,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig:    compose.ToolsNodeConfig{Tools: reviewerTools},
 			EmitInternalEvents: true,
