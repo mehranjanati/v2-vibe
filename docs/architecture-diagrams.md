@@ -4,7 +4,7 @@
 > Historical diagrams were archived — see [Historical diagrams (removed)](#historical-diagrams-removed).
 >
 > - Authoritative narrative: [`llm.md#current-architecture`](llm.md#current-architecture)
-> - Product strategy and target architecture: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Agentic system model)
+> - Product strategy and target architecture: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Agentic system model) · canonical strategy [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md)
 > - Current reality dashboard: [`DEV_STATUS.md`](DEV_STATUS.md)
 > - Multi-agent team guide: [`MULTI_AGENT.md`](MULTI_AGENT.md)
 > - Per-endpoint route ownership (which plane serves what): [`POSTMAN_COLLECTION_README.md`](POSTMAN_COLLECTION_README.md) §7
@@ -89,42 +89,56 @@ Vite variable is unset).
 
 ## Target architecture sketch (PLANNED — not live)
 
-> **Status: `planned`.** Nothing below exists as a component; it is the
-> shape the roadmap phases build toward. Canonical layer definitions:
+> **Status: `planned`.** Nothing below exists as a component except the live
+> seeds named in the reading note; it is the shape the M0-M6 product roadmap
+> builds toward. Canonical definitions:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md) (strategy apex) ·
 > [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) (Agentic system model). Do not
 > quote this sketch as current behavior.
 
 ```mermaid
 flowchart TB
-    OUTCOME["Outcome<br/>(user intent, validated)"]
-    COMPILER["Agentic compiler<br/>(P2: synthesis → ExecutionPlan / System IR)"]
-    REG["Capability registry<br/>(P1: versioned tools / MCP / skills / models)"]
-    POLICY["Policy / permissions<br/>(P0+P1: runtime-enforced)"]
-    RUNTIME["Durable runtime<br/>(P3: events, retries, approvals, schedules)"]
-    TEAMS["Agents / Teams<br/>(P1: DeepAgent team today; composed teams next)"]
-    STATE["Memory / Lineage / Versions<br/>(P1+P5: generations, Git, diffs)"]
-    EVAL["Evaluation / Repair<br/>(P6: score runs, repair systems)"]
+    NL["Natural Language Studio<br/>(primary creation)"]
+    VB["Visual Agent Builder<br/>(advanced/developer)"]
+    DEV["SDK / CLI / API / manifests"]
+    IR["Canonical System IR<br/>(versioned, validated)"]
+    COMPILER["Compiler + validation<br/>(schema / policy / capability / deploy)"]
+    REG["Capability registry<br/>(versioned tools / functions / MCP / skills)"]
+    MOD["Model gateway<br/>(registry, routing, fallback, budgets)"]
+    POLICY["Policy / permissions<br/>(runtime-enforced)"]
+    RUNTIME["Durable runtime adapter<br/>(replaceable: checkpoints, approvals, schedules)"]
+    TEAMS["Agents / Teams<br/>(DeepAgent team today; composed teams next)"]
+    STATE["Memory / Lineage / Versions<br/>(generations, Git, diffs)"]
+    EVAL["Observability / Evaluation / Repair<br/>(score runs, repair systems)"]
     SUBSTRATE[("Cloudflare substrate<br/>(Workers, Workflows, D1, KV, Pages)")]
 
-    OUTCOME --> COMPILER
-    COMPILER --> TEAMS
+    NL --> IR
+    VB --> IR
+    DEV --> IR
+    IR --> COMPILER
     REG --> COMPILER
+    COMPILER --> TEAMS
+    MOD --> TEAMS
     POLICY --> TEAMS
     POLICY --> RUNTIME
     TEAMS --> RUNTIME
     RUNTIME --> STATE
     STATE --> EVAL
-    EVAL --> COMPILER
+    EVAL --> IR
     RUNTIME --> SUBSTRATE
     TEAMS --> SUBSTRATE
 ```
 
-Reading the sketch against today: `Outcome`, `Compiler` (beyond plan
-approval), `Policy` enforcement, `Evaluation/Repair`, and the registry beyond
-node packages do not exist yet — they are P0–P2/P6 work. What exists:
-single-outcome app generation, the DeepAgent team primitive, lineage tables,
-the 7-type workflow runtime on the substrate. Graph editing would sit beside
-`STATE` as an inspection view (P4), never on the synthesis path.
+Reading the sketch against today (CURRENT vs PLANNED split is normative):
+CURRENT (verified): dual-plane Go control plane + light Worker + React SPA;
+DeepAgent coordinator/coder/reviewer team; lineage tables; 7-type workflow
+interpreter on the substrate; inspection-only workflow visualizer. Everything
+else — Canonical System IR, compiler beyond plan approval, model gateway,
+MCP adapter, policy enforcement, durable runtime adapter, evaluation/repair,
+and the registry beyond node packages — is PLANNED M0-M6 work, not live.
+Visual editing sits beside `STATE` as an advanced/developer surface on the
+same IR, never as the mandatory entry point and never executing raw frontend
+graph state.
 
 ## Historical diagrams (removed)
 

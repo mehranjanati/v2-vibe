@@ -1,91 +1,106 @@
-# MVP Definition — AI Sales Agent Wedge (PROPOSED)
+# MVP Definition — Agent Builder (PROPOSED)
 
-> **Scope:** the single MVP wedge of the AI-Native Business OS vision. ICP
+> **Scope:** the Agent Builder MVP (M0) of the Agentic Platform vision. ICP
 > and problem hypotheses: [`01-problem-and-icp.md`](01-problem-and-icp.md)
 > (must validate before build). Vision:
-> [`00-product-vision.md`](00-product-vision.md). Roadmap position: phase M1
-> in [`03-product-roadmap.md`](03-product-roadmap.md). Agent/function/tenant
+> [`00-product-vision.md`](00-product-vision.md). Roadmap position: phase M0
+> in [`03-product-roadmap.md`](03-product-roadmap.md). Canonical strategy:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
+> Agent/function/tenant
 > models: [`05-agent-runtime.md`](05-agent-runtime.md) ·
 > [`06-functions-and-tools.md`](06-functions-and-tools.md) ·
 > [`07-multitenancy-security.md`](07-multitenancy-security.md).
 >
-> **Status:** `planned` — one explicit wedge; nothing in this scope is
-> built yet beyond what the live App Builder already provides. Last
-> reviewed: 2026-11-05.
+> **Status:** `planned` — Agent Builder scope; nothing in this scope is
+> built yet beyond what the live App Builder already provides. The prior AI
+> Sales wedge is retained below as an optional reference template, not the
+> MVP. Last
+> reviewed: 2026-11-15.
 
-## The wedge (one concrete business outcome)
+## The MVP (one usable Agent Builder)
 
-> **"Build me an AI sales system that qualifies leads, follows up
-> automatically, updates the CRM, and reports results."**
+> **"Describe the agent you want in natural language; inspect and refine it
+> visually; run it governed and auditable."**
 
-Lead qualification + automated follow-up + CRM write-back + weekly sales
-summary — delivered as an agent-as-a-service outcome, not as a toolkit.
+Natural-language agent creation + visual inspection/editing on one shared
+system representation, single-agent execution, basic tools, basic model
+selection, basic memory, versioning, execution history, auth + tenant
+isolation, import/export.
 
 ## Rule
 
-Do NOT build all major modules in parallel. ERP, Marketplace and broad
-automation are destination architecture (decision D2 in
+Do NOT build all major platform phases in parallel. Multi-agent systems,
+durable runtime depth, developer ecosystem breadth, operations, marketplace,
+and the factory are destination phases (decision D7 in
 [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
-The MVP delivers exactly one measurable outcome for one ICP.
+The MVP delivers one usable Agent Builder for the initial segments.
 
-## Must-have (M1 scope)
+## Must-have (M0 scope)
 
 | Capability | Platform concept | Live seed today |
 |---|---|---|
-| Natural-language goal input | User layer | Chat UX + plan approval already live |
-| AI agent orchestration | Agent layer ([`05-agent-runtime.md`](05-agent-runtime.md)) | Eino DeepAgent coordinator/coder/reviewer team |
-| Business data access (leads, customers) | Data layer ([`04-system-architecture.md`](04-system-architecture.md)) | Redis VFS/D1 exist; **tenant business schema is new** |
-| Actions/functions | Capability layer ([`06-functions-and-tools.md`](06-functions-and-tools.md)) | Function registry with business actions is new |
+| Natural-language agent creation | Natural Language Studio | Chat UX + plan approval already live |
+| Visual inspection + basic editing | Visual Builder (advanced) | Workflow visualizer (inspection only); editing is new |
+| Single-agent execution | Agent layer ([`05-agent-runtime.md`](05-agent-runtime.md)) | Eino DeepAgent coordinator/coder/reviewer team (App Builder domain) |
+| Basic tools + model selection | Capability + model layers | VFS/REST toolset live; registry + gateway are new; built-in Tools + starter Skills catalog in [`06-functions-and-tools.md`](06-functions-and-tools.md) |
+| Basic memory | Memory layer | Redis VFS/state exists; scoped memory is new |
+| Versioning + import/export | System state | Internal-Git lineage direction exists; manifests are new |
 | Execution history | Observability | Generation lineage recorder exists |
-| Human approval where needed | Human-in-the-loop | Plan-approval gate exists; function-level approvals are new |
-| Result reporting (sales summary) | Outcome reporting | New |
+| Human approval where needed | Human-in-the-loop | Plan-approval gate exists; capability-level approvals are new |
+| Auth + tenant isolation | Tenancy | D1 auth + opt-in session boundary live; full isolation per P0 |
 
-## Must-NOT build (M1 non-goals)
+## Must-NOT build (M0 non-goals)
 
-- Full accounting ERP; full inventory ERP.
-- Full marketplace or any large plugin ecosystem
-  ([`08-marketplace.md`](08-marketplace.md)).
-- Complex visual workflow editor — workflows are composed by the agent;
-  a graph stays an inspection view (unchanged from
-  [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md)).
-- Broad automation platform features (scheduled jobs, event triggers,
-  webhooks, reusable functions platform) — those are phase M2
-  ([`03-product-roadmap.md`](03-product-roadmap.md)).
-- Multi-segment ICP support — one segment, one outcome.
+- Multi-agent teams and delegation (phase M1).
+- Durable runtime depth: schedules, triggers, webhooks, pause/resume
+  (phase M2).
+- Public API/SDK/CLI/OpenAPI/manifest specs as stable contracts (phase M3).
+- Advanced evaluation, regression, cost optimization (phase M4).
+- Registries with third-party supply, marketplace, revenue sharing (phase M5).
+- Autonomous generation of whole systems (phase M6).
+- Full accounting/inventory ERP; full marketplace or plugin ecosystem.
+- Two parallel agent models (NL vs visual) — one Canonical System IR only.
 
-## Acceptance criteria (M1 exit gate)
+## Acceptance criteria (M0 exit gate)
 
-1. A pilot tenant states the sales outcome in natural language and the
-   system composes: lead-qualification function chain + follow-up agent +
-   CRM write-back + weekly summary — with zero node/workflow design by the
-   user.
-2. Every executed action is visible in an execution history with
-   tenant/agent/function identity and verdict.
-3. Follow-up actions that send real external messages require human
-   approval (or an explicit, logged tenant-level policy).
-4. The weekly report states outcomes (leads qualified, follow-ups sent,
-   replies received, pipeline updated) — measurable by the metrics defined
-   in phase M0.
-5. Failure behavior: a failed/missing capability degrades to an explicit,
+1. A user creates an agent through natural language — no node design.
+2. The same agent can be inspected and edited in the visual editor; both
+   interfaces use the same canonical system representation.
+3. The agent executes at least one useful task end to end.
+4. Every tool call is permission-checked and auditable with
+   tenant/agent/identity and verdict.
+5. Runs have traceable identity and status in execution history.
+6. Tenant isolation tests pass.
+7. No critical security boundary is left unverified (launch gates in
+   [`07-multitenancy-security.md`](07-multitenancy-security.md)).
+8. Failure behavior: a failed/missing capability degrades to an explicit,
    logged error with human escalation — never silent loss.
+
+## Optional reference template (NOT the MVP)
+
+AI Sales (lead qualification + follow-up + CRM write-back + weekly summary)
+is preserved as an optional reference template/example that exercises the
+Agent Builder — never as the mandatory first market product. If built as a
+demo, it must satisfy the same representation, permission, audit, and
+approval gates above.
 
 ## Dependencies
 
 - Engineering P0 (identity/tenancy/security) — checklist P0.3–P0.9 remain
   the gating foundation ([`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)).
-- Function model minimum ([`06-functions-and-tools.md`](06-functions-and-tools.md)):
-  `create_customer`, `update_customer`, `search_products`-style typed
-  functions with tenant context, audit and approval hooks.
-- Durable execution minimum for follow-up sequences (engineering P3 slice).
-- Measured against the outcome metrics defined at the M0 exit gate, never seats
-  or MAU (decision D6). Pricing follows the AaaS direction — outcome plus
+- Capability model minimum ([`06-functions-and-tools.md`](06-functions-and-tools.md)):
+  typed tools/functions with tenant context, audit and approval hooks.
+- Durable execution minimum (engineering P3 slice).
+- Measured against builder activation and run success, never seats
+  or MAU (decision D6, preserved). Pricing follows the AaaS direction —
+  system value plus
   metered run cost — and is finalized only when O6 evidence exists
   ([`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md),
   [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)).
 
 ## What remains intentionally unbuilt
 
-Everything in phases M2–M5 of
+Everything in phases M1–M6 of
 [`03-product-roadmap.md`](03-product-roadmap.md), and every technology
 candidate marked open in
 [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md).

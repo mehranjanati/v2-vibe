@@ -3,10 +3,10 @@
 > **Single canonical backlog.** Every task has an explicit ID and status.
 > Historical task IDs are preserved verbatim and mapped into the target P0–P6
 > phase model below — never renumbered. Strategy:
-> [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md) (system model and moats: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md)). Current reality:
 > [`DEV_STATUS.md`](DEV_STATUS.md). Task-spec quality contract:
 > [`DEV_TASKS_SPEC.md`](DEV_TASKS_SPEC.md).
-> Product-phase roadmap (M0–M5 wedge strategy, mapped onto these engineering
+> Product-phase roadmap (M0–M6 Agentic Platform strategy, mapped onto these engineering
 > layers): [`03-product-roadmap.md`](03-product-roadmap.md) — the phase model
 > below is unchanged by that strategy reframe.
 > Specs: [`DEV_SPEC_P1A.md`](DEV_SPEC_P1A.md) ·
@@ -54,6 +54,13 @@ infer phase from a legacy prefix.
 | P4.1/P4.2 (sandbox) | Execution environment | **P4** Workbench | Agent tooling environment. |
 | P5.1–P5.6 (App Runtime) | Per-app backend | **P5** Systems | Reframed as the first **reference system**, not a vertical. |
 | P6.1–P6.8 (workflow canvas) | Visual workflow work | **P4** + **P3** | Inspection view (P4) + triggers/observability (P3). |
+| P7.1 (manifest schemas) | Agent/Tool/Skill/System manifest JSON Schemas + semver/compat rules | **P2** Compiler | New ID (2026-11-16): closes O10 slice for M0; no renumber. |
+| P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): closes O9 slice for M0–M1; System Manifest is the serializable form. |
+| P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): M0 trust slice; execution halves compose in M1. |
+| P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): builds on P1.8 routing + P1.11 budgets; serves hosted + open models behind one contract. |
+| P7.5 (runtime adapter) | Runtime Adapter interface + Run State Machine + checkpoint/event contracts | **P3** Durable Runtime | New ID (2026-11-16): closes O11 slice for M2; Workflows limits analyzed first. |
+| P7.6 (scoped memory) | Scoped memory + knowledge metadata (run/conversation/agent/team/tenant) | **P1** Agent Primitive | New ID (2026-11-16): provider-independent abstractions over Redis/D1; no new store decision. |
+| P7.7 (run observability) | Canonical Run Trace: 11 Observability capabilities | **P3** Durable Runtime | New ID (2026-11-16): extends generation lineage to runs; M2–M4 slices; attribution-clean for future tuning. |
 
 ## Task template (every item below carries these fields)
 
@@ -439,4 +446,85 @@ are filed here as specified — no invented IDs.
 
 Legacy per-phase ticks were removed: the old table mixed legacy phase names
 with the new model. Per-item status above is the source of truth.
+
+---
+
+## P7 — Agentic Platform slices (target; new IDs 2026-11-16, never renumbered)
+
+New work the M0–M6 strategy requires that no P0–P6 task covers. Every item
+carries the standard fields (id · phase · title · status · goal · why ·
+dependencies · affected files · implementation notes · acceptance
+criteria · verification). Product phases: M0–M2 unless noted; engineering
+owners are the target phases below.
+
+### P7.1 — Manifest schemas (Agent/Tool/Skill/System) — STATUS: `planned` → target P2 (O10 slice for M0)
+- **id:** P7.1 · **phase:** P2 · **title:** Manifest JSON Schemas + semver/compat rules · **status:** `planned`.
+- **Goal:** JSON Schema for each `kind` (Agent/Tool/Skill/System) plus enforced semver and compat rules, per `docs/06-functions-and-tools.md` normative contract.
+- **Why:** manifest-first is normative from day one; no agent/skill/tool/system ships without one (strategy `docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** none (spec-first; blocks P7.2 System refs).
+- **Affected files:** new spec + schemas (location decided in the task; candidate `docs/architecture/` only — no code).
+- **Implementation notes:** `kind` + `apiVersion` envelope; `metadata.name` DNS-safe immutable; `MAJOR.MINOR.PATCH`; `spec` contract, `status` never in manifest; canonical YAML/JSON deterministic ordering; `kind/name@version` refs, floating refs rejected at deploy.
+- **Acceptance criteria:** all four schemas validate the minimal shapes in `docs/06-functions-and-tools.md`; invalid manifests rejected with field-level errors; System pins exact refs.
+- **Verification:** `bun run docs:check` green; schema examples round-trip byte-identical through validate → store → export (test harness in the task).
+
+### P7.2 — Canonical System IR v1 minimal — STATUS: `planned` → target P2 (O9 slice for M0–M1)
+- **id:** P7.2 · **phase:** P2 · **title:** System IR v1 minimal schema + 4-case test · **status:** `planned`.
+- **Goal:** minimal viable IR schema whose serializable form is the System Manifest; tested against App Builder, single Agent, multi-agent team, visual workflow before any expansion.
+- **Why:** one canonical representation for NL/Visual/SDK/CLI/API; prevents two divergent agent models (D7).
+- **Dependencies:** P7.1 (manifest refs).
+- **Affected files:** planned `docs/architecture/system-ir.md` + ADR (alternatives + trade-offs required).
+- **Implementation notes:** IR must represent the field list in `docs/12-agentic-platform-strategy.md`; schema versioning + backward-compat strategy; deterministic serialization; diff support; desired-vs-runtime separation; no direct execution of unvalidated IR.
+- **Acceptance criteria:** 4-case test passes (App Builder closure, single Agent, team, workflow); over-general fields rejected from v1.
+- **Verification:** `bun run docs:check` green; ADR records rejected alternatives.
+
+### P7.3 — MCP trust slice — STATUS: `planned` → target P0 (+ P2) for M0
+- **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `planned`.
+- **Goal:** governed MCP bridge: server registration, permission mapping, auth/secret handling (vault refs), lifecycle, timeouts, per-call audit, tenant isolation, trust policy; every MCP-exposed tool executes only through a versioned Tool Manifest.
+- **Why:** MCP is a core product priority (strategy); untrusted-external-boundary rule is launch-blocking (`docs/07-multitenancy-security.md`).
+- **Dependencies:** P0.3–P0.7 guards; P7.1 Tool schema.
+- **Affected files:** control-plane adapter + registry (exact paths decided in the task; no paths invented here).
+- **Implementation notes:** discovery is read-only metadata until a human/policy grants execution; grants auditable, revocable, tenant-scoped; M1 multi-agent delegation and M5 catalog are explicitly out of this slice.
+- **Acceptance criteria:** ungranted discovery grants nothing (negative test); granted call carries tenant/user/agent identity + approval ref + idempotency key in audit.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; new `*_test.go` next to code; `bun run docs:check` green.
+
+### P7.4 — Model gateway — STATUS: `planned` → target P2 for M1–M2
+- **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `planned`.
+- **Goal:** gateway serving hosted + open models behind one contract: registry, OpenAI-compatible adapter (+ provider adapters), per-agent selection, routing, fallback, retry, rate limits, timeouts, context-window awareness, cost estimation, usage tracking, provider health, evaluation, secret refs.
+- **Why:** provider integrations must be replaceable, never hardcoded into Agent business logic (strategy).
+- **Dependencies:** P1.8 (routing seed), P1.11 (budget plumbing), P7.1 (model-policy refs).
+- **Affected files:** gateway contract + provider adapters (paths decided in the task).
+- **Implementation notes:** Agents reference a model policy, the gateway resolves; no Eino types leak into manifests/APIs; open models are first-class entries, deployment choice stays OPEN.
+- **Acceptance criteria:** per-agent model selection + fallback + budget enforcement demonstrated on two providers (one may be mocked); secret refs never plaintext.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
+### P7.5 — Runtime Adapter + Run State Machine — STATUS: `planned` → target P3 for M2
+- **id:** P7.5 · **phase:** P3 · **title:** Runtime Adapter interface + Run State Machine + checkpoint/event contracts · **status:** `planned`.
+- **Goal:** replaceable runtime boundary: adapter interface, canonical Run State Machine, event/checkpoint contracts, at-least-once + idempotency explicit; Workflows limits analyzed before expanding its role.
+- **Why:** separates orchestration decisions (Eino) from durable execution; closes O11 for M2 (`docs/10-decisions-and-open-questions.md`).
+- **Dependencies:** P0 quotas; P3 durable slices; P7.2 (IR execution topology).
+- **Affected files:** runtime contract spec + adapter (paths decided in the task).
+- **Implementation notes:** never claim exactly-once without proof; retry/timeout/cancel/pause-resume/scheduling/events/webhooks/rollback per strategy; analyze `docs/CF_LIMITS.md` Workflows limits first.
+- **Acceptance criteria:** long-run recovery, durable state, documented + tested retry/idempotency on at least one adapter; provider boundary replaceable.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
+### P7.6 — Scoped memory + knowledge metadata — STATUS: `planned` → target P1 for M0–M1
+- **id:** P7.6 · **phase:** P1 · **title:** Scoped memory + knowledge metadata (provider-independent) · **status:** `planned`.
+- **Goal:** explicit memory scopes (run/conversation/agent/team/tenant) + knowledge metadata (docs/vector/retrieval) with access control, retention/deletion, tenant isolation, provenance; no new vector/relational store decision.
+- **Why:** provider-independent abstractions over live Redis/D1; storage rule in strategy (`docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** P1 lineage tables; P0 tenancy guards.
+- **Affected files:** metadata schema + access helpers (paths decided in the task; D1 migration only with evidence).
+- **Implementation notes:** evaluate Redis + D1 capabilities against workload/query patterns/scale/persistence/isolation/cost before any new store; secrets never in memory payloads.
+- **Acceptance criteria:** cross-scope and cross-tenant reads denied by construction (negative tests); retention/deletion enforced.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green; migration only via `bun run db:generate` + apply flow if D1 changes.
+
+### P7.7 — Canonical Run Trace (11 Observability capabilities) — STATUS: `planned` → target P3 for M2–M4
+- **id:** P7.7 · **phase:** P3 · **title:** Run Trace hierarchy + 11 capabilities (trace/cost/eval/regression) · **status:** `planned`.
+- **Goal:** every execution carries the full trace (System → Version → Run → Agent → Model/Tool calls → I/O → tokens → latency → cost → evaluation → result) plus the 11-capability checklist in strategy.
+- **Why:** the Demo-vs-Production layer; attribution-clean data is what makes future tuning possible (`docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** P1 lineage (generations/audits seed); P7.5 (run lifecycle); P7.1 (manifest refs).
+- **Affected files:** trace contracts + collectors (paths decided in the task); extends lineage tables, never a sidecar dashboard first.
+- **Implementation notes:** per-level identity + timestamps; secrets redacted at write time; cost = tokens x price + margin per agent/run/tenant; eval datasets versioned; regression delta blocks/warns promotion; no benchmark/cost/quality numbers claimed until measured.
+- **Acceptance criteria:** 11/11 capabilities present with retention + tenant scoping; failed/missing capability degrades to explicit logged error + human escalation, never silent loss.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
 

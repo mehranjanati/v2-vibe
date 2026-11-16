@@ -1,54 +1,79 @@
-# Marketplace Strategy (PROPOSED — Phase M4)
+# Marketplace Strategy (PROPOSED — Phase M5)
 
 > **Scope:** why the marketplace is destination architecture, what it
 > becomes, and the preconditions that must hold before building it. Vision:
-> [`00-product-vision.md`](00-product-vision.md). Roadmap position: phase M4
-> in [`03-product-roadmap.md`](03-product-roadmap.md). Function model it
+> [`00-product-vision.md`](00-product-vision.md). Roadmap position: phase M5
+> in [`03-product-roadmap.md`](03-product-roadmap.md). Capability model it
 > extends: [`06-functions-and-tools.md`](06-functions-and-tools.md).
+> Canonical strategy:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
 >
-> **Status:** `planned` (destination) — explicitly NOT part of the MVP
-> ([`02-mvp.md`](02-mvp.md) must-not-build). Last reviewed: 2026-11-05.
+> **Status:** `planned` (destination, M5) — explicitly NOT part of the MVP
+> ([`02-mvp.md`](02-mvp.md) must-not-build). A registry/discovery experience
+> may precede commercial marketplace; commerce only on proven demand +
+> security controls. Last reviewed: 2026-11-15.
 
 ## Position
 
-The marketplace is a **distribution layer on a proven platform**, never a
-launch strategy. It becomes four surfaces over time:
+> **Serverless by design.** Agents run fully serverless: no always-on
+> servers per agent, no per-agent ops. Execution is event-driven and scales
+> to zero; state lives in the platform's durable stores (checkpoints,
+> lineage, memory metadata), never in agent-local memory. The marketplace
+> and developer surfaces below therefore distribute **manifests, not
+> servers**: installing an agent means resolving a versioned closure and
+> running it on the shared serverless runtime under tenant quotas — never
+> provisioning infrastructure.
 
-1. **Function marketplace** — third-party business capabilities as
-   manifests ([`06-functions-and-tools.md`](06-functions-and-tools.md)),
-   versioned like packages.
-2. **Agent marketplace** — composable business-role agents
-   ([`05-agent-runtime.md`](05-agent-runtime.md)).
-3. **Business app marketplace** — generated applications
-   ([`09-software-factory.md`](09-software-factory.md)) installable by
-   other tenants.
-4. **Supplier/product marketplace** — commerce-side supply surfaces from
-   phase M3 modules.
+The marketplace is a **distribution layer on a proven platform**, never a
+launch strategy. It becomes surfaces over time:
+
+| # | Surface | Goal |
+|---|---|---|
+| 1 | Agent Templates | Share ready-made agents (Agent Manifests) |
+| 2 | Skills Registry | Share skills (Skill Manifests) |
+| 3 | Tools Registry | Share tools (Tool Manifests) |
+| 4 | MCP Catalog | Discover and connect MCP servers through the governed adapter |
+| 5 | System Templates | Share multi-agent systems (System Manifests) |
+| 6 | Developer SDK | Build agents outside the UI (public API + SDK on stable contracts) |
+| 7 | CLI | Build, test, and deploy from the terminal (manifest-first workflow) |
+| 8 | Git Integration | Versioning and collaboration (manifests in Git; import/export round-trip) |
+| 9 | Community Contributions | Contribute artifacts under review, provenance, and trust gates |
+
+Surfaces 1–5 are **registries/catalogs first** (discovery + versioned
+install); commerce only on proven demand + security controls. Surfaces 6–9
+are the **developer contribution path**: author locally → validate →
+publish → review → install. Full manifest shapes and the versioning contract:
+[`06-functions-and-tools.md`](06-functions-and-tools.md).
 
 ## Preconditions (build order is normative)
 
-- Versioned function registry with typed IO, tenant scoping and audit
-  ([`06-functions-and-tools.md`](06-functions-and-tools.md)) — engineering
+- Stable manifests (agent, tool, skill, system) with versioning and
+  compatibility validation
+  ([`06-functions-and-tools.md`](06-functions-and-tools.md),
+  [`05-agent-runtime.md`](05-agent-runtime.md)) — engineering
   P5 registry direction.
 - Tenancy/security model enforced in production
   ([`07-multitenancy-security.md`](07-multitenancy-security.md)).
-- Demonstrated demand from phases M1–M3: tenants actually asking to extend
+- Demonstrated demand from phases M0–M4: builders actually asking to extend
   or reuse.
-- Credential vault with least-privilege wiring for third-party functions.
+- Credential vault with least-privilege wiring for third-party capabilities.
+- Publisher identity, security scanning, trust/provenance, install/update
+  flows, usage tracking (see
+  [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md)).
 
 ## Why deferred (the anti-goal)
 
 A marketplace for everyone is one of the explicit "do not position as"
 items ([`00-product-vision.md`](00-product-vision.md)). Launching a
-marketplace before a wedge proves usage produces empty shelves and
+marketplace before the platform proves usage produces empty shelves and
 integration burden with no demand — the classic cold-start failure. The
-wedge (AI Sales) is the demand-generation strategy the marketplace later
-harvests.
+Agent Builder through Operations phases (M0–M4) are the demand-generation
+strategy the registry/marketplace later harvests.
 
-## Settlement and trust (M4 — gated, not built)
+## Settlement and trust (M5 — gated, not built)
 
-Marketplace supply is only half of the M4 problem; cross-border payouts and
-provenance are the other half. Both are **gated to M4** and are the entire
+Marketplace supply is only half of the M5 problem; cross-border payouts and
+provenance are the other half. Both are **gated to M5** and are the entire
 reason Web3 is the next plan rather than MVP scope
 ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)):
 
@@ -66,14 +91,14 @@ reason Web3 is the next plan rather than MVP scope
 Guard rules that do not change when Web3 lands: business data never leaves the
 platform data layer (decision D5), wallets stay invisible to business buyers
 (embedded wallet + gas abstraction), and every adoption needs its own ADR.
-Building settlement before M1–M3 demand exists is the same cold-start mistake
+Building settlement before M0–M4 demand exists is the same cold-start mistake
 described above.
 
 ## Value exchange
 
 - Sellers get distribution + the take-rate model considered in
   [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md) business-model section.
-- Buyers get capabilities that extend the OS without building.
+- Buyers get capabilities that extend the platform without building.
 - Platform gets network effects on top of the capability registry — moat
   hypothesis 9 in [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md).
 
@@ -83,4 +108,4 @@ described above.
 - No un-vetted functions (review, provenance and tenancy audit are
   mandatory — same discipline as the Dynamic Design Skill Layer imports in
   [`architecture/dynamic-design-skill-layer.md`](architecture/dynamic-design-skill-layer.md)).
-- No marketplace as a substitute for first-party wedge quality.
+- No marketplace as a substitute for first-party M0 builder quality.
