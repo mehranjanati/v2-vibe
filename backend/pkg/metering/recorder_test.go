@@ -106,7 +106,7 @@ func (f *fakeD1) apply(sql string, params []any) []map[string]any {
 			stepName:    strParam(params, 2),
 			nodeType:    strParam(params, 3),
 			status:      "skipped",
-			attempt:     intParam(params, 4),
+			attempt:     int(intParam(params, 4)),
 			completedAt: intParam(params, 5),
 		})
 
@@ -117,7 +117,7 @@ func (f *fakeD1) apply(sql string, params []any) []map[string]any {
 			stepName:  strParam(params, 2),
 			nodeType:  strParam(params, 3),
 			status:    "running",
-			attempt:   intParam(params, 4),
+			attempt:   int(intParam(params, 4)),
 			startedAt: intParam(params, 5),
 		})
 

@@ -1,4 +1,4 @@
-# DEV STATUS — Current-State Dashboard (2026-11-05)
+# DEV STATUS — Current-State Dashboard (2026-11-14)
 
 > Single concise current-state dashboard. This file describes **current reality**
 > and points elsewhere; it does not duplicate the backlog
@@ -9,7 +9,7 @@
 > `verified` | `blocked` | `obsolete`.
 > Truth hierarchy: live code > tests/CI > schema/migrations > config >
 > active docs > archive.
-> Last reviewed: 2026-11-05.
+> Last reviewed: 2026-11-14.
 
 ## Contents
 
@@ -61,12 +61,18 @@ and Worker bindings:
 
 ## Current Product Thesis
 
-**Revised 2026-10-06:** the product direction is now an **AI-Native Business
-OS / Agent-as-a-Service** platform with one explicit MVP wedge — the AI Sales
-outcome (lead qualification + follow-up + CRM update + reporting). Product
-vision: [`00-product-vision.md`](00-product-vision.md); wedge definition:
+**Revised 2026-11-15 (D7):** the product direction is now the **VibeSDK Open
+Agentic Platform** — Agent Builder first (M0), multi-agent systems (M1), runtime (M2),
+ecosystem (M3), operations (M4), marketplace (M5), Autonomous Software Factory (M6).
+The 2026-10-06 AI-Native Business OS / AI Sales wedge history is preserved in the
+decision log; the current implementation below is explicitly the **AI App Builder
+seed/reference workload** that the platform generalizes, not the platform itself.
+Product vision: [`00-product-vision.md`](00-product-vision.md); builder MVP:
 [`02-mvp.md`](02-mvp.md); decision log:
-[`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md).
+[`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md); canonical strategy:
+[`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md). No implementation status
+below changes: `implemented_unverified` stays unverified and all tenancy/security
+warnings stay in force.
 
 The platform thesis underneath is unchanged in its engineering shape: the
 user requests an **outcome**; the system synthesizes the agentic system to
@@ -92,10 +98,11 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 - Verified history: P0.1 skeleton, P0.2 DeepAgent + Eino bump, P1.0.0 D1
   tooling, P1.0.1–P1.0.3 cleanup, P1.1 tables + migration, P1.2 recorder,
   P1.3.0 D1-CAS decision, P1.3.1/P1.3.2 run hooks.
-- Implemented but unverified: control-plane auth boundary (P0.3 scope,
-  opt-in), author threading (P1.3.3 scope), team E2E approve path (P0.2 scope).
-- Still open: P0.8–P0.9 security/tenancy/identity foundation (P0.3 landed as
-  an opt-in boundary; P0.4/P0.5/P0.7 guards wired but unverified end-to-end), internal Git
+- Implemented but unverified: the P0.3–P0.8 guards (session boundary,
+  ownership, WebSocket, credential vault, workflow tenant scope, room
+  lifecycle/quotas — all opt-in with the P0.3 boundary), the P0.9 decision
+  record, team E2E approve path (P0.2 scope).
+- Still open: the end-to-end rollout that switches the P0.3–P0.8 guards on, internal Git
   (P1.3.4–P1.3.6), History API/UI (P1.4/P1.5), reviewer/gate/claim/identity
   (P1.6–P1.10), maxTokens fix (P1.11), and everything in P2–P6 (specs only,
   except live 7-type validation in `worker/workflow/VibeWorkflow.ts` +
@@ -114,24 +121,30 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 | P1.2 recorder | `backend/pkg/engine/generation.go` + `generation_test.go` (7 tests), `generation_hook_test.go` (4 tests) |
 | P1.3.0 D1-CAS decision | `docs/DEV_SPEC_P1A.md` P1.3.0 + `docs/CF_LIMITS.md` section 8 `[S7]` |
 | P1.3.1/P1.3.2 hooks | `runDualModelPipeline` open/finish + `runTeam` verdict return; 4 hook tests |
+| P1.3.3 write attribution + fork | `backend/pkg/engine/write_authors_test.go` (per-path `author_agent` through one real Start→Finish: coder / gapfill / delete-row / NULL-manual, plus the agent-only negative); fork flag in `backend/pkg/engine/generation.go` (`generations.fork` + `generation_forked` audit); `go test -race ./pkg/engine/ -run 'WriteAuthor\|Generation\|DualModel'` green |
 
 <a id="implemented-but-unverified"></a>
 
 ## Implemented But Unverified
 
-- **P0.3 control-plane auth boundary (new, 2026-10-04; checklist P0 block).** `RequireSession`/`RequireOwner` (`backend/pkg/api/auth.go`) now guard the seven mutating/project routes with an Edge-KV-backed verifier, failing closed (401/503) and attaching the identity for P0.4/P0.7. The P0.4 ownership guard and the P0.7 workflow tenant guard (`workflowGuard`, D1 `workflow_dags.user_id`, `workflow.access_denied` audits) build on that identity. Verified by unit tests + `go vet/test` + `typecheck/lint/build`, but NOT verified end-to-end: enforcement is opt-in (`CONTROL_PLANE_REQUIRE_SESSION`), no staging deployment has run with it on, and the browser→Go Edge-token path still depends on the P0.9 identity decision (a Go-login session mints no Edge token, so sign-in via the control plane cannot satisfy the boundary yet).
-- P1.3.3 author threading — code present, missing: (a) test proving every path records its expected non-empty author into `generation_files.author_agent`, (b) fork flag on concurrent manual write, (c) `author` from editor/import channels (today only agent paths pass it). Not `verified` until that test lands.
+- **P0.3–P0.5 control-plane guards (2026-10-04; checklist P0 block).** `RequireSession`/`RequireOwner` (`backend/pkg/api/auth.go`) guard the seven mutating/project routes with an Edge-KV-backed verifier, failing closed (401/503) and attaching the identity the P0.4 ownership check and the P0.7 workflow tenant guard consume; `wsGuard` gates the `/ws/:id` upgrade (ticket/session, P0.5). Verified by unit tests (`backend/pkg/api/auth_test.go`, `backend/pkg/api/ws_auth_test.go`), `go vet ./... && go test ./...` and the `e2e` rollout harness (`go test -tags e2e ./e2e/ -run 'P03|P05'` green in emulator mode), plus `bun run typecheck && bun run lint && bun run build` green — but NOT verified end-to-end: enforcement is opt-in (`CONTROL_PLANE_REQUIRE_SESSION`), no staging deployment has run with it on, and the live-KV pass (`VIBE_P03_KV=real`) still needs a KV-scoped Cloudflare token (a Go-login session mints no Edge token, so sign-in through the control plane cannot satisfy the boundary).
+- **P0.6 credential hardening (2026-10-07).** `worker/light/tokenVault.ts` seals every provider token as an `enc:v1:<iv>:<ct>` AES-256-GCM envelope (key derived from `JWT_SECRET`, additional data binds the row to `github_token:<userId>`), re-seals legacy plaintext on first read, and `POST /api/github-app/revoke` revokes at GitHub then deletes the row. Unit-tested by `worker/light/tokenVault.test.ts` (workerd — CI only, this box is macOS < 13.5); NOT verified end-to-end: `migrations/0012_github_tokens_seal.sql` has no remote apply yet and no deployed Edge has run the seal path.
+- **P0.7 workflow tenant scope (2026-10-08).** `workflowGuard` (`backend/pkg/api/routes.go`) scopes trigger/get to `workflow_dags.user_id` — 403 + `workflow.access_denied` audit on cross-tenant access, 404 on unknown/unowned, 503 on store outage — and the runtime refuses a tenant-mismatched run. Verified by `backend/pkg/api/workflows_auth_test.go` + `backend/pkg/engine/workflows_owner_test.go` green; NOT verified end-to-end: `migrations/0013_first_mesmero.sql` awaits a remote apply and the workerd tenant cases run in CI only.
+- **P0.8 room lifecycle + quotas (2026-11-14).** `RoomLifecyclePolicy` (`backend/pkg/engine/hub_lifecycle.go`) sets the documented policy — `ROOM_IDLE_TTL` (default 30m; `0` disables), `ROOM_MAX_PER_USER` (default 10; `0` disables) and `ROOM_SWEEP_INTERVAL` (default 1m) — wired at startup and swept by the janitor; idle rooms are stopped, and a user's N+1th NEW session answers 429 `ROOM_QUOTA_EXCEEDED` (`backend/pkg/api/routes.go`). Verified by `backend/pkg/engine/hub_lifecycle_test.go` (cap, cap-disabled, anonymous path, eviction guards + Run-loop exit, ownership survival, env parsing, attach-after-stop) and `backend/pkg/api/session_quota_test.go` green, plus `go test -race ./pkg/engine/` green; NOT verified end-to-end: no deployed control plane has run a full 30m idle cycle, and `GET /ws/:id` still creates a room outside the quota.
+- **P0.9 identity decision (2026-10-07).** `docs/architecture/adr-identity-source-of-truth.md` records the contract — the Edge light Worker stays the sole identity authority (KV `session:token:*`) and Go only verifies with `EdgeKVVerifier`; no unification invented, no runtime change. Acceptance evidence is `bun run docs:check` green with one documented owner; it stays `implemented_unverified` until the P0.3 rollout proves a login path that mints the Edge token the Go boundary requires.
 - P0.2 team E2E approve path — build green, full run manual-only (no live engine in tests, `canRunTeam` false). See `docs/MULTI_AGENT.md` Known gaps 1.
 
 <a id="in-progress"></a>
 
 ## In Progress
 
-Nothing is actively `in_progress` as of 2026-10-04. The last merged work was
-the control-plane auth boundary (P0.3, `implemented_unverified`), the Edge
-`GET /api/auth/session` route, the DeepAgent migration (P0.2) and the
-generation lineage recorder (P1.2); all open checklist items are `planned` or
-`blocked`. Claim `in_progress`
+Nothing is actively `in_progress` as of 2026-11-14. The last merged work was
+the P0.3–P0.7 guard set (session boundary, ownership, WebSocket, credential
+vault, workflow tenant scope — all `implemented_unverified`), the P0.9
+identity decision record, the Edge `GET /api/auth/session` route, the
+DeepAgent migration (P0.2) and the generation lineage recorder (P1.2); all
+open checklist items are `implemented_unverified`, `planned` or `blocked`.
+Claim `in_progress`
 only while code is being written, and move the item back to `planned`
 (or forward to `implemented_unverified` with its test) when the session ends.
 
@@ -162,16 +175,15 @@ deletion.
 
 Ordered, dependency-driven. Open `docs/DEV_CHECKLIST.md`, take the first unblocked item, open its one spec:
 
-0. P0.9 identity source-of-truth decision (now on the critical path) — the P0.3 boundary can only be switched on once the SPA/Worker can present the Edge token to Go; checklist P0 block.
+0. P0.9 follow-through — the decision is recorded (2026-10-07: Edge mints, Go verifies); what remains is making every login path present an Edge token to Go so the boundary can be switched on; checklist P0 block.
 1. P0.3 rollout verification — enable `CONTROL_PLANE_REQUIRE_SESSION` against a real KV namespace and prove 401/503/403 on the seven guarded routes; checklist P0 block. Harness in place: `backend/e2e/p03_session_boundary_test.go` (build tag `e2e`) is green in emulator mode (`go test -tags e2e ./e2e/ -run P03 -v`) and runs the identical proof against the live Edge namespace via `VIBE_P03_KV=real` — that live run is still pending a Workers-KV-scoped Cloudflare token in this environment.
-2. P0.4 resource ownership model (new) — prerequisite for P2.7/P5.
+2. P0.4 ownership verification — `ownerGuard` is wired on rooms/VFS/deploys; prove cross-tenant addressing answers 404/403 on a deployed control plane with the boundary on.
 3. P0.5 WebSocket authorization — wired (`wsGuard` on `/ws/:id`, ticket/session gate; `go test -tags e2e ./e2e/ -run P05`), part of the opt-in P0.3 rollout.
-4. P0.6 credential hardening incl. GitHub token off plaintext D1 (new).
+4. P0.6 rollout — apply `migrations/0012_github_tokens_seal.sql` remotely and prove the seal/read/revoke path on a deployed Edge (code landed 2026-10-07).
 5. P0.7 workflow tenant isolation — wired (`workflowGuard` on the trigger/get routes, `workflow_dags.user_id` tenant, `workflow.access_denied` audits; `VibeWorkflow` tenant check; unit tests green, workerd suites + E2E rollout pending), part of the opt-in P0.3 rollout.
-6. P0.8 room lifecycle/eviction/quotas (new).
-7. P1.3.3 verify (author E2E test + fork flag) — `docs/DEV_SPEC_P1A.md` P1.3.3.
-8. P1.3.4 internal Git D1-CAS (`backend/pkg/engine/gitrepo.go`) — `docs/DEV_SPEC_P1A.md` P1.3.4.
-9. P1.11 maxTokens via `model.WithMaxTokens` + `adk.WithChatModelOptions` — checklist P1.11, background in `docs/MULTI_AGENT.md` gap 6.
+6. P0.8 rollout verification — defaults are live at startup (`ROOM_IDLE_TTL=30m`, `ROOM_MAX_PER_USER=10`, `ROOM_SWEEP_INTERVAL=1m`); prove on a deployed control plane that a quiet room is evicted and the 11th new session answers 429, then decide whether `GET /ws/:id` should share the cap.
+7. P1.3.4 internal Git D1-CAS (`backend/pkg/engine/gitrepo.go`) — `docs/DEV_SPEC_P1A.md` P1.3.4.
+8. P1.11 maxTokens via `model.WithMaxTokens` + `adk.WithChatModelOptions` — checklist P1.11, background in `docs/MULTI_AGENT.md` gap 6.
 
 <a id="dependency-graph"></a>
 
@@ -196,7 +208,7 @@ P2 ─> P3/P4; P5 + P6.7 ─> P4 verifier thresholds
 2. Control plane session boundary is provisional: `CONTROL_PLANE_REQUIRE_SESSION` is opt-in and resolves tokens against the Edge KV store, so a deployment that logs in through the Go handlers (no Edge token) cannot satisfy it until the identity contract settles; `GET /ws/:id` is now gated by the same boundary (P0.5, ticket/session) and the workflow routes are tenant-scoped with audited denials (P0.7). Per-resource ownership for rooms/VFS/deploys is wired (P0.4). Task P0.9 (P0.5/P0.7 wired, in the opt-in rollout).
 3. Plaintext provider tokens — addressed (P0.6): `github_tokens.access_token` now holds `enc:v1:` AES-256-GCM envelopes sealed in `worker/light/tokenVault.ts`; revoke is `POST /api/github-app/revoke`. Rows written before P0.6 are purged by `migrations/0012_github_tokens_seal.sql` (pending remote apply — see the P0.6 verification note) or re-sealed lazily on first read.
 4. ~~Workflow tenant gap~~ — closed (P0.7, wired 2026-10-08): `workflow_dags.user_id` records the owner at upsert time (first-write-wins), trigger/get run `workflowGuard` (403 + `workflow.access_denied` audit on cross-tenant access, 404 on unknown/unowned, 503 on store outage), and the runtime refuses a tenant-mismatched run. `migrations/0013_first_mesmero.sql` still awaits a remote D1 apply.
-5. Unbounded rooms: `EngineHub` never evicts; no idle TTL, no quota. Task P0.8.
+5. ~~Unbounded rooms~~ — addressed (P0.8, 2026-11-14): rooms idle for `ROOM_IDLE_TTL` (default 30m) with no clients attached and no generation running are stopped and evicted by the hub janitor, and `ROOM_MAX_PER_USER` (default 10) caps a user's live rooms with 429 `ROOM_QUOTA_EXCEEDED` on the next new session. Remaining caveats: `GET /ws/:id` still creates a room outside the cap, and only `generating` (not an in-flight conversational turn) blocks eviction — safe because a conversation is triggered by an attached client and finishes in minutes against a 30m TTL, but worth knowing.
 6. One-by-one GitHub push (`pushFile` per path via Contents API) — non-atomic, rate-limit prone. Atomic Git Data API migration (tree→commit→ref) preserved in P1.4.5/P1.7.4.
 7. `maxTokens` no-op on engine path (P1.11) — per-role overrides + truncation doubling dropped when `r.eng != nil`.
 8. Coordinator parallelization is prompt-overridden, not code-enforced (`teamToolContract`); verdict parsing is substring matching. See `docs/MULTI_AGENT.md` gaps.

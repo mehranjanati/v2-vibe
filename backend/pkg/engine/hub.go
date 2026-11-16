@@ -83,6 +83,13 @@ type EngineHub struct {
 	// a no-op so the pre-existing behaviour is preserved until the P0.9
 	// identity decision lands.
 	sessionVerifier SessionVerifier
+
+	// policy is the room lifecycle policy (P0.8: idle TTL, per-user cap,
+	// sweep interval) enforced by EnsureRoom/EvictIdleRooms/StartJanitor.
+	// Guarded by policyMu because the janitor and the request path read it
+	// concurrently.
+	policyMu sync.RWMutex
+	policy   RoomLifecyclePolicy
 }
 
 // NewEngineHub creates a hub backed by the given Redis, LLM, and
@@ -173,47 +180,12 @@ func (h *EngineHub) Cfg(key, fallback string) string {
 }
 
 // GetOrCreateRoom returns the ProjectRoom for chatID, creating and
-// starting it (its Run loop) if it does not yet exist.
+// starting it (its Run loop) if it does not yet exist. It never refuses and
+// never claims: the quota-enforcing, ownership-claiming creation path is
+// EnsureRoom (P0.8). Callers that mint a NEW room for an authenticated user
+// must use EnsureRoom so the per-user cap applies.
 func (h *EngineHub) GetOrCreateRoom(chatID string) *ProjectRoom {
-	h.mu.RLock()
-	room, ok := h.rooms[chatID]
-	h.mu.RUnlock()
-	if ok {
-		return room
-	}
-
-	// P0.7: resolve the room's tenant before creating it so a regenerating
-	// session stamps workflow_dags.user_id correctly. This also warms the
-	// in-memory registry from Redis after a restart. A lookup failure is not
-	// fatal here (the room is created unowned); the ownership guards that
-	// authorize caller access still fail closed on their own lookups.
-	owner, claimed, oerr := h.RoomOwner(chatID)
-	if oerr != nil {
-		log.Printf("[hub] owner lookup for room %s failed: %v", chatID, oerr)
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Double-check after acquiring the write lock.
-	if room, ok = h.rooms[chatID]; ok {
-		return room
-	}
-
-	room = NewProjectRoom(chatID, h.rdb, h.llm, h.eng)
-	room.SetCloudflareClient(h.cf)
-	room.SetD1Client(h.d1)
-	if claimed && owner != "" {
-		room.SetOwner(owner)
-	}
-	if h.plannerPrompt != "" {
-		room.SetPlannerPrompt(h.plannerPrompt)
-	}
-	if h.teamPrompts.coordinator != "" {
-		room.SetTeamPrompts(h.teamPrompts)
-	}
-	h.rooms[chatID] = room
-	go room.Run()
+	room, _ := h.ensureRoom(chatID, "", 0)
 	return room
 }
 

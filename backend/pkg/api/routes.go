@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -556,13 +558,39 @@ func handleCreateSession(hub *engine.EngineHub) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		chatID := uuid.NewString()
 
-		// Create (and start) the room actor for this session.
-		hub.GetOrCreateRoom(chatID)
+		// P0.8: create the room through the quota-enforcing path. The cap
+		// counts the caller's LIVE rooms, so an existing project is never
+		// refused — only a new one beyond ROOM_MAX_PER_USER is.
+		policy := hub.LifecyclePolicy()
+		ownerID := ""
+		if identity, ok := CurrentIdentity(c); ok {
+			ownerID = identity.UserID
+		}
+		if _, err := hub.EnsureRoom(chatID, ownerID, policy.MaxRoomsPerUser); err != nil {
+			if errors.Is(err, engine.ErrRoomQuotaExceeded) {
+				log.Printf("[api] room quota exceeded for user %s (cap %d); refused session %s",
+					ownerID, policy.MaxRoomsPerUser, chatID)
+				return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+					"success": false,
+					"code":    "ROOM_QUOTA_EXCEEDED",
+					"error": fmt.Sprintf(
+						"active-project limit reached (%d); finish or close an older project and retry",
+						policy.MaxRoomsPerUser),
+				})
+			}
+			log.Printf("[api] failed to create session %s: %v", chatID, err)
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"success": false,
+				"error":   "room registry unavailable",
+			})
+		}
 
 		// P0.4: claim ownership of the fresh room for the authenticated
-		// caller (first write wins). A store outage fails the request closed
-		// (503) rather than minting an unowned room. With the boundary off
-		// there is no identity and no claim — the pre-P0.4 behaviour.
+		// caller (first write wins). EnsureRoom already claims on creation;
+		// this keeps the pre-existing behaviour for a room that was created
+		// earlier by another path (e.g. a WebSocket attach). A store outage
+		// fails the request closed (503) rather than minting an unowned room.
+		// With the boundary off there is no identity and no claim.
 		if identity, ok := CurrentIdentity(c); ok && identity.UserID != "" {
 			if _, _, err := hub.ClaimRoomOwner(chatID, identity.UserID); err != nil {
 				log.Printf("[api] failed to claim owner of session %s: %v", chatID, err)
@@ -784,6 +812,10 @@ func handleWebSocket(hub *engine.EngineHub) func(*websocket.Conn) {
 // sending client is threaded through so request-scoped replies (B2:
 // get_conversation_state) go back only to the requesting tab.
 func handleClientMessage(room *engine.ProjectRoom, client *engine.Client, msg models.ClientMessage) {
+	// P0.8: every inbound message is user activity, so it resets the room's
+	// idle clock and keeps the janitor from evicting a project the user is
+	// actively driving.
+	room.Touch()
 	switch msg.Type {
 	case "get_conversation_state":
 		// The frontend requests state on open; we already pushed it during

@@ -914,6 +914,50 @@ export const generationAudits = sqliteTable('generation_audits', {
     actionIdx: index('generation_audits_action_idx').on(table.action),
 }));
 
+/**
+ * Git Objects table - D1-CAS content store for the internal per-app Git
+ * history (P1.3.4, `backend/pkg/engine/gitrepo.go`).
+ *
+ * One row per loose object: `kind` is `commit` | `tree` | `blob`, `content` is
+ * the zlib-compressed loose-object payload base64-encoded (D1's REST API has no
+ * BLOB type), `size` is the UNCOMPRESSED byte length. The natural key
+ * `(app_id, sha)` is the content address, so an unchanged blob is stored once
+ * per app no matter how many commits reference it.
+ *
+ * Constraints (docs/CF_LIMITS.md §8): content is always a bind parameter, never
+ * inlined into SQL; one row per object, never one giant repo row; the hard 2 MB
+ * row cap is why P1.3.6 enforces a 1 MB per-file limit.
+ */
+export const gitObjects = sqliteTable('git_objects', {
+    appId: text('app_id').notNull(), // chat/project id the repo belongs to
+    sha: text('sha').notNull(), // real Git SHA-1 of the loose object
+    kind: text('kind').notNull(), // commit | tree | blob
+    content: text('content').notNull(), // base64(zlib(loose object payload))
+    size: integer('size').notNull(), // uncompressed payload size in bytes
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.appId, table.sha], name: 'git_objects_pk' }),
+    kindIdx: index('git_objects_kind_idx').on(table.appId, table.kind),
+}));
+
+/**
+ * Git Refs table - the mutable pointers of one app's internal repo (P1.3.4).
+ *
+ * `name` is the full ref name (`refs/heads/main` for HEAD, `refs/gen/<id>` for
+ * the commit of one generation), `sha` the commit it points at. The ref move is
+ * the commit point: object rows are written first and the ref is updated last,
+ * so an interrupted write leaves the previous history intact (D1 is
+ * single-threaded; atomicity is enforced in code, docs/CF_LIMITS.md §8).
+ */
+export const gitRefs = sqliteTable('git_refs', {
+    appId: text('app_id').notNull(),
+    name: text('name').notNull(),
+    sha: text('sha').notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.appId, table.name], name: 'git_refs_pk' }),
+}));
+
 // ========================================
 // TYPE EXPORTS FOR APPLICATION USE
 // ========================================

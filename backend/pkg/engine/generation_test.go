@@ -78,6 +78,7 @@ type fakeGenRow struct {
 	parent  string
 	status  string
 	verdict string
+	fork    bool
 }
 
 // fakeFileRow is one emulated `generation_files` row.
@@ -163,11 +164,15 @@ func (f *fakeD1) apply(sql string, params []any) []map[string]any {
 		}
 
 	case strings.HasPrefix(sql, "UPDATE generations SET"):
-		id := paramString(params, 2)
+		// verdict = ?, status = ?, fork = ?, updated_at = ... WHERE id = ?
+		id := paramString(params, 3)
 		for _, g := range f.gens {
 			if g.id == id {
 				g.verdict = paramString(params, 0)
 				g.status = paramString(params, 1)
+				if flag := paramInt(params, 2); flag != nil {
+					g.fork = *flag != 0
+				}
 			}
 		}
 
@@ -282,26 +287,27 @@ func sha256Of(s string) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
-// TestRecordWriteAuthorIntakeDocumentsSemantics: pins the G0 intake contract
+// TestRecordWriteAuthorIntakeDocumentsSemantics: pins the intake contract
 // RecordWriteAuthor implements — the exact behavior P1.3.3 wires every write
-// path through. The assertions read through takeGenerationAuthors (the same
+// path through. The assertions read through takeGenerationIntake (the same
 // consume path FinishGenerationRecord uses) rather than the private map, so
-// they also pin that the intake is readable and single-use per generation.
+// they also pin that the intake is readable, single-use per generation, and
+// that an unattributed write during an open run sets the fork flag.
 func TestRecordWriteAuthorIntakeDocumentsSemantics(t *testing.T) {
 	room := NewProjectRoom("chat-intake", nil, nil, nil)
 
-	// An empty path is a no-op: no entry, and the intake stays nil. A caller
-	// that loses the path cannot invent a phantom attribution row.
+	// An empty path is a no-op: no entry, no fork. A caller that loses the path
+	// cannot invent a phantom attribution row.
 	room.RecordWriteAuthor("", "coder")
-	if got := room.takeGenerationAuthors(); got != nil {
-		t.Fatalf("empty path produced intake %v, want nil", got)
+	if got, forked := room.takeGenerationIntake(); got != nil || forked {
+		t.Fatalf("empty path produced intake %v fork=%v, want nil/false", got, forked)
 	}
 
 	// A non-empty author is recorded against its path; the map is created
 	// lazily because a fresh room has genAuthors == nil.
 	room.RecordWriteAuthor("index.html", "coder")
 	room.RecordWriteAuthor("public/app.js", "gapfill")
-	got := room.takeGenerationAuthors()
+	got, _ := room.takeGenerationIntake()
 	if len(got) != 2 {
 		t.Fatalf("intake = %v, want 2 entries", got)
 	}
@@ -311,7 +317,7 @@ func TestRecordWriteAuthorIntakeDocumentsSemantics(t *testing.T) {
 
 	// Consuming clears the intake: attribution belongs to exactly one
 	// generation, so the next run must not inherit the previous run's authors.
-	if again := room.takeGenerationAuthors(); again != nil {
+	if again, _ := room.takeGenerationIntake(); again != nil {
 		t.Errorf("intake after consume = %v, want nil", again)
 	}
 
@@ -322,7 +328,7 @@ func TestRecordWriteAuthorIntakeDocumentsSemantics(t *testing.T) {
 	room.RecordWriteAuthor("b.txt", "reviewer")
 	room.RecordWriteAuthor("a.txt", "   ")
 	room.RecordWriteAuthor("b.txt", "")
-	if cleared := room.takeGenerationAuthors(); len(cleared) != 0 {
+	if cleared, _ := room.takeGenerationIntake(); len(cleared) != 0 {
 		t.Errorf("intake after clearing = %v, want no entries", cleared)
 	}
 
@@ -330,8 +336,36 @@ func TestRecordWriteAuthorIntakeDocumentsSemantics(t *testing.T) {
 	// is what makes a mid-generation manual edit show up as the final author.
 	room.RecordWriteAuthor("data.js", "coder")
 	room.RecordWriteAuthor("data.js", "user")
-	if last := room.takeGenerationAuthors(); last["data.js"] != "user" {
+	if last, _ := room.takeGenerationIntake(); last["data.js"] != "user" {
 		t.Errorf("data.js author = %q, want the last write to win", last["data.js"])
+	}
+
+	// P1.3.3 fork: outside a generation there is no row to mark, so no fork.
+	room.RecordWriteAuthor("manual-2.txt", "")
+	if _, forked := room.takeGenerationIntake(); forked {
+		t.Error("manual write with no open generation must not fork")
+	}
+
+	// An unattributed write that lands while a generation is open marks the run
+	// forked (generations.fork), and the flag is single-use.
+	room.storeGenerationSnapshot("gen-fork", &generationSnapshot{ChatID: "chat-intake"})
+	room.RecordWriteAuthor("manual.txt", "")
+	authors, forked := room.takeGenerationIntake()
+	if !forked {
+		t.Fatal("manual write during an open generation must set the fork flag")
+	}
+	if len(authors) != 0 {
+		t.Errorf("authors = %v, want none (manual write carries no agent)", authors)
+	}
+	if _, again := room.takeGenerationIntake(); again {
+		t.Error("fork flag must be single-use (consumed by Finish)")
+	}
+	// The next run resets the intake wholesale, so a stale open-generation
+	// marker can never fork a later run.
+	room.RecordWriteAuthor("manual-3.txt", "")
+	room.storeGenerationSnapshot("gen-next", &generationSnapshot{ChatID: "chat-intake"})
+	if _, forked := room.takeGenerationIntake(); forked {
+		t.Error("starting a new generation must clear the previous fork flag")
 	}
 }
 

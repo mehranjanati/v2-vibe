@@ -18,6 +18,11 @@ export interface ControlPlaneResponse<T = unknown> {
 	success: boolean;
 	data?: T;
 	error?: string;
+	/**
+	 * Machine-readable failure identifier when the control plane supplies one
+	 * (`ROOM_QUOTA_EXCEEDED` for the P0.8 per-user room cap).
+	 */
+	code?: string;
 }
 
 /** Session creation result returned by POST /api/agent/session. */
@@ -65,7 +70,18 @@ async function request<T>(
 		},
 	});
 	if (!res.ok) {
-		return { success: false, error: `HTTP ${res.status}` };
+		// Prefer the control plane's own message (e.g. the P0.8 room-quota 429)
+		// over a bare status line, so the caller can show something actionable.
+		let message = `HTTP ${res.status}`;
+		let code: string | undefined;
+		try {
+			const body = (await res.json()) as { error?: unknown; code?: unknown };
+			if (typeof body.error === 'string' && body.error) message = body.error;
+			if (typeof body.code === 'string' && body.code) code = body.code;
+		} catch {
+			// Non-JSON error body (gateway/proxy): keep the status line.
+		}
+		return code ? { success: false, error: message, code } : { success: false, error: message };
 	}
 	const json = (await res.json()) as ControlPlaneResponse<T>;
 	return json;
