@@ -1,0 +1,260 @@
+{
+  "$defs": {
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "license": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "publisher": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "publisher",
+        "license"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 63,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "ref": {
+      "pattern": "^(agent|skill|tool|model-policy|knowledge|eval)/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    }
+  },
+  "$id": "https://vibesdk.dev/schemas/tool.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "kind: Tool - one invocable capability (native tool, internal function, MCP-exposed tool, or external API call). Contract: docs/06-functions-and-tools.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "vibesdk/v1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Tool",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "additionalProperties": false,
+          "properties": {
+            "server": {
+              "$ref": "#/$defs/ref"
+            },
+            "toolName": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "native",
+                "function",
+                "http",
+                "mcp"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        "approvals": {
+          "items": {
+            "enum": [
+              "external-message",
+              "external-write",
+              "payment",
+              "human-review"
+            ],
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency": {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "ttlSeconds": {
+              "maximum": 2592000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "permissions": {
+          "items": {
+            "pattern": "^[a-z0-9]+(:[a-z0-9-]+)+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "provenance": {
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "repo": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "rateLimits": {
+          "additionalProperties": false,
+          "properties": {
+            "perTenantPerMinute": {
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "retry": {
+          "additionalProperties": false,
+          "properties": {
+            "backoff": {
+              "enum": [
+                "none",
+                "linear",
+                "exponential"
+              ],
+              "type": "string"
+            },
+            "maxAttempts": {
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "secrets": {
+          "items": {
+            "pattern": "^vault:[a-z0-9][a-z0-9/_.-]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "sideEffect": {
+          "enum": [
+            "safe",
+            "external",
+            "irreversible"
+          ],
+          "type": "string"
+        },
+        "tenant": {
+          "additionalProperties": false,
+          "properties": {
+            "contextKey": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "isolation": {
+              "const": "required",
+              "type": "string"
+            }
+          },
+          "required": [
+            "isolation",
+            "contextKey"
+          ],
+          "type": "object"
+        },
+        "timeoutSeconds": {
+          "maximum": 86400,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "description",
+        "inputSchema",
+        "outputSchema",
+        "permissions",
+        "tenant",
+        "sideEffect"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "VibeSDK Tool Manifest",
+  "type": "object"
+}

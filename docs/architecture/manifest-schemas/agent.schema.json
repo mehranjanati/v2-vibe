@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "license": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "publisher": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "publisher",
+        "license"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 63,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "ref": {
+      "pattern": "^(agent|skill|tool|model-policy|knowledge|eval)/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    }
+  },
+  "$id": "https://vibesdk.dev/schemas/agent.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "kind: Agent - one runnable agent. Contract: docs/05-agent-runtime.md, docs/06-functions-and-tools.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "vibesdk/v1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Agent",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluation": {
+          "additionalProperties": false,
+          "properties": {
+            "dataset": {
+              "$ref": "#/$defs/ref"
+            },
+            "thresholds": {
+              "additionalProperties": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "dataset"
+          ],
+          "type": "object"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "instructions": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "knowledge": {
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "memory": {
+          "additionalProperties": false,
+          "properties": {
+            "retentionDays": {
+              "maximum": 3650,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "scope": {
+              "enum": [
+                "run",
+                "conversation",
+                "agent",
+                "team",
+                "tenant"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope"
+          ],
+          "type": "object"
+        },
+        "model": {
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "additionalProperties": false,
+              "properties": {
+                "fallback": {
+                  "$ref": "#/$defs/ref"
+                },
+                "maxTokens": {
+                  "maximum": 200000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "temperature": {
+                  "maximum": 2,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "ref": {
+              "$ref": "#/$defs/ref"
+            }
+          },
+          "required": [
+            "ref"
+          ],
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "policies": {
+          "additionalProperties": false,
+          "properties": {
+            "approvals": {
+              "items": {
+                "enum": [
+                  "external-message",
+                  "external-write",
+                  "payment",
+                  "human-review"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "resourceLimits": {
+              "additionalProperties": false,
+              "properties": {
+                "maxSteps": {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "timeoutSeconds": {
+                  "maximum": 86400,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "role": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "role",
+        "instructions",
+        "model",
+        "inputSchema",
+        "outputSchema",
+        "policies"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "VibeSDK Agent Manifest",
+  "type": "object"
+}

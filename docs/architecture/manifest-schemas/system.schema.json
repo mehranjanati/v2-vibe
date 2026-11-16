@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "license": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "publisher": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "publisher",
+        "license"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 63,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "ref": {
+      "pattern": "^(agent|skill|tool|model-policy|knowledge|eval)/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    }
+  },
+  "$id": "https://vibesdk.dev/schemas/system.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "kind: System - the complete agentic system; serializable form of Canonical System IR v1 (minimal). Contract: docs/06-functions-and-tools.md, docs/12-agentic-platform-strategy.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "vibesdk/v1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "System",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "delegatesTo": {
+                "items": {
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "ref": {
+                "$ref": "#/$defs/ref"
+              }
+            },
+            "required": [
+              "ref"
+            ],
+            "type": "object"
+          },
+          "minProperties": 1,
+          "type": "object"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "approver": {
+                "pattern": "^(role|user|group):[A-Za-z0-9_.-]+$",
+                "type": "string"
+              },
+              "on": {
+                "enum": [
+                  "external-message",
+                  "external-write",
+                  "payment",
+                  "human-review"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "on",
+              "approver"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deployment": {
+          "additionalProperties": false,
+          "properties": {
+            "environment": {
+              "enum": [
+                "development",
+                "staging",
+                "production"
+              ],
+              "type": "string"
+            },
+            "replicas": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "evaluation": {
+          "additionalProperties": false,
+          "properties": {
+            "dataset": {
+              "$ref": "#/$defs/ref"
+            },
+            "thresholds": {
+              "additionalProperties": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "dataset"
+          ],
+          "type": "object"
+        },
+        "outcome": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "routing": {
+          "additionalProperties": false,
+          "properties": {
+            "onError": {
+              "enum": [
+                "fail-run",
+                "escalate-human",
+                "skip-step"
+              ],
+              "type": "string"
+            },
+            "parallel": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "topology": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "after": {
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "type": "string"
+              },
+              "on": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "run": {
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "type": "string"
+              },
+              "when": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "run"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "agents",
+        "topology"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "VibeSDK System Manifest",
+  "type": "object"
+}

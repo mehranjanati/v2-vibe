@@ -1,0 +1,29 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Skill",
+  "metadata": {
+    "description": "How to score a lead 0-100 with reasons.",
+    "license": "Apache-2.0",
+    "name": "qualification-rubric",
+    "publisher": "acme",
+    "version": "3.0.1"
+  },
+  "spec": {
+    "compatibility": {
+      "agents": [
+        "agent/lead-qualifier@1.2.0"
+      ],
+      "models": [
+        "standard"
+      ]
+    },
+    "description": "How to score a lead 0-100 with reasons",
+    "instructions": "Score firmographic fit, intent signals and budget; always return numeric score plus reasons; escalate when two signals conflict.",
+    "requires": {
+      "agentApiVersion": "vibesdk/v1",
+      "capabilities": [
+        "tool/score-lead@1.0.0"
+      ]
+    }
+  }
+}

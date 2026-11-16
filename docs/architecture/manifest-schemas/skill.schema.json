@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 500,
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "license": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "publisher": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "publisher",
+        "license"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 63,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "ref": {
+      "pattern": "^(agent|skill|tool|model-policy|knowledge|eval)/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "type": "string"
+    }
+  },
+  "$id": "https://vibesdk.dev/schemas/skill.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "kind: Skill - a reusable instruction/behavior package. Contract: docs/06-functions-and-tools.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "vibesdk/v1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Skill",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility": {
+          "additionalProperties": false,
+          "properties": {
+            "agents": {
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "models": {
+              "items": {
+                "maxLength": 80,
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "type": "object"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "instructions": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requires": {
+          "additionalProperties": false,
+          "properties": {
+            "agentApiVersion": {
+              "const": "vibesdk/v1",
+              "type": "string"
+            },
+            "capabilities": {
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "capabilities"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "description",
+        "instructions",
+        "requires"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "VibeSDK Skill Manifest",
+  "type": "object"
+}

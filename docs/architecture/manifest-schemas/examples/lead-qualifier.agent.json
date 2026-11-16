@@ -1,0 +1,85 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Agent",
+  "metadata": {
+    "description": "Qualifies inbound leads against the ICP rubric.",
+    "license": "Apache-2.0",
+    "name": "lead-qualifier",
+    "publisher": "acme",
+    "version": "1.2.0"
+  },
+  "spec": {
+    "evaluation": {
+      "dataset": "eval/lead-set@2.0.0",
+      "thresholds": {
+        "precision": 0.85
+      }
+    },
+    "inputSchema": {
+      "properties": {
+        "lead": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "lead"
+      ],
+      "type": "object"
+    },
+    "instructions": "Read the lead, score it with the rubric skill, return verdict and reasons; never contact the lead directly.",
+    "knowledge": [
+      "knowledge/icp-docs@5.0.0"
+    ],
+    "memory": {
+      "retentionDays": 30,
+      "scope": "conversation"
+    },
+    "model": {
+      "policy": {
+        "fallback": "model-policy/cheap@1.0.0",
+        "maxTokens": 2000,
+        "temperature": 0.2
+      },
+      "ref": "model-policy/standard@1.0.0"
+    },
+    "outputSchema": {
+      "properties": {
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verdict": {
+          "enum": [
+            "qualified",
+            "nurture",
+            "disqualified"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "policies": {
+      "approvals": [
+        "external-message"
+      ],
+      "resourceLimits": {
+        "maxSteps": 25,
+        "timeoutSeconds": 300
+      }
+    },
+    "role": "Qualify inbound leads against the ICP rubric",
+    "skills": [
+      "skill/qualification-rubric@3.0.1"
+    ],
+    "tools": [
+      "tool/score-lead@1.0.0"
+    ]
+  }
+}

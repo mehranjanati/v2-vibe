@@ -1,0 +1,45 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "System",
+  "metadata": {
+    "description": "Qualify inbound leads and draft follow-ups for approval.",
+    "license": "Apache-2.0",
+    "name": "inbound-sales",
+    "publisher": "acme",
+    "version": "0.3.0"
+  },
+  "spec": {
+    "agents": {
+      "qualifier": {
+        "ref": "agent/lead-qualifier@1.2.0"
+      }
+    },
+    "approvals": [
+      {
+        "approver": "role:sales-lead",
+        "on": "external-message"
+      }
+    ],
+    "deployment": {
+      "environment": "production",
+      "replicas": 1
+    },
+    "evaluation": {
+      "dataset": "eval/lead-set@2.0.0",
+      "thresholds": {
+        "precision": 0.85
+      }
+    },
+    "outcome": "Qualify inbound leads and draft follow-ups for approval",
+    "routing": {
+      "onError": "escalate-human",
+      "parallel": false
+    },
+    "topology": [
+      {
+        "on": "ingress.lead",
+        "run": "qualifier"
+      }
+    ]
+  }
+}

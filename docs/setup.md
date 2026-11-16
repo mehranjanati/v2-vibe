@@ -119,6 +119,9 @@ OAuth token from wrangler, validates it with a read-only `SELECT 1`, and rewrite
 | `PORT` | API port (default `8080`) |
 | `CONTROL_PLANE_REQUIRE_SESSION` | Opt-in P0.3 session boundary. `1`/`true`/`yes` makes every mutating route require a session token (401 when absent/unknown, 503 when the session store is unreachable); unset keeps the boundary off |
 | `VIBECODER_STORE_KV_ID` | Edge `VibecoderStore` KV namespace id the boundary verifies session tokens against (`session:token:<token>` → userId). Required when `CONTROL_PLANE_REQUIRE_SESSION` is on; unset makes guarded routes fail closed with 503 |
+| `ROOM_IDLE_TTL` | P0.8 idle-room TTL (Go duration, default `30m`). A room with no clients, no running generation and no activity for this long is stopped and evicted; `0` disables eviction |
+| `ROOM_MAX_PER_USER` | P0.8 per-user cap on LIVE rooms (default `10`). The next NEW session beyond the cap answers 429 `ROOM_QUOTA_EXCEEDED`; existing projects are never refused; `0` disables the cap |
+| `ROOM_SWEEP_INTERVAL` | P0.8 janitor interval (Go duration, default `1m`); must be positive. Invalid values fall back to the default with a startup warning |
 
 > Identity source of truth (P0.9, decided 2026-10-07): the Edge light Worker mints sessions, Go only verifies them — see `docs/architecture/adr-identity-source-of-truth.md`. A deployment that logs in through the Go PG handlers mints no Edge token and cannot satisfy the boundary; log in through the Worker.
 

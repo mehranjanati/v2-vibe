@@ -1,44 +1,51 @@
-# Product Roadmap — Wedge to Business OS (PROPOSED)
+# Product Roadmap — Agentic Platform M0–M6 (PROPOSED)
 
-> **Scope:** dependency-ordered product phases M0–M5, mapped onto the
+> **Scope:** dependency-ordered product phases M0–M6, mapped onto the
 > engineering layers P0–P6 (the phase model of
 > [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md) — unchanged; historical task IDs are
 > never renumbered). Vision: [`00-product-vision.md`](00-product-vision.md).
-> MVP detail: [`02-mvp.md`](02-mvp.md).
+> MVP detail: [`02-mvp.md`](02-mvp.md). Canonical strategy:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
 >
 > **Status:** `proposed` — strategy-level roadmap. Engineering task
 > breakdown stays in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md); this document
-> defines phase boundaries, value and non-goals, not task lists. Last
-> reviewed: 2026-10-06.
+> defines phase boundaries, value and non-goals, not task lists. Product
+> M0–M6 must not be confused with engineering P0–P6 (mapping in
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md)).
+> Last
+> reviewed: 2026-11-15.
 >
 > AaaS-only direction with Web3 as next plan: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)
-> (decision D6 in [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
+> (decision D6, preserved, in
+> [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
 
 ## Governing rule
 
-Do not build all major modules in parallel. ERP + AI + Marketplace +
-Automation is the **destination architecture** (decision D2), reached by
+Do not build all major platform phases in parallel. The M0–M6 sequence is the
+**dependency-ordered path** (decision D7), reached by
 dependency order; each phase must deliver a sellable increment on its own.
 
 ## Phase map
 
 ```mermaid
 flowchart LR
-    M0["M0<br/>ICP + problem validation"] --> M1["M1<br/>AI Sales wedge MVP"]
-    M1 --> M2["M2<br/>Automation platform"]
-    M2 --> M3["M3<br/>Business OS expansion"]
-    M3 --> M4["M4<br/>Marketplace"]
-    M4 --> M5["M5<br/>Autonomous Software Factory"]
+    M0["M0<br/>Agent Builder Foundation"] --> M1["M1<br/>Multi-Agent Builder"]
+    M1 --> M2["M2<br/>Agent Runtime Platform"]
+    M2 --> M3["M3<br/>Developer Ecosystem"]
+    M3 --> M4["M4<br/>Agent Operations + Governance"]
+    M4 --> M5["M5<br/>Ecosystem + Marketplace"]
+    M5 --> M6["M6<br/>Autonomous Software Factory"]
 ```
 
 | Phase | Problem solved | Target user | Value proposition | Engineering layers |
 |---|---|---|---|---|
-| M0 — ICP + problem validation | "Are we building the wedge for someone who pays?" | Candidate ICP | None (evidence) | None (interviews) |
-| M1 — AI Sales agent wedge ([`02-mvp.md`](02-mvp.md)) | Manual, inconsistent lead qualification/follow-up; stale CRM; no visibility | One validated ICP | A working AI sales outcome, sold as a result | P0 + P1 slice + P3 slice |
-| M2 — Automation platform | "Automate only the wedge" is too narrow; recurring + event-driven work needed | Same ICP, deeper | Scheduled jobs, event triggers, reusable functions, webhooks, integrations, business rules | P1–P3 |
-| M3 — Business OS expansion | Operational data lives in disconnected tools | Same ICP broadening | CRM, orders, products, inventory, customers, supplier ops, analytics as native modules | P3–P4 |
-| M4 — Marketplace | Third parties can extend the OS | Function/agent/app authors + buyers | Function, agent, app and supplier/product marketplaces | P5 |
-| M5 — Autonomous Software Factory | "The platform builds the business software itself" | All tenants | NL requirements → deployed apps, agents, functions | P6 |
+| M0 — Agent Builder Foundation ([`02-mvp.md`](02-mvp.md)) | Building one production agent means glue code, ungoverned tools, no ops loop | AI Developers, AI Builders | Describe in NL, inspect visually, run governed on one representation | P0 + P1 slice + P2 slice + P3 slice |
+| M1 — Multi-Agent Builder | One agent cannot cover coordinated work; delegation is ad-hoc | Same, teams | Coordinator/worker teams, delegation, parallel execution, team traces | P1 team primitive + P2 composition |
+| M2 — Agent Runtime Platform | Long runs are fragile; no durable lifecycle, scheduling, or events | Same, operating | Durable execution, checkpoints, pause/resume, retry, schedules, webhooks, rollback | P3 + P0 quotas |
+| M3 — Developer Ecosystem | Builders locked inside the web UI; no programmatic path | External developers | Public API, SDK, CLI, OpenAPI, manifests, Git, import/export, local dev | P5 versioning/diff + P4 workbench |
+| M4 — Agent Operations and Governance | Production quality, cost, and policy are unmanaged | Teams/orgs | Observability, evaluation, cost control, approvals, policy management | P3 observability + P0 policy |
+| M5 — Ecosystem and Marketplace | Reuse is copy-paste; no distribution or trust | Publishers + users | Agent/tool/skill registries, templates, publisher identity, review, marketplace | P5 |
+| M6 — Autonomous Software Factory | "The platform builds the agentic system itself" | All | NL requirements → deployed agents, functions, apps with gates | P6 |
 
 ## Per-phase contract
 
@@ -46,43 +53,59 @@ Each phase below must define (and does, in its owner doc or section):
 problem solved · target user · value proposition · features · technical
 components · dependencies · acceptance criteria · non-goals · metrics.
 
-### M0 — ICP + problem validation
+### M0 — Agent Builder Foundation + ICP/problem validation
 
-Owner: [`01-problem-and-icp.md`](01-problem-and-icp.md). Exit gate: validated
-ICP + problem + WTP evidence; wedge scope locked or pivoted.
+Owner: [`01-problem-and-icp.md`](01-problem-and-icp.md) (validation) +
+[`02-mvp.md`](02-mvp.md) (builder scope). Exit gates: validated
+ICP + problem + WTP evidence; M0 acceptance criteria in
+[`02-mvp.md`](02-mvp.md) (NL creation, visual inspect/edit on one
+representation, useful task executed, permission-checked auditable tools,
+traceable runs, tenant isolation tests green, no unverified critical
+boundary).
 
-### M1 — AI Sales / business agent wedge
+### M1 — Multi-Agent Builder
 
-Owner: [`02-mvp.md`](02-mvp.md). Dependencies: M0 exit gate; engineering P0
-(identity/tenancy) gating. Non-goals: the full must-not-build list of
-[`02-mvp.md`](02-mvp.md). Metrics: defined by M0 (leads qualified,
-follow-ups sent, replies, pipeline updates, weekly report quality).
+Owner: [`05-agent-runtime.md`](05-agent-runtime.md) (team model) +
+[`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
+Dependencies: M0 exit gates; engineering P1 team primitive + P2 composition.
+Non-goals: the must-not-build list of
+[`02-mvp.md`](02-mvp.md) plus durable depth (M2) and public contracts (M3).
 
-### M2 — Automation platform
+### M2 — Agent Runtime Platform
 
-**Add:** scheduled jobs, event triggers, reusable functions, webhooks,
-integrations, business rules. Dependencies: M1's function registry and
-tenant model; engineering P3 durable runtime (cron/triggers already
-specified in checklist P6.6 items, owned by P3). Non-goals: visual workflow
-editor as a primary surface; generic automation for non-ICP segments.
+**Add:** durable execution, checkpoints, pause/resume, retry, cancellation,
+scheduling, event triggers, webhooks, resource quotas, deployment, rollback.
+Dependencies: M0 capability/tenant minimum; engineering P3 durable runtime.
+Non-goals: Visual Builder as the mandatory entry point; public SDK/CLI
+contracts (M3); advanced evaluation (M4).
 
-### M3 — Business OS expansion
+### M3 — Developer Ecosystem
 
-**Add:** CRM, orders, products, inventory, customers, supplier operations,
-analytics — as native modules on the same data/capability layers.
-Dependencies: M2's runtime and integrations. Non-goals: full accounting
-ERP, ERP-grade compliance suites (destination modules are added gradually
-only when a validated customer segment demands them).
+**Add:** public API, SDK, CLI, OpenAPI, manifest specs, Git integration,
+import/export, local development, self-hosting docs, community templates,
+registry. Dependencies: M0–M2 representations; engineering P5 versioning/diff
++ P4 workbench. Non-goals: production governance depth (M4); commercial
+marketplace (M5).
 
-### M4 — Marketplace
+### M4 — Agent Operations and Governance
 
-Owner: [`08-marketplace.md`](08-marketplace.md). Dependencies: versioned
-function registry (P5), tenancy/security (P0), demand from M3.
+**Add:** advanced observability, evaluation datasets, regression evaluation,
+run comparison, cost optimization, advanced permissions, approval policies,
+team governance, policy management.
+Dependencies: M2 runtime and M3 contracts. Non-goals: third-party supply
+(M5); factory synthesis (M6).
 
-### M5 — Autonomous Software Factory
+### M5 — Ecosystem and Marketplace
+
+Owner: [`08-marketplace.md`](08-marketplace.md). Dependencies: stable
+manifests + versioning (P5), tenancy/security (P0), demonstrated demand.
+Rule: registry/discovery may precede commerce; never commerce before demand
++ security controls.
+
+### M6 — Autonomous Software Factory
 
 Owner: [`09-software-factory.md`](09-software-factory.md). Dependencies:
-M1–M4 surfaces; engineering P6.
+M0–M5 surfaces; engineering P6.
 
 ## Roadmap non-goals (global)
 

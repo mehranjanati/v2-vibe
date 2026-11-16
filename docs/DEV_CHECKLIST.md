@@ -3,10 +3,10 @@
 > **Single canonical backlog.** Every task has an explicit ID and status.
 > Historical task IDs are preserved verbatim and mapped into the target P0–P6
 > phase model below — never renumbered. Strategy:
-> [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md). Current reality:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md) (system model and moats: [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md)). Current reality:
 > [`DEV_STATUS.md`](DEV_STATUS.md). Task-spec quality contract:
 > [`DEV_TASKS_SPEC.md`](DEV_TASKS_SPEC.md).
-> Product-phase roadmap (M0–M5 wedge strategy, mapped onto these engineering
+> Product-phase roadmap (M0–M6 Agentic Platform strategy, mapped onto these engineering
 > layers): [`03-product-roadmap.md`](03-product-roadmap.md) — the phase model
 > below is unchanged by that strategy reframe.
 > Specs: [`DEV_SPEC_P1A.md`](DEV_SPEC_P1A.md) ·
@@ -36,7 +36,7 @@ infer phase from a legacy prefix.
 | P1.2 (recorder) | Generation lineage recorder | **P1** Agent Primitive | `verified`. |
 | P1.3.0 (D1-CAS decision) | Storage design decision | **P1** Agent Primitive | Decision record; implementation is P1.3.4–P1.3.6. |
 | P1.3.1/P1.3.2 (run hooks) | Lineage run hooks | **P1** Agent Primitive | `verified`. |
-| P1.3.3 (author threading) | Write attribution | **P1** Agent Primitive | `implemented_unverified`. |
+| P1.3.3 (author threading) | Write attribution | **P1** Agent Primitive | `verified`. |
 | P1.3.4–P1.3.6 (internal Git) | Versioned system state | **P5** Systems & Marketplace | Git is the system-versioning substrate. |
 | P1.4 (History API) | Lineage read API + mirror | **P5** Systems & Marketplace | System version/diff/rollback surface. |
 | P1.5 (frontend History) | Lineage UI | **P4** Workbench | Inspection UI for system state. |
@@ -54,6 +54,13 @@ infer phase from a legacy prefix.
 | P4.1/P4.2 (sandbox) | Execution environment | **P4** Workbench | Agent tooling environment. |
 | P5.1–P5.6 (App Runtime) | Per-app backend | **P5** Systems | Reframed as the first **reference system**, not a vertical. |
 | P6.1–P6.8 (workflow canvas) | Visual workflow work | **P4** + **P3** | Inspection view (P4) + triggers/observability (P3). |
+| P7.1 (manifest schemas) | Agent/Tool/Skill/System manifest JSON Schemas + semver/compat rules | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — schemas + `docs:check` gate landed, no runtime consumer yet. |
+| P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): closes O9 slice for M0–M1; System Manifest is the serializable form. |
+| P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): M0 trust slice; execution halves compose in M1. |
+| P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): builds on P1.8 routing + P1.11 budgets; serves hosted + open models behind one contract. |
+| P7.5 (runtime adapter) | Runtime Adapter interface + Run State Machine + checkpoint/event contracts | **P3** Durable Runtime | New ID (2026-11-16): closes O11 slice for M2; Workflows limits analyzed first. |
+| P7.6 (scoped memory) | Scoped memory + knowledge metadata (run/conversation/agent/team/tenant) | **P1** Agent Primitive | New ID (2026-11-16): provider-independent abstractions over Redis/D1; no new store decision. |
+| P7.7 (run observability) | Canonical Run Trace: 11 Observability capabilities | **P3** Durable Runtime | New ID (2026-11-16): extends generation lineage to runs; M2–M4 slices; attribution-clean for future tuning. |
 
 ## Task template (every item below carries these fields)
 
@@ -129,13 +136,14 @@ phase; nothing in P2–P6 ships to other users' data without it.
 
 ### P0.8 — Room lifecycle + quotas
 
-- **id:** P0.8 · **phase:** P0 · **title:** Room lifecycle + quotas · **status:** `planned`.
+- **id:** P0.8 · **phase:** P0 · **title:** Room lifecycle + quotas · **status:** `implemented_unverified`.
 - **Goal:** documented TTL/heartbeat/cap policy + enforcement for rooms.
-- **Why:** `EngineHub` (`backend/pkg/engine/hub.go:126`, `backend/pkg/engine/hub.go:203`, `backend/pkg/engine/hub.go:210`) never evicts; no idle TTL, no per-user cap.
+- **Why:** `EngineHub` used to keep every `ProjectRoom` for the process lifetime — one Run goroutine, one in-memory VFS snapshot and one ownership entry per project any user ever opened — with no idle TTL and no per-user ceiling (`backend/pkg/engine/hub.go`).
 - **Dependencies:** none.
-- **Affected files:** `backend/pkg/engine/hub.go`, `backend/pkg/engine/room.go`.
-- **Acceptance criteria:** idle room evicted; quota cap returns explicit error.
-- **Verification:** lifecycle/quota tests + `go vet ./... && go test ./...`.
+- **Affected files:** `backend/pkg/engine/hub_lifecycle.go`, `backend/pkg/engine/hub_lifecycle_test.go`, `backend/pkg/engine/hub.go`, `backend/pkg/engine/room.go`, `backend/pkg/api/routes.go`, `backend/pkg/api/session_quota_test.go`, `backend/cmd/main.go`, `docs/setup.md`.
+- **Implementation notes:** the policy is `RoomLifecyclePolicy` (`backend/pkg/engine/hub_lifecycle.go:49`), parsed from env by `RoomLifecyclePolicyFromEnv` (`backend/pkg/engine/hub_lifecycle.go:78`) and wired at startup (`backend/cmd/main.go:113`, `backend/cmd/main.go:114`): `ROOM_IDLE_TTL` (default 30m; `0` disables), `ROOM_MAX_PER_USER` (default 10; `0` disables) and `ROOM_SWEEP_INTERVAL` (default 1m; invalid values fall back with a warning instead of failing boot). Creation for an authenticated caller goes through `EnsureRoom` (`backend/pkg/engine/hub_lifecycle.go:145`): the quota check and the insertion share one hub write lock (`ensureRoom`, `backend/pkg/engine/hub_lifecycle.go:151`) so concurrent creates cannot both slip under the cap, and the room is claimed for its owner at creation, keeping P0.4/P0.7 first-write-wins. A trip returns `ErrRoomQuotaExceeded` (`backend/pkg/engine/hub_lifecycle.go:46`), which `POST /api/agent/session` maps to 429 `ROOM_QUOTA_EXCEEDED` (`backend/pkg/api/routes.go:569`); rooms the user already has are never refused. Activity comes from `Touch` (`backend/pkg/engine/room.go:313`) on client attach/detach, on every inbound WS message (`backend/pkg/api/routes.go:814`) and on generation/conversation start plus cancel. `EvictIdleRooms` (`backend/pkg/engine/hub_lifecycle.go:242`) only stops rooms with no clients (`backend/pkg/engine/room.go:341`), no generation in flight (`backend/pkg/engine/room.go:347`) and idle ≥ TTL; `StartJanitor` (`backend/pkg/engine/hub_lifecycle.go:279`) sweeps on the interval. Eviction is lossless: files write through to the Redis VFS hash and the claim (`room:owner:<chatID>`) is re-read on the next request; without Redis the in-memory claim is kept so an evicted room cannot be re-claimed by another caller.
+- **Acceptance criteria:** an idle room is stopped (its Run loop exits) and removed from the registry; a room with a connected client or a running generation is never evicted; the N+1th NEW session for a user at `ROOM_MAX_PER_USER` answers 429 `ROOM_QUOTA_EXCEEDED` while that user's existing projects and other users are unaffected; `ROOM_IDLE_TTL=0` / `ROOM_MAX_PER_USER=0` restore the pre-P0.8 unbounded behaviour.
+- **Verification:** `backend/pkg/engine/hub_lifecycle_test.go` (seven cases: per-user cap, cap disabled, anonymous path, eviction guards + Run-loop exit, ownership survival, env parsing, attach-after-stop) and `backend/pkg/api/session_quota_test.go` (route-level 429 + per-user budget) green; `cd backend && go vet ./... && go test ./...` green. NOT yet closed: no deployed control plane has run a full default idle cycle (30m), and `GET /ws/:id` still creates a room outside the quota — the cap covers the session-creation surface the SPA uses.
 
 ### P0.9 — Identity source-of-truth decision
 
@@ -207,7 +215,7 @@ construction; P1.7 gates the phase.
   - Note: `commit_sha`/`branch` (P1.3.5) and `fork` (P1.3.3/P1.10.7) are deliberately not written in this step; the author-intake (`RecordWriteAuthor`, `backend/pkg/engine/generation.go:264`) is ready for P1.3.3 to just wire up
 ### P1.3 — Execution hooks + internal Git (IDs preserved; implementation maps to target P5)
 
-- **id:** P1.3 · **status:** mixed (P1.3.1/P1.3.2 `verified`; P1.3.3 `implemented_unverified`; P1.3.4–P1.3.6 `planned`).
+- **id:** P1.3 · **status:** mixed (P1.3.1/P1.3.2/P1.3.3/P1.3.4 `verified`; P1.3.5–P1.3.6 `planned`).
 - **Goal:** lineage hooks live; versioned system state in D1-CAS Git.
 - **Why (platform):** hooks = lineage primitive (P1); internal Git = system-versioning substrate (P5).
 - **Dependencies:** P0.3–P0.9 for multi-tenant exposure; P1.1/P1.2 done.
@@ -216,8 +224,8 @@ construction; P1.7 gates the phase.
   - [x] P1.3.0 — ✅ (2026-09-29) **Decision: D1-CAS** (full rationale + rejection of the two alternatives in `docs/DEV_SPEC_P1A.md` → P1.3.0): internal history as a content-addressed object store in **the same D1** as lineage (`git_objects`: `sha`/`kind`/compressed `content` + a ref row), **no bare repo on disk**; `go-git` stays so SHAs remain real and the promised P1.3.4 API (`Init/Open/Commit/Log/Diff/Revert`) is unchanged. **(a) volume rejected:** the backend container has no volume and runs on ephemeral FS (`docker-compose.yml:24`; the only volume belongs to Redis: `docker-compose.yml:16-17`), the image is `nonroot`/distroless (`backend/Dockerfile:19`), and a stable path is impossible in local dev on macOS. **(b) R2-remote is blocked, not unsuitable:** R2 is not enabled on this account (`wrangler.v2.jsonc:49-51`, enforced by `scripts/validate-docs-invariants.mjs:120`) **and there is zero R2 code in Go** (measured across all of `backend/`: no match in `*.go`; the only `\\br2\\b` match is a roadmap item id: `backend/docs/architecture-roadmap.json:100`) ⇒ revisit deferred to the "R2 enabled" event. Numbers: new section **`docs/CF_LIMITS.md` §8** (source `[S7]` = official D1 Limits page; `Last updated 2026-04-21`, `Last verified 2026-09-29`) — row cap `2 MB`, statement length `100 KB`, `bind` params `100`, DB size `500 MB` (Free)/`10 GB`, Time Travel `7/30 days`, query duration `30s`, single-threaded. Evidence: `bun run docs:check` green (3 validators incl. `CF_LIMITS` invariants and line refs).
   - [x] P1.3.1 — ✅ (2026-09-29) hook in `runTeam` (`team.go`): signature moved to `(string, error)` (`backend/pkg/engine/team.go:112`) and returns the reviewer's real verdict (`approve`/`request_changes`, else `done`); no second record opened because it nests inside `runDualModelPipeline` (one generation = one row). Evidence: `go test -race ./pkg/engine/` green + `TestParseReviewVerdict` present and 4 hook tests in `backend/pkg/engine/generation_hook_test.go`; the real team path end-to-end is not covered without an engine (team approve E2E stays manual)
   - [x] P1.3.2 — ✅ (2026-09-29) hook in `runDualModelPipeline` (`dual_model.go`): record start at function top (`backend/pkg/engine/dual_model.go:41`) + three explicit `Finish` calls before each `finalizeGeneration` (`backend/pkg/engine/dual_model.go:158`/`backend/pkg/engine/dual_model.go:191`/`backend/pkg/engine/dual_model.go:231`) + deferred safety net for early-death paths (`backend/pkg/engine/dual_model.go:80-84`: error→`failed`, else `cancelled`). Tests: 4 tests in `backend/pkg/engine/generation_hook_test.go` (full run→`succeeded`/`done` + correct diff; empty plan→`failed`/`error`; reject→`cancelled`+NULL+audit; cancel→`cancelled`+NULL+audit) — evidence: `go vet ./...` clean + `go test ./...` green + `go test -race ./pkg/engine/ -run 'TestRunDualModelPipeline|TestGeneration'` green
-  - [ ] P1.3.3 — `author_agent` threading — STATUS: `implemented_unverified` (code threaded, verification missing; do NOT tick until P1.3.3-verify lands). Implementation: explicit `author` on `UpsertFile`/`DeleteFile` (`backend/pkg/engine/room.go:654`, `backend/pkg/engine/room.go:674`) recorded via `RecordWriteAuthor` (`backend/pkg/engine/generation.go:264`); tool path carries `coder` through `roomVFSStore` (`backend/pkg/engine/plan_execute.go:47`); `notifyWriteTool` only broadcasts (`backend/pkg/engine/plan_execute.go:95`); gapfill passes `gapfill` (`backend/pkg/engine/gapfill.go:67`); dual-model passes `coder`/`gapfill` (`backend/pkg/engine/dual_model.go:284`, `backend/pkg/engine/dual_model.go:333`, `backend/pkg/engine/dual_model.go:385`); legacy fallback passes `legacy` (`backend/pkg/engine/room.go:1130`). Missing for `verified`: (a) end-to-end test that every write path lands its expected non-empty `author_agent` in `generation_files`, (b) `fork` flag on concurrent manual write, (c) `author` from editor/import channels.
-  - [ ] P1.3.4 — Go internal Git: `go-git` in `go.mod` + `backend/pkg/engine/gitrepo.go` (init/open/commit/log/diff/revert per-appId; backend = **D1-CAS per P1.3.0**: `git_objects` table + ref, **no bare repo on disk**) + `docs/CF_LIMITS.md` §8 constraints
+  - [x] P1.3.3 — ✅ (2026-11-14) `author_agent` threading + fork flag — STATUS: `verified`. Implementation: explicit `author` on `UpsertFile`/`DeleteFile` (`backend/pkg/engine/room.go:734`, `backend/pkg/engine/room.go:754`) recorded via `RecordWriteAuthor` (`backend/pkg/engine/generation.go:272`); tool path carries `coder` through `roomVFSStore` (`backend/pkg/engine/plan_execute.go:47`); `notifyWriteTool` only broadcasts (`backend/pkg/engine/plan_execute.go:95`); gapfill passes `gapfill` (`backend/pkg/engine/gapfill.go:242`, `backend/pkg/engine/gapfill.go:393`); dual-model passes `coder`/`gapfill` (`backend/pkg/engine/dual_model.go:284`, `backend/pkg/engine/dual_model.go:333`, `backend/pkg/engine/dual_model.go:385`); legacy fallback passes `legacy` (`backend/pkg/engine/room.go:1211`). Verification that closed it: (1) the acceptance test `backend/pkg/engine/write_authors_test.go:19` drives the production write sites through one real `StartGenerationRecord`→`FinishGenerationRecord` and asserts `generation_files.author_agent` per path (coder via `roomVFSStore.VFSWrite`, gapfill via the safe-CSS-stub writer, coder on the delete row, NULL for the unattributed write) plus the audit split (3 × `file_written`, 1 × `generation_finished`); (2) the `fork` flag — an unattributed write while a run is open marks it, `takeGenerationIntake` (`backend/pkg/engine/generation.go:252`) consumes author+fork in one critical section, and `FinishGenerationRecord` writes `generations.fork` in the close statement (`backend/pkg/engine/generation.go:67`) with a `generation_forked` audit (`backend/pkg/engine/generation.go:540`); the negative (agent-only run keeps `fork=false`, records no fork audit) is pinned by `backend/pkg/engine/write_authors_test.go:102`. Scope on the old "(c) author from editor/import channels": no editor/import write channel exists in this tree — nothing outside the agent paths calls `UpsertFile`/`DeleteFile` — so there was no channel to thread; the intake already accepts an explicit author for the day one lands (P1.4.7 import / P1.5 editor), and an unattributed write now has defined behaviour (NULL author + `fork=1`) instead of silently mis-attributing. Verification: `cd backend && go vet ./... && go test ./...` green; `go test -race ./pkg/engine/ -run 'WriteAuthor|Generation|DualModel'` green.
+  - [x] P1.3.4 — ✅ (2026-11-14) Go internal Git over D1-CAS — STATUS: `verified` (emulated D1; no remote apply yet). New `backend/pkg/engine/gitrepo.go`: `d1Storer` is a go-git `storage.Storer` over D1 — `SetEncodedObject`/`EncodedObject`/`HasEncodedObject`/`EncodedObjectSize` read/write `git_objects` (zlib-compressed loose payload, base64 in TEXT, `INSERT OR IGNORE` for content-addressed dedupe; memory cache primed on decode) and `SetReference`/`Reference`/`loadRefs` persist `git_refs` (refs primed at `Init`, `backend/pkg/engine/gitrepo.go:371`); index/shallow/module/config stay on the embedded `memory.Storage` (unused by this surface). The `GitRepo` API is the promised `Init`/`Open` (`OpenGitRepo`, `backend/pkg/engine/gitrepo.go:385`) /`Commit` (`backend/pkg/engine/gitrepo.go:409`) /`Log` (`backend/pkg/engine/gitrepo.go:554`) /`Diff` (`backend/pkg/engine/gitrepo.go:594`) /`Revert` (`backend/pkg/engine/gitrepo.go:643`), per `app_id`, building REAL Git objects (blob → nested trees → commit) so SHAs are true Git SHAs; `Commit` also tags `refs/gen/<generationId>`. Storage: `git_objects` + `git_refs` in `worker/database/schema.ts` with `migrations/0015_skinny_tomorrow_man.sql` (2 tables + 1 index, no ALTER/DROP). CF_LIMITS §8 constraints are pinned by tests: content only as a bind parameter (never SQL text), one row per object, blob/tree dedupe across generations, and objects-before-ref atomicity (`Revert` appends a new commit with the target's tree — history is never rewritten). Tests: `backend/pkg/engine/gitrepo_test.go` (4 cases over the emulated D1 REST envelope: commit/log/diff/revert chain, storage contract + dedupe + real commit payload, fresh-handle reload from D1, error modes incl. no-D1/no-author/empty/path-traversal). Dependency note: `github.com/go-git/go-git/v5 v5.16.5` is pinned **below** v5.19.3 on purpose — v5.19.3's `go-billy v5.9.2` requires `golang.org/x/exp@2026` which dropped `x/exp/slices` that `gonja v1.5.3` (eino dependency) imports, so the module graph cannot satisfy both; `replace golang.org/x/exp => v2023-07` in `backend/go.mod` holds the pin and the repo `go` directive stays `1.25.5`. NOT yet closed: `migrations/0015` has no remote apply (same class as 0012/0013) and the wiring into `finalizeGeneration` is P1.3.5. Verification: `cd backend && go vet ./... && go test ./...` green.
   - [ ] P1.3.5 — Git hook in `finalizeGeneration` (single batch commit on `gen/{genId}`) + `author` param on `UpsertFile/DeleteFile` for intake (record, not separate commits — else commit explosion on chunks)
   - [ ] P1.3.6 — pre-commit secret-scan (token|secret|api_key) + per-file size cap (1MB, skip legacy) + mandatory `author`
 ### P1.4 — History API + diff + rollback (+ GitHub mirror) — STATUS: `planned` → target P5 (system version/diff/rollback surface). Spec: `docs/DEV_SPEC_P1A.md` P1.4.
@@ -429,7 +437,7 @@ are filed here as specified — no invented IDs.
 
 | Target phase | Status | Date |
 |---|---|---|
-| P0 Foundation | ⬜ open (P0.3–P0.5 `implemented_unverified`, P0.6–P0.9 `planned`) | — |
+| P0 Foundation | ⬜ open (P0.3–P0.9 `implemented_unverified`; end-to-end rollout pending) | — |
 | P1 Agent Primitive | ⬜ open (P1.7 exit gate `planned`) | — |
 | P2 Compiler | ⬜ open (no exit gate filed yet) | — |
 | P3 Durable Runtime | ⬜ open (no exit gate filed yet) | — |
@@ -439,4 +447,87 @@ are filed here as specified — no invented IDs.
 
 Legacy per-phase ticks were removed: the old table mixed legacy phase names
 with the new model. Per-item status above is the source of truth.
+
+---
+
+## P7 — Agentic Platform slices (target; new IDs 2026-11-16, never renumbered)
+
+New work the M0–M6 strategy requires that no P0–P6 task covers. Every item
+carries the standard fields (id · phase · title · status · goal · why ·
+dependencies · affected files · implementation notes · acceptance
+criteria · verification). Product phases: M0–M2 unless noted; engineering
+owners are the target phases below.
+
+### P7.1 — Manifest schemas (Agent/Tool/Skill/System) — STATUS: `implemented_unverified` (schemas + gate landed 2026-11-16; no runtime consumer yet) → target P2 (O10 slice for M0)
+- **id:** P7.1 · **phase:** P2 · **title:** Manifest JSON Schemas + semver/compat rules · **status:** `implemented_unverified`.
+- **Goal:** JSON Schema for each `kind` (Agent/Tool/Skill/System) plus enforced semver and compat rules, per `docs/06-functions-and-tools.md` normative contract.
+- **Why:** manifest-first is normative from day one; no agent/skill/tool/system ships without one (strategy `docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** none (spec-first; blocks P7.2 System refs).
+- **Affected files:** new spec + schemas (location decided in the task; candidate `docs/architecture/` only — no code).
+- **Implementation notes:** `kind` + `apiVersion` envelope; `metadata.name` DNS-safe immutable; `MAJOR.MINOR.PATCH`; `spec` contract, `status` never in manifest; canonical YAML/JSON deterministic ordering; `kind/name@version` refs, floating refs rejected at deploy.
+- **Acceptance criteria:** all four schemas validate the minimal shapes in `docs/06-functions-and-tools.md`; invalid manifests rejected with field-level errors; System pins exact refs.
+- **Delivered (2026-11-16):** `docs/architecture/manifest-schemas.md` (spec: envelope, per-kind shapes, semver rules, refs, canonical form, omissions) + four draft 2020-12 schemas + four canonical examples under `docs/architecture/manifest-schemas/` + `scripts/validate-manifests.mjs` wired into `bun run docs:check`.
+- **Verification:** `bun run docs:check` green (`manifests: OK (4 manifests across 4 schemas, 4 identities, 1 external reference(s), canonical round-trip + refs resolved)`); negative cases proven — a mutated example carrying `status` and a floating `@latest` ref fails with three field-level errors, then the file was restored.
+- **Remaining for `verified`:** a real registry/compiler consumer (P7.2/P7.4) must load these schemas in its own tests; until then the contract is a spec, not an enforced runtime boundary.
+
+### P7.2 — Canonical System IR v1 minimal — STATUS: `planned` → target P2 (O9 slice for M0–M1)
+- **id:** P7.2 · **phase:** P2 · **title:** System IR v1 minimal schema + 4-case test · **status:** `planned`.
+- **Goal:** minimal viable IR schema whose serializable form is the System Manifest; tested against App Builder, single Agent, multi-agent team, visual workflow before any expansion.
+- **Why:** one canonical representation for NL/Visual/SDK/CLI/API; prevents two divergent agent models (D7).
+- **Dependencies:** P7.1 (manifest refs).
+- **Affected files:** planned `docs/architecture/system-ir.md` + ADR (alternatives + trade-offs required).
+- **Implementation notes:** IR must represent the field list in `docs/12-agentic-platform-strategy.md`; schema versioning + backward-compat strategy; deterministic serialization; diff support; desired-vs-runtime separation; no direct execution of unvalidated IR.
+- **Acceptance criteria:** 4-case test passes (App Builder closure, single Agent, team, workflow); over-general fields rejected from v1.
+- **Verification:** `bun run docs:check` green; ADR records rejected alternatives.
+
+### P7.3 — MCP trust slice — STATUS: `planned` → target P0 (+ P2) for M0
+- **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `planned`.
+- **Goal:** governed MCP bridge: server registration, permission mapping, auth/secret handling (vault refs), lifecycle, timeouts, per-call audit, tenant isolation, trust policy; every MCP-exposed tool executes only through a versioned Tool Manifest.
+- **Why:** MCP is a core product priority (strategy); untrusted-external-boundary rule is launch-blocking (`docs/07-multitenancy-security.md`).
+- **Dependencies:** P0.3–P0.7 guards; P7.1 Tool schema.
+- **Affected files:** control-plane adapter + registry (exact paths decided in the task; no paths invented here).
+- **Implementation notes:** discovery is read-only metadata until a human/policy grants execution; grants auditable, revocable, tenant-scoped; M1 multi-agent delegation and M5 catalog are explicitly out of this slice.
+- **Acceptance criteria:** ungranted discovery grants nothing (negative test); granted call carries tenant/user/agent identity + approval ref + idempotency key in audit.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; new `*_test.go` next to code; `bun run docs:check` green.
+
+### P7.4 — Model gateway — STATUS: `planned` → target P2 for M1–M2
+- **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `planned`.
+- **Goal:** gateway serving hosted + open models behind one contract: registry, OpenAI-compatible adapter (+ provider adapters), per-agent selection, routing, fallback, retry, rate limits, timeouts, context-window awareness, cost estimation, usage tracking, provider health, evaluation, secret refs.
+- **Why:** provider integrations must be replaceable, never hardcoded into Agent business logic (strategy).
+- **Dependencies:** P1.8 (routing seed), P1.11 (budget plumbing), P7.1 (model-policy refs).
+- **Affected files:** gateway contract + provider adapters (paths decided in the task).
+- **Implementation notes:** Agents reference a model policy, the gateway resolves; no Eino types leak into manifests/APIs; open models are first-class entries, deployment choice stays OPEN.
+- **Acceptance criteria:** per-agent model selection + fallback + budget enforcement demonstrated on two providers (one may be mocked); secret refs never plaintext.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
+### P7.5 — Runtime Adapter + Run State Machine — STATUS: `planned` → target P3 for M2
+- **id:** P7.5 · **phase:** P3 · **title:** Runtime Adapter interface + Run State Machine + checkpoint/event contracts · **status:** `planned`.
+- **Goal:** replaceable runtime boundary: adapter interface, canonical Run State Machine, event/checkpoint contracts, at-least-once + idempotency explicit; Workflows limits analyzed before expanding its role.
+- **Why:** separates orchestration decisions (Eino) from durable execution; closes O11 for M2 (`docs/10-decisions-and-open-questions.md`).
+- **Dependencies:** P0 quotas; P3 durable slices; P7.2 (IR execution topology).
+- **Affected files:** runtime contract spec + adapter (paths decided in the task).
+- **Implementation notes:** never claim exactly-once without proof; retry/timeout/cancel/pause-resume/scheduling/events/webhooks/rollback per strategy; analyze `docs/CF_LIMITS.md` Workflows limits first.
+- **Acceptance criteria:** long-run recovery, durable state, documented + tested retry/idempotency on at least one adapter; provider boundary replaceable.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
+### P7.6 — Scoped memory + knowledge metadata — STATUS: `planned` → target P1 for M0–M1
+- **id:** P7.6 · **phase:** P1 · **title:** Scoped memory + knowledge metadata (provider-independent) · **status:** `planned`.
+- **Goal:** explicit memory scopes (run/conversation/agent/team/tenant) + knowledge metadata (docs/vector/retrieval) with access control, retention/deletion, tenant isolation, provenance; no new vector/relational store decision.
+- **Why:** provider-independent abstractions over live Redis/D1; storage rule in strategy (`docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** P1 lineage tables; P0 tenancy guards.
+- **Affected files:** metadata schema + access helpers (paths decided in the task; D1 migration only with evidence).
+- **Implementation notes:** evaluate Redis + D1 capabilities against workload/query patterns/scale/persistence/isolation/cost before any new store; secrets never in memory payloads.
+- **Acceptance criteria:** cross-scope and cross-tenant reads denied by construction (negative tests); retention/deletion enforced.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green; migration only via `bun run db:generate` + apply flow if D1 changes.
+
+### P7.7 — Canonical Run Trace (11 Observability capabilities) — STATUS: `planned` → target P3 for M2–M4
+- **id:** P7.7 · **phase:** P3 · **title:** Run Trace hierarchy + 11 capabilities (trace/cost/eval/regression) · **status:** `planned`.
+- **Goal:** every execution carries the full trace (System → Version → Run → Agent → Model/Tool calls → I/O → tokens → latency → cost → evaluation → result) plus the 11-capability checklist in strategy.
+- **Why:** the Demo-vs-Production layer; attribution-clean data is what makes future tuning possible (`docs/12-agentic-platform-strategy.md`).
+- **Dependencies:** P1 lineage (generations/audits seed); P7.5 (run lifecycle); P7.1 (manifest refs).
+- **Affected files:** trace contracts + collectors (paths decided in the task); extends lineage tables, never a sidecar dashboard first.
+- **Implementation notes:** per-level identity + timestamps; secrets redacted at write time; cost = tokens x price + margin per agent/run/tenant; eval datasets versioned; regression delta blocks/warns promotion; no benchmark/cost/quality numbers claimed until measured.
+- **Acceptance criteria:** 11/11 capabilities present with retention + tenant scoping; failed/missing capability degrades to explicit logged error + human escalation, never silent loss.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+
 

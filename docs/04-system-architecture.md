@@ -1,8 +1,11 @@
-# System Architecture — Target Layers & Technology Candidates (PROPOSED)
+# System Architecture — Agentic Platform Layers & Candidates (PROPOSED)
 
-> **Scope:** target system architecture for the AI-Native Business OS, the
-> layer model, and the technology-candidate register. Vision:
-> [`00-product-vision.md`](00-product-vision.md). Agent / function / tenancy
+> **Scope:** target system architecture for the VibeSDK Agentic Platform: the
+> layer model, the Canonical System IR flow, and the technology-candidate
+> register. Vision:
+> [`00-product-vision.md`](00-product-vision.md). Canonical strategy:
+> [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
+> Agent / function / tenancy
 > detail: [`05-agent-runtime.md`](05-agent-runtime.md) ·
 > [`06-functions-and-tools.md`](06-functions-and-tools.md) ·
 > [`07-multitenancy-security.md`](07-multitenancy-security.md).
@@ -11,60 +14,101 @@
 > describe the live dual-plane system (Go control plane + light Cloudflare
 > Worker + React SPA).
 >
-> **Status:** `proposed` — nothing here is implemented. Technology candidates
+> **Status:** `proposed` — nothing here is implemented beyond the live seeds
+> named per layer. Technology candidates
 > are **assumptions under evaluation, not decisions** (constraint from the
 > strategy task: never hard-code them as irreversible; each adoption needs an
-> ADR). Last reviewed: 2026-11-05.
+> ADR). Last reviewed: 2026-11-15.
 
 ## Architecture principles
 
-Outcome first · Agent first · Composable capabilities · Multi-tenant by
-design · Durable execution · Human-in-the-loop · Observable execution ·
-Secure function execution · Vendor replaceability.
+Natural Language First · Visual Builder for Developers · One Canonical System
+Representation · Developer First-Class · Open Ecosystem · Composable Agentic
+Systems · Provider-Agnostic Model Access · Runtime-Enforced Security ·
+Durable and Observable Execution · Versioned and Reproducible Systems ·
+Human Control over Sensitive Side Effects · Open Core and Managed Cloud ·
+Progressive Complexity · Vendor Replaceability.
 
 ## System layers
 
 ```mermaid
 flowchart TB
-    UL["User layer<br/>describes the desired business outcome"]
-    AL["Agent layer<br/>interprets intent, plans execution"]
-    CL["Capability layer<br/>reusable business functions and tools"]
-    RL["Runtime layer<br/>durable execution, scheduling, retries, events"]
-    DL["Data layer<br/>tenant business data and metadata"]
-    APPL["Application layer<br/>generated tenant-specific apps and interfaces"]
-    UL --> AL
-    AL --> CL
-    CL --> RL
+    NL["Natural Language Studio<br/>(primary creation)"]
+    VB["Visual Agent Builder<br/>(advanced/developer)"]
+    DEV["Developer Platform<br/>SDK / CLI / API / manifests"]
+    IR["Canonical System IR<br/>(versioned, validated)"]
+    COMP["Compiler + validation<br/>schema / policy / capability / deploy"]
+    AL["Agent layer<br/>single-agent + multi-agent orchestration"]
+    CAP["Capability layer<br/>tools / functions / MCP / skills"]
+    MOD["Model gateway<br/>registry, routing, fallback, budgets"]
+    MEM["Memory + Knowledge<br/>scoped, isolated, governed"]
+    RL["Runtime layer<br/>durable runs, checkpoints, approvals"]
+    DL["Data layer<br/>definitions, versions, runs, lineage"]
+    OBS["Observability + Evaluation"]
+    NL --> IR
+    VB --> IR
+    DEV --> IR
+    IR --> COMP
+    COMP --> AL
+    AL --> CAP
+    AL --> MOD
+    AL --> MEM
+    AL --> RL
     RL --> DL
-    AL --> APPL
-    DL --> APPL
+    RL --> OBS
+    OBS --> IR
 ```
 
-- **User layer** — the user (or an integration) states a business outcome in
-  natural language; never designs nodes.
+- **Creation surfaces** — Natural Language Studio (primary), Visual Agent
+  Builder (advanced/developer), Developer Platform (SDK/CLI/API/manifests).
+  All three compile into the same Canonical System IR; no surface executes
+  unvalidated state.
+- **Canonical System IR** — the versioned, validated intermediate
+  representation every creation path compiles to and every runtime executes
+  (PROPOSED; see [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md)).
+- **Compiler + validation** — schema validation, policy validation,
+  capability resolution, deployment planning.
 - **Agent layer** — intent extraction, plan generation, capability
-  selection, permission checks, observation, recovery, escalation
-  ([`05-agent-runtime.md`](05-agent-runtime.md)).
-- **Capability layer** — typed, authorized, tenant-scoped business
-  functions the agents invoke ([`06-functions-and-tools.md`](06-functions-and-tools.md)).
-- **Runtime layer** — durable execution with retries, schedules, events,
-  approvals and observability (engineering P3,
-  [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)).
-- **Data layer** — tenant business data (leads, customers, orders) and
-  platform metadata. **Ownership rule:** business data is owned by the
+  selection, permission checks, observation, recovery, escalation;
+  single-agent plus coordinator/worker teams with delegation and parallel
+  execution ([`05-agent-runtime.md`](05-agent-runtime.md)).
+- **Capability layer** — typed, authorized, tenant-scoped tools, functions,
+  MCP connections, and skills
+  ([`06-functions-and-tools.md`](06-functions-and-tools.md)).
+- **Model gateway** — provider/model registries, routing, fallback, budgets
+  (TARGET; per-role models are the live seed).
+- **Memory + Knowledge** — scoped (run/conversation/agent/team/tenant),
+  isolated, governed; provider-independent abstractions.
+- **Runtime layer** — durable serverless execution with retries, schedules,
+  events,
+  approvals and observability behind a replaceable Runtime Adapter
+  interface (engineering P3,
+  [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md)). Agents are fully serverless:
+  no always-on servers per agent, event-driven scale-to-zero, state in
+  platform stores (never agent-local) — see
+  [`08-marketplace.md`](08-marketplace.md) for the "manifests, not servers"
+  distribution rule.
+- **Data layer** — system/agent definitions and versions, runs, checkpoints,
+  approvals, lineage, usage/billing, audit. **Ownership rule:** data is owned
+  by the
   platform's data layer, never by an AI-orchestration vendor (see the
   candidate register below).
-- **Application layer** — tenant-specific interfaces the platform generates
+- **Application layer (reference workload)** — tenant-specific interfaces
+  the platform generates
   (today's App Builder output is the seed;
-  [`09-software-factory.md`](09-software-factory.md)).
+  [`09-software-factory.md`](09-software-factory.md)); it exercises the
+  platform, it does not define it.
 
 ## Outcome → agent → functions → runtime → data
 
-One wedge run reads: the user outcome → the agent extracts intent and
+One builder run reads: the user outcome (NL, visual, or API) → compiled into
+the Canonical System IR → schema/policy/capability validation → the agent
+extracts intent and
 produces a plan → the plan selects capabilities from the registry → each
 capability executes durably on the runtime (approval-gated where it has
 side effects) → every write lands in tenant-scoped data with an audit
-trail → the result is reported back as the outcome the user asked for.
+trail → the result is reported back as the outcome the user asked for, with
+traces, versions, and evaluation feeding the next iteration.
 
 ## Technology candidate register (ASSUMPTIONS — not decisions)
 

@@ -6,11 +6,12 @@
 > [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md).
 > Vision: [`00-product-vision.md`](00-product-vision.md).
 > Roadmap: [`03-product-roadmap.md`](03-product-roadmap.md).
-> Decisions: [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md) (D6, O7, O8).
+> Decisions: [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md) (D6, D7, O7, O8).
+> Canonical strategy: [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md).
 > ADR: [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md).
 >
-> **Status:** `adopted` — strategy direction adopted 2026-11-05.
-> Last reviewed: 2026-11-05.
+> **Status:** `adopted` — strategy direction adopted 2026-11-05, reconciled with the Agentic Platform identity (D7) 2026-11-15.
+> Last reviewed: 2026-11-15.
 
 ## Contents
 
@@ -68,13 +69,13 @@ There is no Web3 code in the repository today: no wallet, no chain
 binding, no DID, no settlement. The deploy config carries D1, KV, and
 Workflows bindings only.
 
-Putting Web3 into the M1 wedge would kill the wedge: wallet friction
+Putting Web3 into the M0 builder would kill adoption: wallet friction
 destroys interview validation, gas volatility destroys unit economics,
 and token risk destroys B2B sales. Web3 before proven demand repeats
 the classic cold-start failure the marketplace strategy already warns
 against: empty shelves with integration burden and no demand.
 
-The correct place for Web3 is the M4 marketplace and M5 software
+The correct place for Web3 is the M5 marketplace and M6 software
 factory, as the trust and settlement layer on top of a proven platform:
 
 1. **Agent identity.** DIDs plus verifiable credentials for versioned
@@ -113,21 +114,19 @@ marketplace take-rate, never raw model tokens or seats:
 - Success metrics switch from seats and MAU to outcome counts: leads
   qualified, follow-ups sent, replies received, pipeline updates.
 
-### Horizon 1 — pure AaaS (M0 to M3)
+### Horizon 1 — pure AaaS (M0 to M4)
 
 - M0: validate the ICP, the problem, and willingness to pay through
-  interviews before any wedge scope lock.
-- M1: one wedge — the AI Sales outcome with lead qualification,
-  follow-up, CRM write-back, and weekly reporting, approval-gated.
-- M2: automation platform grown from the wedge — schedules, triggers,
-  reusable functions, webhooks, integrations, business rules.
-- M3: Business OS expansion as native modules on the same data and
-  capability layers — only as a validated segment demands them.
+  interviews before any M1 scope lock; ship the Agent Builder MVP (NL creation, visual inspect/edit on one representation, governed execution).
+- M1: multi-agent builder (teams, delegation, parallel execution, team traces).
+- M2: runtime platform grown from the builder — durable execution, schedules, triggers, webhooks, quotas, rollback.
+- M3: developer ecosystem — public API, SDK, CLI, OpenAPI, manifests, Git, import/export.
+- M4: operations and governance — observability, evaluation, cost control, approval policies.
 
-### Horizon 2 — Web3 (M4 to M5, next plan)
+### Horizon 2 — Web3 (M5 to M6, next plan)
 
-- No Web3 build starts until M1–M3 demonstrate real tenant demand for
-  extension and reuse — the documented marketplace precondition.
+- No Web3 build starts until M0–M4 demonstrate real builder demand for
+  extension and reuse — the documented registry/marketplace precondition.
 - First Web3 work is identity and provenance, then settlement, then
   audit anchors. Each needs its own ADR. No governance token is in
   scope; settlement starts with fiat plus stablecoin.
@@ -151,9 +150,9 @@ marketplace take-rate, never raw model tokens or seats:
 
 | ID | Workstream | Gate | Notes |
 |---|---|---|---|
-| W3.1 | Identity and provenance (DID, credentials, signed lineage) | M4 entry | No token; audit-first |
-| W3.2 | Settlement (stablecoin escrow, instant revenue split) | M4 pilot on one low-cost L2 | Fiat on-ramp retained |
-| W3.3 | Trust anchors (proof-of-run hashes on chain, data off chain) | M4–M5 | Insurance and audit-grade verifiability |
+| W3.1 | Identity and provenance (DID, credentials, signed lineage) | M5 entry | No token; audit-first |
+| W3.2 | Settlement (stablecoin escrow, instant revenue split) | M5 pilot on one low-cost L2 | Fiat on-ramp retained |
+| W3.3 | Trust anchors (proof-of-run hashes on chain, data off chain) | M5–M6 | Insurance and audit-grade verifiability |
 
 Each workstream resolves its open question through an ADR before
 implementation. Unresolved questions are never quoted as final.
