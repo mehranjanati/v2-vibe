@@ -107,6 +107,11 @@ func main() {
 	// ---- Engine hub (actor registry) ----
 	hub := engine.NewEngineHub(rdb, llmClient, cfClient)
 	hub.SetD1Client(d1Client)
+	// P0.8: room lifecycle policy (idle TTL, per-user cap, sweep interval).
+	// Invalid values fall back to the defaults with a warning; 0 disables the
+	// corresponding safeguard.
+	hub.SetLifecyclePolicy(engine.RoomLifecyclePolicyFromEnv(hub.Cfg))
+	hub.StartJanitor(ctx)
 	// Workflows: the Cloudflare Workflow name (wrangler.v2.jsonc [[workflows]],
 	// the VibeWorkflow runtime) that POST /api/workflows/trigger starts.
 	hub.SetWorkflowName(hub.Cfg("WORKFLOWS_NAME", "vibesdk-v2-workflows"))

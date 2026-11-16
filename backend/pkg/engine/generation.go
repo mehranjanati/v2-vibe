@@ -62,8 +62,9 @@ const (
 	generationParentSQL = "SELECT id FROM generations WHERE chat_id = ? AND status = 'succeeded' ORDER BY created_at DESC, rowid DESC LIMIT 1"
 	// generationInsertSQL opens the run (status 'running', verdict NULL).
 	generationInsertSQL = "INSERT INTO generations (id, chat_id, parent, status, created_at, updated_at) VALUES (?, ?, ?, 'running', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-	// generationCloseSQL closes the run with its verdict + terminal status.
-	generationCloseSQL = "UPDATE generations SET verdict = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+	// generationCloseSQL closes the run with its verdict + terminal status and
+	// the fork flag (P1.3.3: a manual write landed while the run was open).
+	generationCloseSQL = "UPDATE generations SET verdict = ?, status = ?, fork = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
 	// generationFileInsertSQL writes one diff row. INSERT OR REPLACE keeps a
 	// retried Finish for the same generation idempotent (natural key
 	// (generation_id, path)).
@@ -201,6 +202,7 @@ func (r *ProjectRoom) storeGenerationSnapshot(genID string, snap *generationSnap
 	r.lineageSnapshotID = genID
 	r.lineageSnapshot = snap
 	r.genAuthors = nil
+	r.genForked = false
 }
 
 // takeGenerationSnapshot consumes the baseline of genID: the in-memory mirror
@@ -244,23 +246,29 @@ func (r *ProjectRoom) takeGenerationSnapshot(genID string) *generationSnapshot {
 	return &restored
 }
 
-// takeGenerationAuthors consumes the open generation's write-attribution
-// intake (path → agent).
-func (r *ProjectRoom) takeGenerationAuthors() map[string]string {
+// takeGenerationIntake consumes the open generation's write-attribution intake
+// (path → agent) and its fork flag in one critical section, so a manual write
+// cannot land between the two reads and be attributed to neither.
+func (r *ProjectRoom) takeGenerationIntake() (map[string]string, bool) {
 	r.lineageMu.Lock()
 	defer r.lineageMu.Unlock()
 	authors := r.genAuthors
+	forked := r.genForked
 	r.genAuthors = nil
-	return authors
+	r.genForked = false
+	return authors, forked
 }
 
 // RecordWriteAuthor records which agent wrote path during the current
 // generation; FinishGenerationRecord stores it as
 // `generation_files.author_agent` (and as the actor of a `file_written` audit
-// row). An empty author clears the entry. P1.3.3 threads the explicit author of
-// every write (UpsertFile/DeleteFile, the vfs_write tool, gapfill, import)
-// through here — the attribution cannot be inferred inside the write wrapper,
-// because gapfill never passes through it.
+// row). An empty author means no agent stood behind the write (an editor or
+// import channel that has no agent identity): the path's attribution is
+// cleared, and — when a generation is open — the run is marked forked so
+// `generations.fork` records that human and agent edits diverged (P1.3.3).
+// P1.3.3 threads the explicit author of every write (UpsertFile/DeleteFile, the
+// vfs_write tool, gapfill, import) through here — the attribution cannot be
+// inferred inside the write wrapper, because gapfill never passes through it.
 func (r *ProjectRoom) RecordWriteAuthor(path, author string) {
 	if path == "" {
 		return
@@ -269,6 +277,9 @@ func (r *ProjectRoom) RecordWriteAuthor(path, author string) {
 	defer r.lineageMu.Unlock()
 	if strings.TrimSpace(author) == "" {
 		delete(r.genAuthors, path)
+		if r.lineageSnapshotID != "" {
+			r.genForked = true
+		}
 		return
 	}
 	if r.genAuthors == nil {
@@ -401,7 +412,12 @@ func (r *ProjectRoom) FinishGenerationRecord(ctx context.Context, genID, verdict
 	status := generationStatusForVerdict(verdict)
 	storedVerdict := normalizeGenerationVerdict(verdict)
 	snap := r.takeGenerationSnapshot(genID)
-	authors := r.takeGenerationAuthors()
+	authors, forked := r.takeGenerationIntake()
+
+	forkFlag := 0
+	if forked {
+		forkFlag = 1
+	}
 
 	var rows []generationFileDiff
 	hasBaseline := snap != nil
@@ -417,7 +433,7 @@ func (r *ProjectRoom) FinishGenerationRecord(ctx context.Context, genID, verdict
 	var errs []error
 	if r.d1 != nil {
 		cctx, cancel := lineageCtx(ctx)
-		if _, err := r.d1.Exec(cctx, generationCloseSQL, nullableString(storedVerdict), status, genID); err != nil {
+		if _, err := r.d1.Exec(cctx, generationCloseSQL, nullableString(storedVerdict), status, forkFlag, genID); err != nil {
 			errs = append(errs, fmt.Errorf("generation: close row: %w", err))
 		}
 		cancel()
@@ -438,7 +454,7 @@ func (r *ProjectRoom) FinishGenerationRecord(ctx context.Context, genID, verdict
 		}
 		rowsCancel()
 
-		writeGenerationAudits(r.d1, genID, status, storedVerdict, snap, rows)
+		writeGenerationAudits(r.d1, genID, status, storedVerdict, snap, rows, forked)
 	}
 	return errors.Join(errs...)
 }
@@ -487,7 +503,7 @@ func diffGenerationFiles(before, after map[string]snapshotFile, authorByPath map
 // detached goroutine with its own background context: the trail must land even
 // when the generation context already died, and an audit failure never surfaces
 // as a generation error.
-func writeGenerationAudits(d1 *cloudflare.D1Client, genID, status, verdict string, snap *generationSnapshot, rows []generationFileDiff) {
+func writeGenerationAudits(d1 *cloudflare.D1Client, genID, status, verdict string, snap *generationSnapshot, rows []generationFileDiff, forked bool) {
 	if d1 == nil {
 		return
 	}
@@ -499,6 +515,9 @@ func writeGenerationAudits(d1 *cloudflare.D1Client, genID, status, verdict strin
 			"status": status,
 			"files":  len(rows),
 		},
+	}
+	if forked {
+		finished.detail["fork"] = true
 	}
 	if verdict != "" {
 		finished.detail["verdict"] = verdict
@@ -512,6 +531,16 @@ func writeGenerationAudits(d1 *cloudflare.D1Client, genID, status, verdict strin
 		finished.detail["diff_skipped"] = "no VFS snapshot"
 	}
 	audits := []generationAudit{finished}
+
+	// P1.3.3: an unattributed write happened while the agent was running, so
+	// the run diverged from a purely agent-produced state (generations.fork).
+	if forked {
+		audits = append(audits, generationAudit{
+			actor:  "user",
+			action: "generation_forked",
+			detail: map[string]interface{}{"reason": "manual write during generation"},
+		})
+	}
 
 	// Write-time attribution (P1.3.3): one row per attributed file.
 	for _, row := range rows {

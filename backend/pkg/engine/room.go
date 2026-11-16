@@ -104,13 +104,25 @@ type ProjectRoom struct {
 	// handshake/broadcast paths.
 	generating atomic.Bool
 
+	// ---- room lifecycle (P0.8) ----
+
+	// lastActive is the unix-nano timestamp of the last user-visible
+	// activity (client attach/detach, inbound message, generation or
+	// conversation start, cancel). The hub's idle janitor evicts rooms that
+	// have been quiet for ROOM_IDLE_TTL; a zero value means "unknown" and is
+	// never evicted.
+	lastActive atomic.Int64
+	// clientCount mirrors len(clients) so the janitor can read it without
+	// touching the Run loop's map. The Run loop is the only writer.
+	clientCount atomic.Int64
+
 	// ---- generation lineage (generation.go, P1.2) ----
 
 	// genKV is the Redis surface the lineage recorder uses for the VFS
 	// snapshots. nil ⇒ r.rdb; tests inject an in-memory fake so the snapshot
 	// path is exercised without a live Redis.
 	genKV generationKV
-	// lineageMu guards lineageSnapshot and genAuthors.
+	// lineageMu guards lineageSnapshot, genAuthors and genForked.
 	lineageMu sync.Mutex
 	// lineageSnapshot mirrors the VFS baseline of the open generation in
 	// memory. One slot on purpose: it is the Redis-less path (dev/CI, or a
@@ -123,6 +135,11 @@ type ProjectRoom struct {
 	// (path → agent). P1.3.3 records the explicit author of every write;
 	// FinishGenerationRecord reads it for generation_files.author_agent.
 	genAuthors map[string]string
+	// genForked records that a manual (unattributed) write landed while the
+	// generation was open, i.e. the agent's diff diverged from what a human
+	// changed concurrently. FinishGenerationRecord stores it as
+	// generations.fork (P1.3.3).
+	genForked bool
 
 	// Actor channels.
 	register   chan *Client
@@ -201,7 +218,7 @@ func (r *ProjectRoom) TeamPrompts() teamSkillPrompts {
 // NewProjectRoom creates a room for chatID. Callers must start it with
 // go room.Run(). eng may be nil (legacy raw-client fallback is used).
 func NewProjectRoom(chatID string, rdb *redis.Client, llmClient *llm.Client, eng *agent.Engine) *ProjectRoom {
-	return &ProjectRoom{
+	room := &ProjectRoom{
 		chatID:     chatID,
 		rdb:        rdb,
 		llm:        llmClient,
@@ -215,6 +232,8 @@ func NewProjectRoom(chatID string, rdb *redis.Client, llmClient *llm.Client, eng
 		vfs:        make(map[string]*models.FileEntry),
 		done:       make(chan struct{}),
 	}
+	room.Touch()
+	return room
 }
 
 // Run is the actor's main loop. It owns the clients map and dispatches
@@ -231,12 +250,16 @@ func (r *ProjectRoom) Run() {
 		select {
 		case client := <-r.register:
 			r.clients[client] = true
+			r.clientCount.Store(int64(len(r.clients)))
+			r.Touch()
 			log.Printf("[room:%s] client registered (%d connected)", r.chatID, len(r.clients))
 
 		case client := <-r.unregister:
 			if _, ok := r.clients[client]; ok {
 				delete(r.clients, client)
 				close(client.send)
+				r.clientCount.Store(int64(len(r.clients)))
+				r.Touch()
 				log.Printf("[room:%s] client unregistered (%d connected)", r.chatID, len(r.clients))
 			}
 
@@ -269,6 +292,7 @@ func (r *ProjectRoom) Run() {
 				close(client.send)
 			}
 			r.clients = make(map[*Client]bool)
+			r.clientCount.Store(0)
 			return
 		}
 	}
@@ -285,15 +309,70 @@ func (r *ProjectRoom) Stop() {
 	<-r.done
 }
 
-// RegisterClient adds a client to the room and starts its write pump.
-func (r *ProjectRoom) RegisterClient(c *Client) {
-	r.register <- c
-	go r.writePump(c)
+// ---------- lifecycle (P0.8) ----------
+
+// Touch records user-visible activity on the room, resetting its idle clock.
+// Called on client attach/detach, every inbound client message and the start
+// of a generation/conversation so the hub's janitor can tell a live project
+// from an abandoned one.
+func (r *ProjectRoom) Touch() {
+	r.lastActive.Store(time.Now().UnixNano())
 }
 
-// UnregisterClient removes a client from the room.
+// LastActive returns when the room last saw activity. The zero time means the
+// clock was never set, in which case the janitor leaves the room alone.
+func (r *ProjectRoom) LastActive() time.Time {
+	ns := r.lastActive.Load()
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns)
+}
+
+// IdleFor reports how long the room has been quiet relative to now (0 when
+// now is not after the last activity, e.g. clock skew).
+func (r *ProjectRoom) IdleFor(now time.Time) time.Duration {
+	last := r.LastActive()
+	if last.IsZero() {
+		return 0
+	}
+	if d := now.Sub(last); d > 0 {
+		return d
+	}
+	return 0
+}
+
+// ClientCount returns the number of WebSocket clients currently attached.
+func (r *ProjectRoom) ClientCount() int {
+	return int(r.clientCount.Load())
+}
+
+// Generating reports whether a generation run is in flight. A generating room
+// is never evicted for idleness: a long build is work, not abandonment.
+func (r *ProjectRoom) Generating() bool {
+	return r.generating.Load()
+}
+
+// RegisterClient adds a client to the room and starts its write pump. Safe
+// after Stop(): the janitor can evict a room between the caller's lookup and
+// this call, so the send must not block on a Run loop that is gone.
+func (r *ProjectRoom) RegisterClient(c *Client) {
+	select {
+	case r.register <- c:
+		go r.writePump(c)
+	case <-r.stop:
+		// The room was evicted/stopped: close the client channel so its write
+		// pump (never started) cannot leak and the caller's read loop ends.
+		close(c.send)
+	}
+}
+
+// UnregisterClient removes a client from the room. Safe after Stop().
 func (r *ProjectRoom) UnregisterClient(c *Client) {
-	r.unregister <- c
+	select {
+	case r.unregister <- c:
+	case <-r.stop:
+	}
 }
 
 // BroadcastMessage marshals v to JSON and fans it out to all clients.
@@ -435,6 +514,7 @@ func (r *ProjectRoom) generationContext(timeout time.Duration) (context.Context,
 // "stop_generation" message). Safe to call at any time, including when
 // no generation is running.
 func (r *ProjectRoom) CancelGeneration() {
+	r.Touch()
 	r.genMu.Lock()
 	defer r.genMu.Unlock()
 	if r.genStop == nil {
@@ -706,6 +786,7 @@ func (r *ProjectRoom) BuildAgentState() *models.AgentState {
 // and broadcasts them as file_chunk_generated events, then persists the
 // resulting files to the VFS. It never blocks the WS read/write loops.
 func (r *ProjectRoom) StartGeneration(prompt string) {
+	r.Touch()
 	if r.llm == nil {
 		log.Printf("[room:%s] no LLM client configured; skipping generation", r.chatID)
 		r.BroadcastMessage(models.ErrorEvent{
@@ -1391,6 +1472,7 @@ func decodeChatHistory(values []string) []llm.ChatMessage {
 // NOT create/update any files — the reply is purely textual, so it never
 // triggers a preview refresh, Sandpack, or file generation UI.
 func (r *ProjectRoom) StartConversation(prompt string) {
+	r.Touch()
 	if r.llm == nil {
 		log.Printf("[room:%s] no LLM client configured; skipping conversational reply", r.chatID)
 		r.BroadcastMessage(models.ErrorEvent{
