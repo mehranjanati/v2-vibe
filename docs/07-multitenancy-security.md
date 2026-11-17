@@ -48,7 +48,7 @@
 | API keys | Scoped, revocable, tenant-bound; never shared across tenants. |
 | Human approval | External side effects (email, message, payment) require approval or an explicit tenant policy — logged either way. Approval policies and gates are launch blockers. |
 | Audit | Every capability call records tenant, user/agent identity, capability, approval state, result. The *target* audit trail must also be signable for third-party verification (W3.1 provenance, W3.3 proof-of-run) — gated to M4, not implemented, and never at the cost of moving business data off the platform data layer ([`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)). |
-| MCP security | MCP servers are untrusted external boundaries: registration, permission mapping, secret handling, lifecycle, timeouts, tenant isolation, trust policy. Discovery never grants execution. |
+| MCP security | MCP servers are untrusted external boundaries: registration, permission mapping, secret handling, lifecycle, timeouts, tenant isolation, trust policy. Discovery never grants execution — enforced by the P7.3 boundary (`backend/pkg/mcp`, spec: [`architecture/mcp-trust-slice.md`](architecture/mcp-trust-slice.md)). |
 | Sandboxing | Untrusted code (community capabilities, generated agents, tenant apps) never executes with control-plane privilege; sandbox boundaries are launch blockers. |
 | Rate limiting & quotas | Per tenant and per capability; abuse of one tenant cannot degrade others. |
 | Data ownership | Business data lives in the platform's data layer; orchestration vendors (e.g. a candidate Dify deployment) never hold the source of truth. |

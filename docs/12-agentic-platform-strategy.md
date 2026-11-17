@@ -290,7 +290,7 @@ isolation, trust policy. Security warning (normative): MCP servers and
 community tools are untrusted external boundaries — discovery never grants
 execution permission. No MCP client exists in the tree today (verified by
 search); MCP support is PROPOSED, gated on the trust/security slice of M0.
-Detail: [`06-functions-and-tools.md`](06-functions-and-tools.md).
+Detail: [`06-functions-and-tools.md`](06-functions-and-tools.md); the trust boundary itself: [`architecture/mcp-trust-slice.md`](architecture/mcp-trust-slice.md) (P7.3).
 
 <a id="memory-and-knowledge"></a>
 ## Memory and Knowledge

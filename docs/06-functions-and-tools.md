@@ -157,6 +157,9 @@ Phased, with security gates at every step:
    identity, security scanning, trust/provenance, versioned configs,
    install/update flows, usage tracking.
 
+The trust slice is implemented as a boundary package with its own spec and
+tests: [`architecture/mcp-trust-slice.md`](architecture/mcp-trust-slice.md) (P7.3 — registration, policy mapping, tenant-scoped grants, 11 gate checks, audit contract; the wire transport and persistence are explicit open items).
+
 Security rule (normative, unchanged): MCP servers are **untrusted external
 boundaries** — tool discovery is read-only metadata until a human or policy
 explicitly grants execution, and every grant is auditable, revocable, and

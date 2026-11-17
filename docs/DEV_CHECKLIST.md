@@ -56,7 +56,7 @@ infer phase from a legacy prefix.
 | P6.1–P6.8 (workflow canvas) | Visual workflow work | **P4** + **P3** | Inspection view (P4) + triggers/observability (P3). |
 | P7.1 (manifest schemas) | Agent/Tool/Skill/System manifest JSON Schemas + semver/compat rules | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — schemas + `docs:check` gate landed, no runtime consumer yet. |
 | P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — contract, ADR, 4 fixtures + gate landed; enforcement awaits the compiler. |
-| P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): M0 trust slice; execution halves compose in M1. |
+| P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — boundary + 12 tests landed; transport/routes/persistence pending. |
 | P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): builds on P1.8 routing + P1.11 budgets; serves hosted + open models behind one contract. |
 | P7.5 (runtime adapter) | Runtime Adapter interface + Run State Machine + checkpoint/event contracts | **P3** Durable Runtime | New ID (2026-11-16): closes O11 slice for M2; Workflows limits analyzed first. |
 | P7.6 (scoped memory) | Scoped memory + knowledge metadata (run/conversation/agent/team/tenant) | **P1** Agent Primitive | New ID (2026-11-16): provider-independent abstractions over Redis/D1; no new store decision. |
@@ -468,7 +468,7 @@ owners are the target phases below.
 - **Acceptance criteria:** all four schemas validate the minimal shapes in `docs/06-functions-and-tools.md`; invalid manifests rejected with field-level errors; System pins exact refs.
 - **Delivered (2026-11-16):** `docs/architecture/manifest-schemas.md` (spec: envelope, per-kind shapes, semver rules, refs, canonical form, omissions) + four draft 2020-12 schemas + four canonical examples under `docs/architecture/manifest-schemas/` + `scripts/validate-manifests.mjs` wired into `bun run docs:check`.
 - **Verification:** `bun run docs:check` green (`manifests: OK (4 manifests across 4 schemas, 4 identities, 1 external reference(s), canonical round-trip + refs resolved)`); negative cases proven — a mutated example carrying `status` and a floating `@latest` ref fails with three field-level errors, then the file was restored.
-- **Remaining for `verified`:** a real registry/compiler consumer (P7.2/P7.4) must load these schemas in its own tests; until then the contract is a spec, not an enforced runtime boundary.
+- **Remaining for `verified`:** P7.3 now mirrors the Tool Manifest vocabulary (side-effect levels, approval classes, `vault:` secret refs, pinned versions) in `backend/pkg/mcp`, but it re-declares the vocabulary instead of loading the JSON Schema; a schema-loading consumer (P7.2 compiler or P7.4 gateway) is still required.
 
 ### P7.2 — Canonical System IR v1 minimal — STATUS: `implemented_unverified` (IR contract + 4-case gate landed 2026-11-16; compiler/runtime consumers pending) → target P2 (O9 slice for M0–M1)
 - **id:** P7.2 · **phase:** P2 · **title:** System IR v1 minimal schema + 4-case test · **status:** `implemented_unverified`.
@@ -480,17 +480,19 @@ owners are the target phases below.
 - **Acceptance criteria:** 4-case test passes (App Builder closure, single Agent, team, workflow); over-general fields rejected from v1.
 - **Delivered (2026-11-16):** `docs/architecture/system-ir.md` (contract, invariants I1–I6, desired-vs-runtime split, versioning, diff classes, four cases, rejected-for-v1 list) + `docs/architecture/adr-system-ir-v1.md` (options A–D with trade-offs, revisit triggers) + four canonical fixtures under `docs/architecture/system-ir/examples/` + `scripts/validate-system-ir.mjs` wired into `bun run docs:check`; IR v1 is the `kind: System` spec (one format, no parallel representation) with `spec.oneOf` enforcing exactly one execution shape.
 - **Verification:** `bun run docs:check` green (`system-ir: OK (4/4 cases [agents, agents, agents, workflow], 6 negative probes rejected, canonical round-trip)`); the negative probes cover runtime `status`, a `telemetry` block, an unpinned `@latest` ref, an unknown delegation target, both shapes at once and a dangling workflow edge — all rejected.
-- **Remaining for `verified`:** the compiler must load the IR and enforce it (capability-closure resolution, cycle detection, policy validation); until then the contract is specified and gated, not enforced at execution.
+- **Remaining for `verified`:** the compiler must load the IR and enforce it (capability-closure resolution, cycle detection, policy validation). P7.3 grants are runtime state and deliberately not IR fields, so `system-ir` still has no runtime consumer.
 
-### P7.3 — MCP trust slice — STATUS: `planned` → target P0 (+ P2) for M0
-- **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `planned`.
+### P7.3 — MCP trust slice — STATUS: `implemented_unverified` (trust boundary + 12 tests landed 2026-11-16; no wire transport, no route caller) → target P0 (+ P2) for M0
+- **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `implemented_unverified`.
 - **Goal:** governed MCP bridge: server registration, permission mapping, auth/secret handling (vault refs), lifecycle, timeouts, per-call audit, tenant isolation, trust policy; every MCP-exposed tool executes only through a versioned Tool Manifest.
 - **Why:** MCP is a core product priority (strategy); untrusted-external-boundary rule is launch-blocking (`docs/07-multitenancy-security.md`).
 - **Dependencies:** P0.3–P0.7 guards; P7.1 Tool schema.
 - **Affected files:** control-plane adapter + registry (exact paths decided in the task; no paths invented here).
 - **Implementation notes:** discovery is read-only metadata until a human/policy grants execution; grants auditable, revocable, tenant-scoped; M1 multi-agent delegation and M5 catalog are explicitly out of this slice.
 - **Acceptance criteria:** ungranted discovery grants nothing (negative test); granted call carries tenant/user/agent identity + approval ref + idempotency key in audit.
-- **Verification:** `cd backend && go vet ./... && go test ./...` green; new `*_test.go` next to code; `bun run docs:check` green.
+- **Delivered (2026-11-16):** `backend/pkg/mcp` (identity, registry, policy store, tenant-scoped grant store, transport interface, execution gate, append-only audit sink) + `docs/architecture/mcp-trust-slice.md` (trust levels, the 11 gate checks, audit contract, idempotency, explicit out-of-scope list). Discovery is metadata-only and returns a note saying so; a grant is the only execution authority.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `go test ./pkg/mcp/` runs 12 tests covering both acceptance criteria (grantless discovery authorizes nothing; granted calls audit tenant/user/agent + approval ref + idempotency key) plus revocation, expiry, policy drift, cross-tenant invisibility, idempotent replay, transport failure and unsafe-shape rejection.
+- **Remaining for `verified`:** a real stdio/SSE transport round-trip against one live MCP server and an authenticated route that calls the gate; persistence of registry/policy/grants with tenant isolation (currently in-memory).
 
 ### P7.4 — Model gateway — STATUS: `planned` → target P2 for M1–M2
 - **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `planned`.
