@@ -175,3 +175,26 @@ anything.
 | Promotion from `implemented_unverified` to `verified` | after the engine calls the gateway and its tests exercise fallback + budget on the real path |
 
 diff reviewable.
+
+## Eino composition (P7.4 follow-up)
+
+The agent path does **not** reimplement failover. `backend/pkg/modelrouter`
+adapts a gateway policy into Eino's `adk.ModelFailoverConfig`, so Eino owns the
+mechanics (switch timing, streaming errors, last-successful-model replay) while
+the gateway owns the decisions (which candidate is next, and whether it may run
+at all).
+
+| Concern | Owner |
+|---|---|
+| Switch timing, streaming-error handling | Eino ADK |
+| Candidate order, context-window and budget guards, provider health | `modelrouter` + `gateway` |
+| Policy definition, pricing, attribution | `gateway` |
+| Public contracts (manifests, IR, API) | VibeSDK — no Eino types |
+
+Usage: build the initial model with `Router.InitialModel`, set
+`ChatModelAgentConfig.Model = <that model>`, and pass
+`Router.FailoverConfig()` as `ChatModelAgentConfig.ModelFailoverConfig`.
+
+Decision record and rejected alternatives:
+[`adr-model-failover-composition.md`](adr-model-failover-composition.md).
+`backend/pkg/modelrouter` — 9 tests, green.
