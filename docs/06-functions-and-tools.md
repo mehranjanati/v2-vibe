@@ -234,7 +234,7 @@ SDK/CLI/API, Git) produces manifests, the compiler validates manifests, and
 the registry stores, versions, diffs, imports, and exports manifests. Full
 field lists and the System IR reconciliation live in the strategy doc
 ([`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md)) and
-the IR spec (P7.2). The concrete schemas, canonical form and validation gate
+[`architecture/system-ir.md`](architecture/system-ir.md) (P7.2: IR v1 is this `kind: System` spec, no parallel format). The concrete schemas, canonical form and validation gate
 now live in [`architecture/manifest-schemas.md`](architecture/manifest-schemas.md) (P7.1).
 
 ## The four manifests (minimal target shapes, PROPOSED)

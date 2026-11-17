@@ -1,0 +1,70 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "System",
+  "metadata": {
+    "description": "IR v1 case 4: the procedural DAG shape over the seven live workflow node kinds.",
+    "license": "Apache-2.0",
+    "name": "lead-intake-workflow",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "deployment": {
+      "environment": "staging"
+    },
+    "outcome": "Collect a lead via webhook, enrich it, branch on score, notify and log",
+    "workflow": {
+      "entry": [
+        "on-lead"
+      ],
+      "nodes": [
+        {
+          "id": "on-lead",
+          "kind": "trigger",
+          "next": [
+            "enrich"
+          ]
+        },
+        {
+          "id": "enrich",
+          "kind": "http",
+          "next": [
+            "store"
+          ]
+        },
+        {
+          "id": "store",
+          "kind": "db",
+          "next": [
+            "score"
+          ]
+        },
+        {
+          "id": "score",
+          "kind": "ai",
+          "next": [
+            "is-hot"
+          ]
+        },
+        {
+          "id": "is-hot",
+          "kind": "condition",
+          "next": [
+            "notify",
+            "settle"
+          ]
+        },
+        {
+          "id": "notify",
+          "kind": "email",
+          "when": "score >= 80"
+        },
+        {
+          "id": "settle",
+          "kind": "sleep",
+          "when": "score < 80"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "System",
+  "metadata": {
+    "description": "IR v1 case 3: the live AI App Builder reference workload (planner + coordinator/coder/reviewer team, approved deploy).",
+    "license": "Apache-2.0",
+    "name": "app-builder",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "agents": {
+      "coder": {
+        "ref": "agent/app-coder@1.0.0"
+      },
+      "coordinator": {
+        "delegatesTo": [
+          "coder",
+          "reviewer"
+        ],
+        "ref": "agent/app-coordinator@1.0.0"
+      },
+      "planner": {
+        "ref": "agent/app-planner@1.0.0"
+      },
+      "reviewer": {
+        "ref": "agent/app-reviewer@1.0.0"
+      }
+    },
+    "approvals": [
+      {
+        "approver": "role:builder",
+        "on": "external-write"
+      }
+    ],
+    "deployment": {
+      "environment": "production",
+      "replicas": 1
+    },
+    "evaluation": {
+      "dataset": "eval/app-requests@1.0.0",
+      "thresholds": {
+        "buildPass": 0.95
+      }
+    },
+    "outcome": "Turn a natural-language app request into reviewed source files and a deployed preview",
+    "routing": {
+      "onError": "escalate-human",
+      "parallel": false
+    },
+    "topology": [
+      {
+        "on": "chat.message",
+        "run": "planner"
+      },
+      {
+        "after": "planner",
+        "run": "coordinator",
+        "when": "plan.approved"
+      },
+      {
+        "after": "coordinator",
+        "run": "reviewer"
+      }
+    ]
+  }
+}

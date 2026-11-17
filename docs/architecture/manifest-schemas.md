@@ -127,8 +127,10 @@ Required `spec`: `description`, `inputSchema`, `outputSchema`, `permissions`,
 <a id="system"></a>
 ## `kind: System`
 
-Required `spec`: `outcome`, `agents`, `topology`. Optional: `routing`,
-`approvals`, `deployment`, `evaluation`.
+Required `spec`: `outcome` plus **exactly one execution shape** — agentic
+(`agents` + `topology`) or procedural (`workflow`). Optional: `routing`,
+`approvals`, `deployment`, `evaluation`. The shape rule is enforced by
+`spec.oneOf`; a document carrying both shapes is invalid in v1.
 
 - `agents`: map of stable local name → `{ ref, delegatesTo? }`. `ref` is an
   Agent ref; `delegatesTo` lists local names (delegation semantics live in the
@@ -136,6 +138,9 @@ Required `spec`: `outcome`, `agents`, `topology`. Optional: `routing`,
 - `topology`: ordered steps, each `{ run, on?, after?, when? }`; `run`/`after`
   reference local agent names, `on`/`when` are trigger/condition expressions
   evaluated by the runtime (not by the schema).
+- `workflow`: procedural shape — `nodes` (unique `id`, `kind` from the seven
+  live interpreter types, optional `capability` ref, optional `next`) plus
+  `entry`. Used when the workload is a pipe rather than a collaboration.
 - `routing`: `parallel` (bool) and `onError` (`fail-run` · `escalate-human` ·
   `skip-step`).
 - `approvals`: `{ on, approver }` with `approver` = `role:…`/`user:…`/`group:…`.
@@ -145,8 +150,10 @@ Required `spec`: `outcome`, `agents`, `topology`. Optional: `routing`,
 
 The System Manifest **references, never inlines** the other three kinds, so
 each part stays independently versioned, diffable and reusable. It is the
-serializable form of Canonical System IR v1 (minimal viable scope); the full
-IR is P7.2.
+serializable form of Canonical System IR v1 — the same bytes, no parallel
+format; the IR contract, its invariants and the four-case test live in
+[`system-ir.md`](system-ir.md) (P7.2) and
+[`system-ir/examples/`](system-ir/examples/).
 
 <a id="versioning"></a>
 ## Versioning and compatibility

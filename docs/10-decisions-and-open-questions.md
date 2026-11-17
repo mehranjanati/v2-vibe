@@ -66,7 +66,7 @@ as finalized decisions.
 
 | ID | Question | Evaluation criteria / notes |
 |---|---|---|
-| O9 | Canonical System IR schema + versioning/compat/migration strategy. | Minimal viable schema tested against four cases (App Builder, single agent, multi-agent team, visual workflow) before expansion; ADR with alternatives and trade-offs. Tracked as P7.2 in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md). |
+| O9 | Canonical System IR schema + versioning/compat/migration strategy. | Minimal viable schema tested against four cases (App Builder, single agent, multi-agent team, visual workflow) before expansion; ADR with alternatives and trade-offs. Tracked as P7.2 in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md); IR v1 contract + ADR landed 2026-11-16 ([`architecture/system-ir.md`](architecture/system-ir.md), [`architecture/adr-system-ir-v1.md`](architecture/adr-system-ir-v1.md)), schema enforcement awaits the compiler. |
 | O10 | Agent/Tool/Skill/System manifest specs + compatibility rules. | Must stay consistent with the live agent model and capability registry direction; validation + import/export required. Tracked as P7.1 in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md); schemas + spec landed 2026-11-16 ([`architecture/manifest-schemas.md`](architecture/manifest-schemas.md)), enforcement awaits the compiler. |
 | O11 | Runtime Adapter interface + Run State Machine + event/checkpoint contracts. | At-least-once + idempotency explicit; never claim exactly-once without proof; Workflows limits analyzed first. Tracked as P7.5 (+ P7.7 trace) in [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md). |
 | O12 | Open-core boundary + license + managed-cloud packaging. | No component assumed open source; license analysis before code; self-hosting strategy required. |

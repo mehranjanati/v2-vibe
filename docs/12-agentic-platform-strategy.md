@@ -150,9 +150,11 @@ strategy doc until the `system-ir.md` spec lands. Minimal manifest shapes
 Design warning: do not build an over-general universal IR prematurely. Define
 a minimal viable schema and test it against four cases — the current App
 Builder, a single Agent, a multi-agent team, a visual workflow — before any
-expansion. A dedicated specification (`docs/architecture/system-ir.md`) and ADR
-are PLANNED, not written here; writing them requires alternatives and
-trade-offs first.
+expansion. Both now exist: [`architecture/system-ir.md`](architecture/system-ir.md)
+(IR v1 contract + invariants) and
+[`architecture/adr-system-ir-v1.md`](architecture/adr-system-ir-v1.md)
+(options A-D with trade-offs and revisit triggers). Four fixtures and the
+`system-ir` gate prove the four cases on every `docs:check`.
 
 <a id="target-architecture"></a>
 ## Target Architecture

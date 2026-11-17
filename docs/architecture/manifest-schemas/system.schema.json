@@ -72,6 +72,21 @@
     },
     "spec": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "outcome",
+            "agents",
+            "topology"
+          ]
+        },
+        {
+          "required": [
+            "outcome",
+            "workflow"
+          ]
+        }
+      ],
       "properties": {
         "agents": {
           "additionalProperties": {
@@ -214,13 +229,73 @@
           },
           "minItems": 1,
           "type": "array"
+        },
+        "workflow": {
+          "additionalProperties": false,
+          "description": "Procedural DAG shape (IR v1) for workloads that are not agent compositions. Exactly one execution shape per system in v1: agents+topology or workflow.",
+          "properties": {
+            "entry": {
+              "items": {
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "nodes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "capability": {
+                    "$ref": "#/$defs/ref"
+                  },
+                  "id": {
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "trigger",
+                      "http",
+                      "db",
+                      "ai",
+                      "email",
+                      "condition",
+                      "sleep"
+                    ],
+                    "type": "string"
+                  },
+                  "next": {
+                    "items": {
+                      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "when": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "nodes"
+          ],
+          "type": "object"
         }
       },
-      "required": [
-        "outcome",
-        "agents",
-        "topology"
-      ],
       "type": "object"
     }
   },

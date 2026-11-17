@@ -55,7 +55,7 @@ infer phase from a legacy prefix.
 | P5.1–P5.6 (App Runtime) | Per-app backend | **P5** Systems | Reframed as the first **reference system**, not a vertical. |
 | P6.1–P6.8 (workflow canvas) | Visual workflow work | **P4** + **P3** | Inspection view (P4) + triggers/observability (P3). |
 | P7.1 (manifest schemas) | Agent/Tool/Skill/System manifest JSON Schemas + semver/compat rules | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — schemas + `docs:check` gate landed, no runtime consumer yet. |
-| P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): closes O9 slice for M0–M1; System Manifest is the serializable form. |
+| P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — contract, ADR, 4 fixtures + gate landed; enforcement awaits the compiler. |
 | P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): M0 trust slice; execution halves compose in M1. |
 | P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): builds on P1.8 routing + P1.11 budgets; serves hosted + open models behind one contract. |
 | P7.5 (runtime adapter) | Runtime Adapter interface + Run State Machine + checkpoint/event contracts | **P3** Durable Runtime | New ID (2026-11-16): closes O11 slice for M2; Workflows limits analyzed first. |
@@ -470,15 +470,17 @@ owners are the target phases below.
 - **Verification:** `bun run docs:check` green (`manifests: OK (4 manifests across 4 schemas, 4 identities, 1 external reference(s), canonical round-trip + refs resolved)`); negative cases proven — a mutated example carrying `status` and a floating `@latest` ref fails with three field-level errors, then the file was restored.
 - **Remaining for `verified`:** a real registry/compiler consumer (P7.2/P7.4) must load these schemas in its own tests; until then the contract is a spec, not an enforced runtime boundary.
 
-### P7.2 — Canonical System IR v1 minimal — STATUS: `planned` → target P2 (O9 slice for M0–M1)
-- **id:** P7.2 · **phase:** P2 · **title:** System IR v1 minimal schema + 4-case test · **status:** `planned`.
+### P7.2 — Canonical System IR v1 minimal — STATUS: `implemented_unverified` (IR contract + 4-case gate landed 2026-11-16; compiler/runtime consumers pending) → target P2 (O9 slice for M0–M1)
+- **id:** P7.2 · **phase:** P2 · **title:** System IR v1 minimal schema + 4-case test · **status:** `implemented_unverified`.
 - **Goal:** minimal viable IR schema whose serializable form is the System Manifest; tested against App Builder, single Agent, multi-agent team, visual workflow before any expansion.
 - **Why:** one canonical representation for NL/Visual/SDK/CLI/API; prevents two divergent agent models (D7).
 - **Dependencies:** P7.1 (manifest refs).
 - **Affected files:** planned `docs/architecture/system-ir.md` + ADR (alternatives + trade-offs required).
 - **Implementation notes:** IR must represent the field list in `docs/12-agentic-platform-strategy.md`; schema versioning + backward-compat strategy; deterministic serialization; diff support; desired-vs-runtime separation; no direct execution of unvalidated IR.
 - **Acceptance criteria:** 4-case test passes (App Builder closure, single Agent, team, workflow); over-general fields rejected from v1.
-- **Verification:** `bun run docs:check` green; ADR records rejected alternatives.
+- **Delivered (2026-11-16):** `docs/architecture/system-ir.md` (contract, invariants I1–I6, desired-vs-runtime split, versioning, diff classes, four cases, rejected-for-v1 list) + `docs/architecture/adr-system-ir-v1.md` (options A–D with trade-offs, revisit triggers) + four canonical fixtures under `docs/architecture/system-ir/examples/` + `scripts/validate-system-ir.mjs` wired into `bun run docs:check`; IR v1 is the `kind: System` spec (one format, no parallel representation) with `spec.oneOf` enforcing exactly one execution shape.
+- **Verification:** `bun run docs:check` green (`system-ir: OK (4/4 cases [agents, agents, agents, workflow], 6 negative probes rejected, canonical round-trip)`); the negative probes cover runtime `status`, a `telemetry` block, an unpinned `@latest` ref, an unknown delegation target, both shapes at once and a dangling workflow edge — all rejected.
+- **Remaining for `verified`:** the compiler must load the IR and enforce it (capability-closure resolution, cycle detection, policy validation); until then the contract is specified and gated, not enforced at execution.
 
 ### P7.3 — MCP trust slice — STATUS: `planned` → target P0 (+ P2) for M0
 - **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `planned`.

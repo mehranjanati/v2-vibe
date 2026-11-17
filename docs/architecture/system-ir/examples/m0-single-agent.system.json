@@ -1,0 +1,38 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "System",
+  "metadata": {
+    "description": "IR v1 case 1 (M0): one agent, one step, no composition.",
+    "license": "Apache-2.0",
+    "name": "m0-single-agent",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "agents": {
+      "qualifier": {
+        "ref": "agent/lead-qualifier@1.2.0"
+      }
+    },
+    "deployment": {
+      "environment": "development"
+    },
+    "evaluation": {
+      "dataset": "eval/lead-set@2.0.0",
+      "thresholds": {
+        "precision": 0.85
+      }
+    },
+    "outcome": "Qualify one inbound lead and return a verdict with reasons",
+    "routing": {
+      "onError": "escalate-human",
+      "parallel": false
+    },
+    "topology": [
+      {
+        "on": "ingress.lead",
+        "run": "qualifier"
+      }
+    ]
+  }
+}
