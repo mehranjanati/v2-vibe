@@ -242,7 +242,9 @@ registry, model registry, OpenAI-compatible adapter (+ provider adapters),
 per-agent selection, routing, fallback, retry, rate limits, timeouts, context
 window awareness, cost estimation, usage tracking, provider health, evaluation,
 secret references. Rule: provider integrations are replaceable and never
-hardcoded into Agent business logic.
+hardcoded into Agent business logic. The contract and its guarantees (pinned
+model policies, routing/fallback, pre-flight context + budget guards, per-call
+cost attribution) are implemented in [`architecture/model-gateway.md`](architecture/model-gateway.md) (P7.4).
 
 ### Open and open-source models (normative direction)
 

@@ -76,7 +76,8 @@ flowchart TB
   MCP connections, and skills
   ([`06-functions-and-tools.md`](06-functions-and-tools.md)).
 - **Model gateway** — provider/model registries, routing, fallback, budgets
-  (TARGET; per-role models are the live seed).
+  (contract + package: [`architecture/model-gateway.md`](architecture/model-gateway.md),
+  P7.4; per-role models are still the live path).
 - **Memory + Knowledge** — scoped (run/conversation/agent/team/tenant),
   isolated, governed; provider-independent abstractions.
 - **Runtime layer** — durable serverless execution with retries, schedules,

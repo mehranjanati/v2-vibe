@@ -57,7 +57,7 @@ infer phase from a legacy prefix.
 | P7.1 (manifest schemas) | Agent/Tool/Skill/System manifest JSON Schemas + semver/compat rules | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — schemas + `docs:check` gate landed, no runtime consumer yet. |
 | P7.2 (System IR minimal) | Canonical System IR v1 minimal schema + 4-case test | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — contract, ADR, 4 fixtures + gate landed; enforcement awaits the compiler. |
 | P7.3 (MCP trust slice) | MCP client adapter behind the permission boundary | **P0** Foundation + **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — boundary + 12 tests landed; transport/routes/persistence pending. |
-| P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): builds on P1.8 routing + P1.11 budgets; serves hosted + open models behind one contract. |
+| P7.4 (model gateway) | Provider/model registry + routing/fallback/budgets | **P2** Compiler | New ID (2026-11-16): `implemented_unverified` — gateway + 12 tests landed; engine wiring and streaming pending. |
 | P7.5 (runtime adapter) | Runtime Adapter interface + Run State Machine + checkpoint/event contracts | **P3** Durable Runtime | New ID (2026-11-16): closes O11 slice for M2; Workflows limits analyzed first. |
 | P7.6 (scoped memory) | Scoped memory + knowledge metadata (run/conversation/agent/team/tenant) | **P1** Agent Primitive | New ID (2026-11-16): provider-independent abstractions over Redis/D1; no new store decision. |
 | P7.7 (run observability) | Canonical Run Trace: 11 Observability capabilities | **P3** Durable Runtime | New ID (2026-11-16): extends generation lineage to runs; M2–M4 slices; attribution-clean for future tuning. |
@@ -494,15 +494,17 @@ owners are the target phases below.
 - **Verification:** `cd backend && go vet ./... && go test ./...` green; `go test ./pkg/mcp/` runs 12 tests covering both acceptance criteria (grantless discovery authorizes nothing; granted calls audit tenant/user/agent + approval ref + idempotency key) plus revocation, expiry, policy drift, cross-tenant invisibility, idempotent replay, transport failure and unsafe-shape rejection.
 - **Remaining for `verified`:** a real stdio/SSE transport round-trip against one live MCP server and an authenticated route that calls the gate; persistence of registry/policy/grants with tenant isolation (currently in-memory).
 
-### P7.4 — Model gateway — STATUS: `planned` → target P2 for M1–M2
-- **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `planned`.
+### P7.4 — Model gateway — STATUS: `implemented_unverified` (gateway package + 12 tests landed 2026-11-16; engine not wired, no streaming) → target P2 for M1–M2
+- **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `implemented_unverified`.
 - **Goal:** gateway serving hosted + open models behind one contract: registry, OpenAI-compatible adapter (+ provider adapters), per-agent selection, routing, fallback, retry, rate limits, timeouts, context-window awareness, cost estimation, usage tracking, provider health, evaluation, secret refs.
 - **Why:** provider integrations must be replaceable, never hardcoded into Agent business logic (strategy).
 - **Dependencies:** P1.8 (routing seed), P1.11 (budget plumbing), P7.1 (model-policy refs).
 - **Affected files:** gateway contract + provider adapters (paths decided in the task).
 - **Implementation notes:** Agents reference a model policy, the gateway resolves; no Eino types leak into manifests/APIs; open models are first-class entries, deployment choice stays OPEN.
 - **Acceptance criteria:** per-agent model selection + fallback + budget enforcement demonstrated on two providers (one may be mocked); secret refs never plaintext.
-- **Verification:** `cd backend && go vet ./... && go test ./...` green; `bun run docs:check` green.
+- **Delivered (2026-11-16):** `backend/pkg/gateway` (provider interface + OpenAI-compatible `HTTPProvider`, model registry with context window and per-million-token price, immutable pinned `model-policy/name@MAJOR.MINOR.PATCH` policies with ordered candidates, routing with fallback and provider health, context-window and cost-budget guards, usage/cost attribution sink) + `docs/architecture/model-gateway.md`.
+- **Verification:** `cd backend && go vet ./... && go test ./...` green; `go test ./pkg/gateway/` runs 12 tests proving the three acceptance criteria — per-agent policy selection, fallback across two providers (one a mock, one a real local OpenAI-compatible server), and budget enforcement that refuses before dispatch — plus pinned-ref rejection, context-window refusal, unhealthy-provider skipping and vault-only key resolution.
+- **Remaining for `verified`:** route the generation engine through the gateway (streaming included) and prove fallback + budget on that real path; until then generation still builds per-role models directly.
 
 ### P7.5 — Runtime Adapter + Run State Machine — STATUS: `planned` → target P3 for M2
 - **id:** P7.5 · **phase:** P3 · **title:** Runtime Adapter interface + Run State Machine + checkpoint/event contracts · **status:** `planned`.
