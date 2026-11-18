@@ -131,6 +131,18 @@ type ProjectRoom struct {
 	// leak a VFS copy. lineageSnapshotID tells whose baseline it is.
 	lineageSnapshotID string
 	lineageSnapshot   *generationSnapshot
+	// lineageCurrentID is the run whose baseline is open. Unlike
+	// lineageSnapshotID it survives takeGenerationSnapshot on purpose: P1.3.5
+	// commits at finalize time, i.e. AFTER the recorder closed the row
+	// (finish() → FinishGenerationRecord runs before finalizeGeneration on
+	// every dual-model path). commitGeneration clears it so one run can never
+	// produce two commits.
+	lineageCurrentID string
+	// lineageBatchAuthor is the single-role attribution of the batch that
+	// just closed. takeGenerationIntake consumes the per-path intake, so the
+	// commit author (P1.3.5) is captured there instead of re-deriving it from
+	// an already-drained map.
+	lineageBatchAuthor string
 	// genAuthors is the write-attribution intake of the open generation
 	// (path → agent). P1.3.3 records the explicit author of every write;
 	// FinishGenerationRecord reads it for generation_files.author_agent.
@@ -1231,6 +1243,18 @@ func (r *ProjectRoom) finalizeGeneration(output string, streamedFiles int) {
 	// context") instead of path+size only. No-op without Redis.
 	if err := r.ReindexVFS(); err != nil {
 		log.Printf("[room:%s] VFS reindex failed: %v", r.chatID, err)
+	}
+
+	// P1.3.5: one batch commit per generation on the app's internal Git repo,
+	// so P1.4 (History) and rollback have a version to read. Best-effort like
+	// the rest of the lineage path — a missing D1 client or an unusable repo
+	// must never fail a generation that already streamed to the user. The
+	// commit runs here, not per-file write, because one generation is one
+	// revision (commit explosion is explicitly out of scope).
+	if sha, cerr := r.commitGeneration(); cerr != nil {
+		log.Printf("[room:%s] git: generation commit failed: %v", r.chatID, cerr)
+	} else if sha != "" {
+		log.Printf("[room:%s] git: generation committed at %s", r.chatID, sha)
 	}
 
 	// Broadcast the updated agent state so the frontend can re-sync.

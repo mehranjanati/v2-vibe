@@ -37,9 +37,9 @@ import (
 // runDualModelPipeline; the per-file attribution intake is filled by
 // RecordWriteAuthor (P1.3.3).
 //
-// Deliberately NOT written here: `commit_sha`/`branch` (P1.3.5 sets them after
-// the internal Git commit) and `fork` (P1.3.3/P1.10.7 set it when a manual
-// write lands while the agent is still running).
+// Deliberately NOT written here: `commit_sha`/`branch` (P1.3.5 stamps them from
+// `generation_git.go` once the commit exists) and `fork` (P1.3.3/P1.10.7 set it
+// when a manual write lands while the agent is still running).
 const (
 	// generationSnapshotPrefix is the Redis key prefix of a run's VFS
 	// baseline: `vfs:snap:{genID}`.
@@ -65,6 +65,11 @@ const (
 	// generationCloseSQL closes the run with its verdict + terminal status and
 	// the fork flag (P1.3.3: a manual write landed while the run was open).
 	generationCloseSQL = "UPDATE generations SET verdict = ?, status = ?, fork = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+	// generationCommitSQL links the lineage row to its internal Git commit
+	// (P1.3.5). Written after the commit succeeded, so a NULL pair means "this
+	// run produced no revision" (no D1, empty VFS, or no open generation — the
+	// plan-execute path opens no row).
+	generationCommitSQL = "UPDATE generations SET commit_sha = ?, branch = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
 	// generationFileInsertSQL writes one diff row. INSERT OR REPLACE keeps a
 	// retried Finish for the same generation idempotent (natural key
 	// (generation_id, path)).
@@ -201,6 +206,10 @@ func (r *ProjectRoom) storeGenerationSnapshot(genID string, snap *generationSnap
 	defer r.lineageMu.Unlock()
 	r.lineageSnapshotID = genID
 	r.lineageSnapshot = snap
+	r.lineageCurrentID = genID
+	// A new run never inherits the previous run's batch author (a run that was
+	// abandoned before Finish leaves it behind).
+	r.lineageBatchAuthor = ""
 	r.genAuthors = nil
 	r.genForked = false
 }
@@ -256,6 +265,10 @@ func (r *ProjectRoom) takeGenerationIntake() (map[string]string, bool) {
 	forked := r.genForked
 	r.genAuthors = nil
 	r.genForked = false
+	// Capture the batch author before the intake is drained: P1.3.5's commit
+	// runs later than this (finalizeGeneration) and still needs to name who
+	// produced the batch.
+	r.lineageBatchAuthor = generationCommitAuthor(authors)
 	return authors, forked
 }
 

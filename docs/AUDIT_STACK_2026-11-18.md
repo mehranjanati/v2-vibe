@@ -175,6 +175,12 @@ substrate has tests and no live producer.
 **Recommended:** implement P1.3.5 before any P5 versioning surface, otherwise the
 History API (P1.4) has nothing to read for ordinary generations.
 
+**Status (2026-11-18, later the same day):** landed — `commitGeneration`
+(`backend/pkg/engine/generation_git.go:52`) writes one commit per generation from
+`finalizeGeneration` and stamps `generations.commit_sha`/`branch`. It is
+`implemented_unverified`: the tests run on the emulated D1 only, and the
+plan-execute path still opens no lineage row, so it produces no revision.
+
 ### F8 — Audit note on the use case itself
 
 Positive: the trader bundle is genuinely isolated and documented —
