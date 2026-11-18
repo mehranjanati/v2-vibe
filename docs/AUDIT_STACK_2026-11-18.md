@@ -210,6 +210,7 @@ The defect is not design, it is **integration** (F1 + F2) and **activation**
 
 | ID | Checklist status | Code evidence | Gap to `verified` |
 |---|---|---|---|
+| *Snapshot note* | — | The table below records the status **at audit time (2026-11-18, morning)**. Later that day P1.3.5, P1.3.6, P1.11, P1.8, P1.9, P1.4/P1.5 and P1.6 landed as `implemented_unverified`; [`DEV_STATUS.md`](DEV_STATUS.md) is the live source of truth. | — |
 | P0.3 control-plane boundary | `implemented_unverified` | `backend/pkg/api/auth.go` + 11-case test | Opt-in and off in `render.yaml` (F3) |
 | P0.4 ownership | `implemented_unverified` | `RequireOwner` primitive | Per-resource wiring not exhaustively proven |
 | P0.5 WS gate | `implemented_unverified` | `GET /ws/:id` gated | Same rollout gate |

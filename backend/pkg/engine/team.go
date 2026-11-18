@@ -164,10 +164,19 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 	if err != nil {
 		return "", fmt.Errorf("team: coder agent: %w", err)
 	}
+	// P1.6: the reviewer judges this run's diff relative to the previous
+	// generation and knows which files are hubs. Computed at run time from the
+	// live baseline + VFS — never asked of the model to remember.
+	reviewerInstructionText := reviewerInstruction(
+		prompts.reviewer,
+		r.generationChangedFiles(),
+		HubFiles(plan, r.vfsContents()),
+	)
+
 	reviewer, err := adk.NewChatModelAgent(vfsCtx, &adk.ChatModelAgentConfig{
 		Name:          "reviewer",
 		Description:   "Read-only quality gate: reads files and returns APPROVE or REQUEST_CHANGES with concrete fixes. Never writes.",
-		Instruction:   prompts.reviewer,
+		Instruction:   reviewerInstructionText,
 		Model:         reviewerModel,
 		GenModelInput: noFormatInstruction,
 		// Reading a handful of files and answering is cheap; 8 covers a
