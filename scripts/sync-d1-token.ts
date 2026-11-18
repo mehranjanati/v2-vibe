@@ -7,9 +7,11 @@
  * flow already stores a short-lived OAuth token (with `offline_access`, so
  * wrangler refreshes it on every command) and the D1 HTTP API accepts it. So:
  *
- *   1. run `wrangler whoami` to force an OAuth refresh,
- *   2. validate the token with a read-only D1 `SELECT 1`,
- *   3. write it into `.env` as `CLOUDFLARE_API_TOKEN=…`.
+ *   1. read the OAuth token wrangler already stored and validate it,
+ *   2. only if that token no longer works, run `wrangler whoami` (Node >= 22,
+ *      neutral cwd) to force a refresh and read the new one,
+ *   3. write it into `.env` as `CLOUDFLARE_API_TOKEN=…` (and restore
+ *      `D1_DATABASE_ID` from `wrangler.v2.jsonc` when `.env` lost it).
  *
  * Usage: `bun run d1:token`
  * Re-run it whenever the control plane logs `401` or
@@ -21,8 +23,8 @@
  * you pass `--force`.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,6 +43,89 @@ const wranglerConfigPaths = [
 function tomlValue(text: string, key: string): string | null {
 	const match = text.match(new RegExp(`^${key}\\s*=\\s*"?([^"\\n]+)"?`, 'm'));
 	return match ? match[1].trim() : null;
+}
+
+/**
+ * The D1 database id lives in `wrangler.v2.jsonc`; `AGENTS.md` requires the
+ * `.env` copy to equal it. Deriving it here means a missing key can no longer
+ * silently degrade the Go plane's D1 client to "no lineage".
+ */
+function databaseIdFromConfig(): string | null {
+	const configPath = join(repoRoot, 'wrangler.v2.jsonc');
+	if (!existsSync(configPath)) return null;
+	const match = readFileSync(configPath, 'utf8').match(
+		/"database_id"\s*:\s*"([0-9a-f-]{36})"/,
+	);
+	return match ? match[1] : null;
+}
+
+/**
+ * Wrangler needs Node >= 22, and `bun --bun wrangler whoami` exits silently on
+ * this box (macOS 12.6): it prints "Getting User settings…" and dies without
+ * output, which the old version of this script misread as "not logged in".
+ * Resolve a real Node binary instead, preferring an explicit `WRANGLER_NODE`.
+ */
+function resolveWranglerRuntime(): { cmd: string; args: string[] } | null {
+	const wranglerBin = join(repoRoot, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+	if (!existsSync(wranglerBin)) return null;
+
+	const candidates: string[] = [];
+	const explicit = process.env.WRANGLER_NODE?.trim();
+	if (explicit) candidates.push(explicit);
+
+	const nvmRoot = join(homedir(), '.nvm', 'versions', 'node');
+	if (existsSync(nvmRoot)) {
+		for (const version of readdirSync(nvmRoot).sort().reverse()) {
+			candidates.push(join(nvmRoot, version, 'bin', 'node'));
+		}
+	}
+	candidates.push('/usr/local/bin/node', '/opt/homebrew/bin/node');
+
+	for (const candidate of candidates) {
+		if (!existsSync(candidate)) continue;
+		const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
+		const major = Number((probe.stdout ?? '').trim().replace(/^v/, '').split('.')[0]);
+		if (Number.isFinite(major) && major >= 22) return { cmd: candidate, args: [wranglerBin] };
+	}
+	return null;
+}
+
+/** Read the OAuth token + expiry wrangler last stored (null when absent). */
+function readStoredToken(): { token: string; expiresAt: string | null } | null {
+	const configPath = wranglerConfigPaths.find((p) => existsSync(p));
+	if (!configPath) return null;
+	const text = readFileSync(configPath, 'utf8');
+	const token = tomlValue(text, 'oauth_token');
+	if (!token) return null;
+	return { token, expiresAt: tomlValue(text, 'expiration_time') };
+}
+
+/**
+ * Force an OAuth refresh by running `wrangler whoami` from a NEUTRAL cwd.
+ * Running it inside the repo made wrangler load `.env`, prefer the (possibly
+ * stale) `CLOUDFLARE_API_TOKEN` over the OAuth session, and fail with
+ * `Invalid access token [code: 9109]` — the refresh never touched the session.
+ */
+function refreshOAuthSession(): { ok: boolean; detail: string } {
+	const runtime = resolveWranglerRuntime();
+	if (!runtime) {
+		return {
+			ok: false,
+			detail:
+				'no Node >= 22 available for wrangler (set WRANGLER_NODE); bun cannot drive `wrangler whoami` on this box',
+		};
+	}
+	const result = spawnSync(runtime.cmd, [...runtime.args, 'whoami'], {
+		cwd: tmpdir(),
+		encoding: 'utf8',
+		timeout: 60_000,
+		env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '' },
+	});
+	if (result.status === 0) return { ok: true, detail: 'OAuth session refreshed' };
+	const detail = (result.stderr || result.stdout || result.error?.message || '')
+		.trim()
+		.slice(0, 300);
+	return { ok: false, detail: detail || `wrangler exited with ${result.status ?? 'no status'}` };
 }
 
 /** Read `KEY=` from `.env` (values may be quoted). */
@@ -108,47 +193,51 @@ async function main(): Promise<void> {
 	}
 	const envText = readFileSync(envPath, 'utf8');
 	const accountId = readEnvValue(envText, 'CLOUDFLARE_ACCOUNT_ID');
-	const databaseId = readEnvValue(envText, 'D1_DATABASE_ID');
-	if (!accountId || !databaseId) {
-		console.error('✖ CLOUDFLARE_ACCOUNT_ID and D1_DATABASE_ID must be set in .env.');
+	if (!accountId) {
+		console.error('✖ CLOUDFLARE_ACCOUNT_ID must be set in .env.');
+		process.exit(1);
+	}
+	// Derive the database id when `.env` lost it: AGENTS.md requires the two to
+	// match, and a missing key silently degrades the Go plane's D1 client.
+	const envDatabaseId = readEnvValue(envText, 'D1_DATABASE_ID');
+	const databaseId = envDatabaseId ?? databaseIdFromConfig();
+	if (!databaseId) {
+		console.error(
+			'✖ No D1 database id: set D1_DATABASE_ID in .env or keep database_id in wrangler.v2.jsonc.',
+		);
 		process.exit(1);
 	}
 
-	// 1) Force a refresh: any wrangler command refreshes the OAuth token when
-	//    it is near expiry (the login carries `offline_access`).
-	console.log('• Refreshing the wrangler OAuth session…');
-	const whoami = spawnSync('bun', ['--bun', 'wrangler', 'whoami'], {
-		cwd: repoRoot,
-		encoding: 'utf8',
-		// Unset so wrangler uses the stored OAuth login: if .env's
-		// CLOUDFLARE_API_TOKEN leaked into this process env (e.g. via an
-		// IDE/direnv loader), wrangler would prefer it over OAuth and the
-		// "refresh" below would never touch the OAuth session.
-		env: { ...process.env, CLOUDFLARE_API_TOKEN: '', CLOUDFLARE_API_KEY: '' },
-	});
-	if (whoami.status !== 0) {
-		console.error('✖ wrangler is not logged in. Run `bunx wrangler login` and retry.');
-		console.error((whoami.stderr || whoami.stdout || '').trim().slice(0, 300));
-		process.exit(1);
+	// 1) Validate the token wrangler already stored, and refresh ONLY when it
+	//    does not work: a forced `whoami` refresh needs a Node+wrangler pair and
+	//    a live OAuth grant, so it must not sit on the happy path.
+	let stored = readStoredToken();
+	if (stored) {
+		const probe = await validateToken(stored.token, accountId, databaseId);
+		if (!probe.ok) {
+			console.log(`• Stored wrangler token is unusable (${probe.message}); refreshing the OAuth session…`);
+			stored = null;
+		}
 	}
-
-	// 2) Read the freshly refreshed token.
-	const configPath = wranglerConfigPaths.find((p) => existsSync(p));
-	if (!configPath) {
-		console.error('✖ No wrangler config found; run `bunx wrangler login` first.');
-		process.exit(1);
+	if (!stored) {
+		const refresh = refreshOAuthSession();
+		if (!refresh.ok) {
+			console.error(`✖ ${refresh.detail}`);
+			console.error('  Run `bunx wrangler login` (Node >= 22), or paste a static D1 token into .env.');
+			process.exit(1);
+		}
+		stored = readStoredToken();
+		if (!stored) {
+			console.error('✖ wrangler refreshed but stored no oauth_token; run `bunx wrangler login`.');
+			process.exit(1);
+		}
 	}
-	const configText = readFileSync(configPath, 'utf8');
-	const token = tomlValue(configText, 'oauth_token');
-	const expiresAt = tomlValue(configText, 'expiration_time');
-	if (!token) {
-		console.error(`✖ No oauth_token in ${configPath}; run \`bunx wrangler login\`.`);
-		process.exit(1);
-	}
+	const token = stored.token;
+	const expiresAt = stored.expiresAt;
 
 	// 3) Never clobber a token the user manages by hand (e.g. a static one).
 	const existing = readEnvValue(envText, 'CLOUDFLARE_API_TOKEN');
-	if (existing && !existing.startsWith('cfoat') && !force) {
+	if (existing && !existing.startsWith('cfoat') && existing !== token && !force) {
 		console.log(
 			`✓ .env already holds a non-OAuth CLOUDFLARE_API_TOKEN (${fingerprint(existing)}) — keeping it. Pass --force to replace it.`,
 		);
@@ -164,8 +253,13 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
-	writeFileSync(envPath, setEnvValue(envText, 'CLOUDFLARE_API_TOKEN', token), 'utf8');
+	let nextEnv = setEnvValue(envText, 'CLOUDFLARE_API_TOKEN', token);
+	if (!envDatabaseId) nextEnv = setEnvValue(nextEnv, 'D1_DATABASE_ID', databaseId);
+	writeFileSync(envPath, nextEnv, 'utf8');
 	console.log(`✓ CLOUDFLARE_API_TOKEN updated in .env (${fingerprint(token)})`);
+	if (!envDatabaseId) {
+		console.log(`✓ D1_DATABASE_ID restored from wrangler.v2.jsonc (${databaseId})`);
+	}
 	console.log(`  ${result.message}`);
 	if (expiresAt) {
 		console.log(`  OAuth token expires at ${expiresAt} — re-run \`bun run d1:token\` after that.`);
