@@ -63,6 +63,12 @@ representation, useful task executed, permission-checked auditable tools,
 traceable runs, tenant isolation tests green, no unverified critical
 boundary).
 
+Proposed first executable increment: the **vertical slice v0** in
+[`02-mvp.md`](02-mvp.md) — NL → single agent → governed run → lineage + Git
+revision → History/diff/rollback, boundary ON. It is `proposed`, not approved
+(O13 in [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)),
+and it sequences after the P0 rollout.
+
 ### M1 — Multi-Agent Builder
 
 Owner: [`05-agent-runtime.md`](05-agent-runtime.md) (team model) +
