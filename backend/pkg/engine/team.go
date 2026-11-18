@@ -122,7 +122,10 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 	// three roles sharing one engine model. roleModel degrades to that engine
 	// model on any failure, so a typo'd CODER_MODEL can never kill the run.
 	reg := skills.NewRegistry()
-	coderModel := r.roleModel(vfsCtx, reg, skills.RoleCoder)
+	// P7 wiring slice: the coder is the live consumer of a pinned model policy
+	// (env opt-in). Without one this is exactly roleModel; with one, the router
+	// picks the starting candidate and supplies Eino's failover config.
+	coderRoute := r.coderRouting(vfsCtx, reg)
 	reviewerModel := r.roleModel(vfsCtx, reg, skills.RoleReviewer)
 	coordinatorModel := r.roleModel(vfsCtx, reg, skills.RoleCoordinator)
 
@@ -130,8 +133,11 @@ func (r *ProjectRoom) runTeam(ctx context.Context, prompt, plan string, prompts 
 		Name:          "coder",
 		Description:   "Writes ONE complete file per call via vfs_write given a path plus precise requirements.",
 		Instruction:   prompts.coder,
-		Model:         coderModel,
+		Model:         coderRoute.Model,
 		GenModelInput: noFormatInstruction,
+		// P7: nil unless a model policy is pinned, so the coder keeps its exact
+		// pre-P7 behaviour by default.
+		ModelFailoverConfig: coderRoute.Failover,
 		// A coder turn needs ~one tool call per file plus a read/list; 8
 		// iterations produced ErrExceedMaxIterations ("exceeds max
 		// iterations") on multi-file steps. 12 keeps a loop bounded while

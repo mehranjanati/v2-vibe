@@ -150,6 +150,13 @@ engine keeps its own ad-hoc model selection.
 **Recommended:** one narrow wiring slice — set the chat model and failover config
 from `modelrouter` on the live generation path, with a test proving fallback and
 budget refusal there. That single change gives three `implemented_unverified`
+
+**Status (2026-11-18):** the slice landed for the **coder role**
+(`coderRouting`, `backend/pkg/engine/team_router.go:79`; failover config attached
+at `backend/pkg/engine/team.go:140`), opt-in via `MODEL_ROUTER_*` and fail-safe.
+`modelrouter` now has a real importer, so the "zero consumers" part of F5 is no
+longer true for P7.4. Still unproven on a live two-provider run, and MCP (P7.3)
+still has no transport.
 items runtime evidence.
 
 ### F6 — Outcome metering is landed but unread

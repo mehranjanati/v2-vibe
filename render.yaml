@@ -84,6 +84,18 @@ services:
       # - key: VIBECODER_STORE_KV_ID
       #   sync: false
 
+      # Model routing (P7 slice a, opt-in): a pinned policy routes the team's
+      # coder role with Eino failover across the candidate list. Leave unset to
+      # keep the pre-P7 behaviour (one role model, no failover).
+      # - key: MODEL_ROUTER_POLICY            # model-policy/<name>@<x.y.z>
+      #   value: model-policy/coder@1.0.0
+      # - key: MODEL_ROUTER_CANDIDATES        # ordered, comma-separated
+      #   value: "@cf/meta/llama-3.3-70b-instruct-fp8-fast,@cf/meta/llama-3.1-8b-instruct"
+      # - key: MODEL_ROUTER_PROVIDER          # default: ai-gateway
+      #   value: ai-gateway
+      # - key: MODEL_ROUTER_CONTEXT_WINDOW    # default: 131072
+      #   value: "131072"
+
   - type: keyvalue
     name: vibesdk-redis
     plan: free
