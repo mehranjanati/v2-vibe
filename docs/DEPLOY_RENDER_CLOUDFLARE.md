@@ -203,6 +203,17 @@ Consequences:
 - To enforce sessions, set `CONTROL_PLANE_REQUIRE_SESSION=true` **and**
   `VIBECODER_STORE_KV_ID` (the `VibecoderStore` namespace id) so the Go service
   can verify Edge tokens against KV.
+- Prove the verifier against the real namespace before any deployment does:
+
+  ```bash
+  cd backend && VIBE_P03_KV=real CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… \
+    VIBECODER_STORE_KV_ID=<VibecoderStore id> go test -tags e2e ./e2e/ -run P03 -v
+  ```
+
+  The harness seeds one throwaway `session:token:<nonce>` key and deletes it on
+  exit, so it is safe to run against the live namespace while the boundary is
+  still off. The token needs Workers KV Read+Write (a D1-only token is not
+  enough); emulator mode (`VIBE_P03_KV=emu`, the default) needs no credentials.
 - The Worker's server-side GitHub export fetch (`worker/light/lightApp.ts` →
   `GET /api/projects/:id/files`) does not forward a session token. Keep the
   boundary off for that flow, or teach the Worker to pass the caller's

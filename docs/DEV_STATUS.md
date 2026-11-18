@@ -9,7 +9,7 @@
 > `verified` | `blocked` | `obsolete`.
 > Truth hierarchy: live code > tests/CI > schema/migrations > config >
 > active docs > archive.
-> Last reviewed: 2026-11-14.
+> Last reviewed: 2026-11-18.
 
 ## Contents
 
@@ -174,7 +174,11 @@ deletion.
 
 ## Immediate Next Tasks
 
-Ordered, dependency-driven. Open `docs/DEV_CHECKLIST.md`, take the first unblocked item, open its one spec:
+Ordered, dependency-driven. Open `docs/DEV_CHECKLIST.md`, take the first unblocked item, open its one spec.
+Whole-stack evidence (2026-11-18, P0–P7 against live code, including the
+uncommitted use-case bundle): [`AUDIT_STACK_2026-11-18.md`](AUDIT_STACK_2026-11-18.md)
+— its findings F1–F3 are the correctness items below that the checklist does not
+yet carry.
 
 0. P0.9 follow-through — the decision is recorded (2026-10-07: Edge mints, Go verifies); what remains is making every login path present an Edge token to Go so the boundary can be switched on; checklist P0 block.
 1. P0.3 rollout verification — enable `CONTROL_PLANE_REQUIRE_SESSION` against a real KV namespace and prove 401/503/403 on the seven guarded routes; checklist P0 block. Harness in place: `backend/e2e/p03_session_boundary_test.go` (build tag `e2e`) is green in emulator mode (`go test -tags e2e ./e2e/ -run P03 -v`) and runs the identical proof against the live Edge namespace via `VIBE_P03_KV=real` — that live run is still pending a Workers-KV-scoped Cloudflare token in this environment.
@@ -185,6 +189,8 @@ Ordered, dependency-driven. Open `docs/DEV_CHECKLIST.md`, take the first unblock
 6. P0.8 rollout verification — defaults are live at startup (`ROOM_IDLE_TTL=30m`, `ROOM_MAX_PER_USER=10`, `ROOM_SWEEP_INTERVAL=1m`); prove on a deployed control plane that a quiet room is evicted and the 11th new session answers 429, then decide whether `GET /ws/:id` should share the cap.
 7. P1.3.5 Git commit hook — one batch commit on `gen/{genId}` inside `finalizeGeneration`, feeding the P1.3.4 `GitRepo` (`backend/pkg/engine/gitrepo.go`) — `docs/DEV_SPEC_P1A.md` P1.3.5.
 8. P1.11 maxTokens via `model.WithMaxTokens` + `adk.WithChatModelOptions` — checklist P1.11, background in `docs/MULTI_AGENT.md` gap 6.
+9. Use-case integration defects (audit F1/F2, 2026-11-18) — **parked on `feat/spot-trader-use-case` (`c59cac8`)**: `main` no longer imports `backend/pkg/trader`, so the unconditional append in `planExecuteTools` (`backend/pkg/engine/plan_execute.go:143`) is off the baseline (F1) and the unbound `trader.WithTradeContext` identity (F2) has no call site left to miss. Re-open both behind the decision-1 activation model; until then the bundle is a reference, not a product surface.
+10. Migrations 0012–0015 — one remote apply pass in order, then record the applied set here; audit finding F4. (`0016`/`0017` are the trade-memory tables and travel with `feat/spot-trader-use-case`, so this branch's journal ends at `0015_skinny_tomorrow_man`.)
 
 <a id="dependency-graph"></a>
 
