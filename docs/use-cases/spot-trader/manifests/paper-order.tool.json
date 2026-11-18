@@ -1,0 +1,107 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Tool",
+  "metadata": {
+    "description": "Paper order execution with clientOrderId idempotency. No real funds.",
+    "license": "Apache-2.0",
+    "name": "paper-order",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "adapter": {
+      "type": "function"
+    },
+    "approvals": [
+      "external-write",
+      "human-review"
+    ],
+    "description": "Place a paper spot order; requires a risk approval token and is replay-safe via clientOrderId",
+    "idempotency": {
+      "key": "order.clientOrderId",
+      "ttlSeconds": 86400
+    },
+    "inputSchema": {
+      "properties": {
+        "order": {
+          "properties": {
+            "clientOrderId": {
+              "minLength": 8,
+              "type": "string"
+            },
+            "quantity": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "side": {
+              "enum": [
+                "buy",
+                "sell"
+              ],
+              "type": "string"
+            },
+            "symbol": {
+              "pattern": "^[A-Z]{3,10}USDT$",
+              "type": "string"
+            },
+            "type": {
+              "const": "market",
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol",
+            "side",
+            "quantity",
+            "type",
+            "clientOrderId"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "order"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "averagePrice": {
+          "type": "number"
+        },
+        "orderId": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "filled",
+            "rejected"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId",
+        "status"
+      ],
+      "type": "object"
+    },
+    "permissions": [
+      "paper:trade"
+    ],
+    "rateLimits": {
+      "perTenantPerMinute": 60
+    },
+    "retry": {
+      "backoff": "none",
+      "maxAttempts": 1
+    },
+    "secrets": [],
+    "sideEffect": "external",
+    "tenant": {
+      "contextKey": "tenant_id",
+      "isolation": "required"
+    },
+    "timeoutSeconds": 30
+  }
+}

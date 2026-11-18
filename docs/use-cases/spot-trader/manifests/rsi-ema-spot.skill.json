@@ -1,0 +1,29 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Skill",
+  "metadata": {
+    "description": "RSI(14) + EMA(50/200) long-only spot rules for 1h candles. Paper-only.",
+    "license": "Apache-2.0",
+    "name": "rsi-ema-spot",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "compatibility": {
+      "agents": [
+        "agent/spot-trader@1.0.0"
+      ],
+      "models": [
+        "standard"
+      ]
+    },
+    "description": "Apply RSI(14) + EMA(50/200) entry/exit rules on closed 1h candles",
+    "instructions": "Trade spot long-only on closed 1h candles. ENTRY needs all three: close above EMA50 above EMA200, RSI(14) crossed up through 30 within the last 3 closed candles, last volume above its 20-period average. EXIT on RSI(14) >= 70, close below EMA50, or the risk-manager stop-loss. Never short, never leverage, one position per symbol, ignore intraday ticks. Stale or missing candles (>2 late) means flat with reason stale-data; never invent candles. Return per symbol: signal long|flat, confidence 0-1, reasons, invalidation.",
+    "requires": {
+      "agentApiVersion": "vibesdk/v1",
+      "capabilities": [
+        "tool/market-data@1.0.0"
+      ]
+    }
+  }
+}

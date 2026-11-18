@@ -1,0 +1,102 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Agent",
+  "metadata": {
+    "description": "Paper spot trader: RSI+EMA signals gated by the risk manager.",
+    "license": "Apache-2.0",
+    "name": "spot-trader",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "evaluation": {
+      "dataset": "eval/paper-trade-set@1.0.0",
+      "thresholds": {
+        "max-drawdown": 0.03,
+        "win-rate": 0.45
+      }
+    },
+    "inputSchema": {
+      "properties": {
+        "equity": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "symbols": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "symbols",
+        "equity"
+      ],
+      "type": "object"
+    },
+    "instructions": "You are a paper spot trader. On each closed 1h candle: fetch candles with market-data, apply the rsi-ema-spot skill, size the signal with the risk-manager skill, and only then place a paper-order carrying a fresh clientOrderId. Never trade without an approved risk-manager verdict. Never touch real funds: the paper-order tool is the only execution path. Log every decision and fill to memory so the next run resumes with full context.",
+    "knowledge": [
+      "knowledge/binance-spot-docs@1.0.0"
+    ],
+    "memory": {
+      "retentionDays": 90,
+      "scope": "agent"
+    },
+    "model": {
+      "policy": {
+        "fallback": "model-policy/cheap@1.0.0",
+        "maxTokens": 2000,
+        "temperature": 0.1
+      },
+      "ref": "model-policy/standard@1.0.0"
+    },
+    "outputSchema": {
+      "properties": {
+        "fills": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verdict": {
+          "enum": [
+            "traded",
+            "flat"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "policies": {
+      "approvals": [
+        "external-write",
+        "human-review"
+      ],
+      "resourceLimits": {
+        "maxSteps": 25,
+        "timeoutSeconds": 300
+      }
+    },
+    "role": "Execute RSI+EMA paper spot trades under risk-manager gating",
+    "skills": [
+      "skill/rsi-ema-spot@1.0.0",
+      "skill/risk-manager@1.0.0"
+    ],
+    "tools": [
+      "tool/market-data@1.0.0",
+      "tool/paper-order@1.0.0"
+    ]
+  }
+}

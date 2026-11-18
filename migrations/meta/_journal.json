@@ -113,6 +113,20 @@
       "when": 1794681273853,
       "tag": "0015_skinny_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1794957363257,
+      "tag": "0016_empty_purifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1794996624650,
+      "tag": "0017_skinny_skrulls",
+      "breakpoints": true
     }
   ]
 }

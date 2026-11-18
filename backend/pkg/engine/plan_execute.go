@@ -15,6 +15,7 @@ import (
 	"backend/pkg/agent/tools"
 	"backend/pkg/llm"
 	"backend/pkg/models"
+	"backend/pkg/trader"
 )
 
 // ---------- VFS adapter: room as a tools.VFSStore ----------
@@ -153,11 +154,19 @@ func (r *ProjectRoom) planExecuteTools() ([]tool.BaseTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []tool.BaseTool{
+	out := []tool.BaseTool{
 		&notifyWriteTool{InvokableTool: write, room: r},
 		read,
 		list,
-	}, nil
+	}
+	// Use-case tools (backend/pkg/trader — kept out of the platform core):
+	// resume + checkpoint over the room's D1/RDB. Identity (tenant/agent/run)
+	// is bound per-call by the engine via trader.WithTradeContext — the model
+	// never supplies it.
+	if tradeTools, err := trader.Tools(trader.Deps{D1: r.d1, RDB: r.rdb, Anchor: tradeAnchorOrNil(r.d1)}); err == nil {
+		out = append(out, tradeTools...)
+	}
+	return out, nil
 }
 
 // ---------- plan-execute-replan run ----------

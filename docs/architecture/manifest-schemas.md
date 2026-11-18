@@ -52,6 +52,25 @@ Schemas are documentation artifacts in this phase — they define the contract
 the registry and compiler must enforce later. No runtime code is added by
 P7.1.
 
+### Use-case bundles live elsewhere
+
+Concrete workloads are **not** added to `examples/`. A use case ships as its
+own closed bundle under `docs/use-cases/<use-case>/manifests/`, with runtime
+code in `backend/pkg/<use-case>/`, so a product use case never mixes into the
+platform's canonical examples:
+
+| Use case | Bundle | Runtime |
+|---|---|---|
+| Spot trader (paper) | `docs/use-cases/spot-trader/manifests/` | `backend/pkg/trader/` |
+
+The validator scans both locations. A bundle is a **closed reference set**: a
+manifest inside `docs/use-cases/<name>/manifests/` may only reference manifests
+in the same bundle, so a use case cannot silently depend on a platform example.
+This matches the export contract in this document: a System exports together
+with its pinned closure as one bundle, so the bundle must be self-contained —
+reuse means copying the pinned manifest into the bundle, not referencing out.
+See [`../use-cases/spot-trader/README.md`](../use-cases/spot-trader/README.md).
+
 <a id="envelope"></a>
 ## Envelope (all four kinds)
 

@@ -1,0 +1,79 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Tool",
+  "metadata": {
+    "description": "Read-only OHLCV candles for spot symbols.",
+    "license": "Apache-2.0",
+    "name": "market-data",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "adapter": {
+      "type": "http"
+    },
+    "approvals": [],
+    "description": "Fetch closed OHLCV candles for a spot symbol and interval",
+    "inputSchema": {
+      "properties": {
+        "interval": {
+          "enum": [
+            "1h",
+            "4h",
+            "1d"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 500,
+          "minimum": 50,
+          "type": "integer"
+        },
+        "symbol": {
+          "pattern": "^[A-Z]{3,10}USDT$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "interval"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "candles": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "isStale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candles",
+        "isStale"
+      ],
+      "type": "object"
+    },
+    "permissions": [
+      "market:read"
+    ],
+    "rateLimits": {
+      "perTenantPerMinute": 600
+    },
+    "retry": {
+      "backoff": "exponential",
+      "maxAttempts": 3
+    },
+    "secrets": [],
+    "sideEffect": "safe",
+    "tenant": {
+      "contextKey": "tenant_id",
+      "isolation": "required"
+    },
+    "timeoutSeconds": 15
+  }
+}

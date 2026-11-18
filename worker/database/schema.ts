@@ -1025,9 +1025,67 @@ export type NewWorkflowInstance = typeof workflowInstances.$inferInsert;
 export type WorkflowStepLog = typeof workflowStepLogs.$inferSelect;
 export type NewWorkflowStepLog = typeof workflowStepLogs.$inferInsert;
 
+/**
+ * Trade Memory tables - Hybrid cross-run memory for trader agents (P7.6 seed).
+ *
+ * Two tables, mirroring the generation lineage pattern:
+ *
+ * - `trade_journal`: append-only event log (like `generation_audits` but
+ *   tenant-scoped + agent-scoped). Every trade decision, approval, fill and
+ *   kill-switch event lands here. Never updated, never deleted except by
+ *   retention sweep (`retentionDays` from the Agent manifest).
+ * - `trade_state`: one row per (tenant, agent) — the CURRENT resumable
+ *   state (positions, equity, consecutive losses, kill-switch flag).
+ *   Upserted on every run; rebuilt from the journal if lost.
+ *
+ * Tenant isolation: `tenant_id` is a plain column, never inferred from the
+ * payload (same rule as `backend/pkg/mcp` — identity comes from the caller).
+ * Secrets NEVER land in `detail_json`/`state_json` (P7.6 rule).
+ *
+ * CF_LIMITS §8: content only as bind params, one row per event, 2 MB row cap
+ * respected (state_json must stay small — positions only, not candles).
+ */
+export const tradeJournal = sqliteTable('trade_journal', {
+    id: text('id').primaryKey(),
+    tenantId: text('tenant_id').notNull(),
+    agentName: text('agent_name').notNull(), // e.g. 'spot-trader', pinned version in detail
+    runId: text('run_id').notNull(), // generation id or cron invocation id
+    event: text('event').notNull(), // signal | approval | fill | kill-switch | resume | close
+    detailJson: text('detail_json', { mode: 'json' }),
+    // Hash chain (tamper-evidence, not just tamper-discouragement).
+    // `row_hash = sha256(prev_hash || id || tenant | agent | run | event | detail)`
+    // so changing ANY field of ANY row breaks every later row. `prev_hash` is
+    // '' for the first row of a (tenant, agent) chain. Verification lives in
+    // `backend/pkg/trader/chain.go`; the chain is periodically anchored to the
+    // internal Git repo so even a full-table rewrite cannot reproduce it.
+    prevHash: text('prev_hash').notNull().default(''),
+    rowHash: text('row_hash').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    tenantAgentIdx: index('trade_journal_tenant_agent_idx').on(table.tenantId, table.agentName, table.createdAt),
+    runIdx: index('trade_journal_run_idx').on(table.runId),
+    eventIdx: index('trade_journal_event_idx').on(table.event),
+}));
+
+export const tradeState = sqliteTable('trade_state', {
+    tenantId: text('tenant_id').notNull(),
+    agentName: text('agent_name').notNull(),
+    stateJson: text('state_json', { mode: 'json' }).notNull(), // positions, equity, losses, kill-switch
+    updatedRunId: text('updated_run_id').notNull(), // last run that wrote it
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.tenantId, table.agentName], name: 'trade_state_pk' }),
+}));
+
 export type Generation = typeof generations.$inferSelect;
 export type NewGeneration = typeof generations.$inferInsert;
 export type GenerationFile = typeof generationFiles.$inferSelect;
 export type NewGenerationFile = typeof generationFiles.$inferInsert;
 export type GenerationAudit = typeof generationAudits.$inferSelect;
 export type NewGenerationAudit = typeof generationAudits.$inferInsert;
+export type TradeJournal = typeof tradeJournal.$inferSelect;
+export type NewTradeJournal = typeof tradeJournal.$inferInsert;
+
+export type TradeState = typeof tradeState.$inferSelect;
+export type NewTradeState = typeof tradeState.$inferInsert;
+

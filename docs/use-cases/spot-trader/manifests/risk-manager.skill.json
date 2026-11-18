@@ -1,0 +1,29 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Skill",
+  "metadata": {
+    "description": "Position sizing, stops, portfolio limits and kill-switch. Paper-only.",
+    "license": "Apache-2.0",
+    "name": "risk-manager",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "compatibility": {
+      "agents": [
+        "agent/spot-trader@1.0.0"
+      ],
+      "models": [
+        "standard"
+      ]
+    },
+    "description": "Size every entry, enforce stops, limits and the daily kill-switch",
+    "instructions": "Gate every entry: risk at most 1% of equity per trade, size = riskAmount / (entry - stopLoss), stop = max(2x ATR(14), 3% below entry), take-profit minimum 2R or no trade. Portfolio: max 3 concurrent positions, max 60% invested, one per symbol. Kill-switch halts all new entries on daily drawdown <= -3% or 3 consecutive losses; resume needs human-review, never self-resume. Every order needs a unique clientOrderId, never reused. Paper mode only: live needs skill >= 2.0.0 with vault: secrets and the payment approval. Return: approved boolean, size, stopLoss, takeProfit, reasons; a rejection must name the blocker.",
+    "requires": {
+      "agentApiVersion": "vibesdk/v1",
+      "capabilities": [
+        "tool/paper-order@1.0.0"
+      ]
+    }
+  }
+}

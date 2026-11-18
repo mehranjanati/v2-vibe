@@ -1,0 +1,45 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "System",
+  "metadata": {
+    "description": "Paper spot trader on 1h candles: single agent, risk-gated, human-approved.",
+    "license": "Apache-2.0",
+    "name": "paper-spot-trader",
+    "publisher": "vibesdk",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "agents": {
+      "trader": {
+        "ref": "agent/spot-trader@1.0.0"
+      }
+    },
+    "approvals": [
+      {
+        "approver": "role:trader-owner",
+        "on": "external-write"
+      }
+    ],
+    "deployment": {
+      "environment": "staging"
+    },
+    "evaluation": {
+      "dataset": "eval/paper-trade-set@1.0.0",
+      "thresholds": {
+        "max-drawdown": 0.03,
+        "win-rate": 0.45
+      }
+    },
+    "outcome": "Run RSI+EMA paper spot trades, risk-gated, without touching real funds",
+    "routing": {
+      "onError": "escalate-human",
+      "parallel": false
+    },
+    "topology": [
+      {
+        "on": "ingress.candle-close",
+        "run": "trader"
+      }
+    ]
+  }
+}
