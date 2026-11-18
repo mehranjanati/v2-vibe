@@ -29,7 +29,9 @@
 > [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
 > In scope while frozen: the P0 rollout (the M0 launch gate), the M0 product
 > surface, and finishing slices that are already open. Opening a new capability
-> is out of scope **by decision, not by preference**.
+> is out of scope **by decision, not by preference**. The measured boundary is
+> the **M0 vertical slice v0** (D9, [`02-mvp.md`](02-mvp.md)): its seven
+> acceptance criteria decide "in or out" — not taste.
 
 ## Historical ID → Target Phase Map (normative)
 

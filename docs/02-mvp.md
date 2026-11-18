@@ -76,14 +76,15 @@ The MVP delivers one usable Agent Builder for the initial segments.
 8. Failure behavior: a failed/missing capability degrades to an explicit,
    logged error with human escalation — never silent loss.
 
-## M0 vertical slice v0 — the smallest increment that proves the loop (PROPOSED)
+## M0 vertical slice v0 — the smallest increment that proves the loop (ADOPTED as D9)
 
-> **Status:** `proposed` — product scope, not engineering. Nothing here is
-> approved, nothing here is built. It exists because M0 currently has strategy
-> and substrate but **no executable product definition**: without one, "in
-> scope while frozen" (D8 in
-> [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md))
-> has no boundary to measure work against. Open question: **O13**.
+> **Status:** `adopted` by **D9** (2026-11-18) — scope fixed, **not built**.
+> Implementation sequences after the P0 rollout, because acceptance criterion 2
+> (governance) cannot be met with the boundary off. Decision record and the four
+> settled sub-decisions:
+> [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md).
+> The slice's acceptance criteria are also the measured boundary of D8's
+> "in scope while frozen" clause.
 
 ### The slice in one sentence
 
@@ -150,14 +151,14 @@ authoring story, and does not touch M1 composition. A green slice means "the
 platform loop works for a real user under real governance" — no more, and no
 claims beyond it.
 
-### Decisions this proposal needs from the product owner
+### Decisions (settled 2026-11-18, D9)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| 1 | Is "the agent = the existing generator agent" acceptable for v0, or must the slice include user-defined agents? | Accept the generator agent for v0; authoring is the next slice. |
-| 2 | Does the slice require the boundary ON (i.e. it is blocked by the P0 rollout), or may it run boundary-off as a demo? | Require it ON: criteria 2 is the gate the slice exists to close; boundary-off would re-create the "advisory security" state the audit flagged (F3). |
-| 3 | Is the History tab the "visual inspection" of M0's exit criteria for now? | Yes for v0, with the caveat that M0 is not complete until editing exists. |
-| 4 | Who is the demo tenant/user pair for the 403 proof? | A second throwaway account on staging, never production. |
+| 1 | Is "the agent = the existing generator agent" acceptable for v0? | **Yes** — the generator is the v0 agent; user-defined agent authoring is the next slice. |
+| 2 | Does the slice require the boundary ON? | **Yes, mandatory.** A boundary-off demo would re-create the "advisory security" state the audit flagged (F3); the slice is therefore blocked on the P0 rollout. |
+| 3 | Is the History tab the "visual inspection" of M0's exit criteria for now? | **For v0 only.** M0 stays incomplete until visual *editing* exists — the tab is inspection, not editing. |
+| 4 | Who is the demo tenant/user pair for the 403 proof? | A **throwaway account on staging**, never production. |
 
 ### Cost and sequencing
 

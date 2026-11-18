@@ -65,9 +65,9 @@ boundary).
 
 Proposed first executable increment: the **vertical slice v0** in
 [`02-mvp.md`](02-mvp.md) — NL → single agent → governed run → lineage + Git
-revision → History/diff/rollback, boundary ON. It is `proposed`, not approved
-(O13 in [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)),
-and it sequences after the P0 rollout.
+revision → History/diff/rollback, boundary ON. **Adopted as D9** (2026-11-18,
+scope only); implementation sequences after the P0 rollout because its
+governance criterion cannot be met boundary-off.
 
 ### M1 — Multi-Agent Builder
 
