@@ -184,7 +184,6 @@ export function HistoryPanel({ chatId }: { chatId?: string }) {
 					))}
 				</div>
 
-				{/* __DETAIL__ */}
 				<div className="min-h-0 overflow-y-auto p-3">
 					{!selectedId ? (
 						<div className="grid h-full place-items-center gap-2 text-center text-sm text-text-50/70">
@@ -270,7 +269,6 @@ export function HistoryPanel({ chatId }: { chatId?: string }) {
 				</div>
 			</div>
 
-			{/* __DIALOG__ */}
 			<Dialog.Root
 				open={pendingRollback !== null}
 				onOpenChange={(open: boolean) => {
