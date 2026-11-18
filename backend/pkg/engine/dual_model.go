@@ -173,8 +173,13 @@ func (r *ProjectRoom) runDualModelPipeline(ctx context.Context, prompt string) (
 	if designBrief != nil {
 		stepCtx.Design = designBrief.CoderBrief()
 	}
-	if r.canRunTeam(r.teamPrompts) {
-		log.Printf("[room:%s] executing plan via multi-agent team", r.chatID)
+	// P1.8 difficulty gate: a small, independent plan runs on the single-coder
+	// loop; a larger or coupled plan gets the team. The decision is written to
+	// generation_audits so the routing stays answerable after the run.
+	gate := r.teamGate(plan)
+	writeGateDecisionAudit(r.d1, genID, gate)
+	if gate.UseTeam {
+		log.Printf("[room:%s] executing plan via multi-agent team (%s)", r.chatID, gate.Reason)
 		verdict, terr := r.runTeam(ctx, prompt, display, r.teamPrompts)
 		if terr != nil {
 			return fmt.Errorf("dual-model: team: %w", terr)

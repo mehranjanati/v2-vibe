@@ -170,10 +170,10 @@ func TestGenerationCommitAuthor(t *testing.T) {
 	}
 }
 
-// waitForCommitAudit blocks until the detached audit writer has issued a
-// generation_audits row with the given action (it runs on its own goroutine by
-// design, so the test polls instead of assuming an order).
-func waitForCommitAudit(t *testing.T, fake *fakeGitD1, action string) {
+// waitForGenerationAudit blocks until the detached audit writer has issued a
+// generation_audits row with the given action (writers run on their own
+// goroutine by design, so the test polls instead of assuming an order).
+func waitForGenerationAudit(t *testing.T, fake *fakeGitD1, action string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -230,7 +230,7 @@ func TestPreCommitGateBlocksHardcodedCredential(t *testing.T) {
 	}
 
 	// The block is auditable, and the consumed id prevents a retry into a commit.
-	waitForCommitAudit(t, fake, "commit_blocked")
+	waitForGenerationAudit(t, fake, "commit_blocked")
 	if sha, err := room.commitGeneration(); sha != "" || err != nil {
 		t.Fatalf("retry after a block = (%q, %v), want (\"\", nil)", sha, err)
 	}
@@ -294,7 +294,7 @@ func TestPreCommitGateSkipsOversizeFile(t *testing.T) {
 		}
 	}
 	fake.mu.Unlock()
-	waitForCommitAudit(t, fake, "commit_file_skipped")
+	waitForGenerationAudit(t, fake, "commit_file_skipped")
 
 	repo, oerr := OpenGitRepo(ctx, room.d1, room.chatID)
 	if oerr != nil {
