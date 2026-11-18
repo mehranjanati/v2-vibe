@@ -353,6 +353,7 @@ function ChatSession() {
 		| 'presentation'
 		| 'database'
 		| 'workflow'
+		| 'history'
 	>('editor');
 
 	// Terminal state
@@ -678,7 +679,8 @@ function ChatSession() {
 				| 'blueprint'
 				| 'presentation'
 				| 'database'
-				| 'workflow',
+				| 'workflow'
+				| 'history',
 		) => {
 			setView(mode);
 		},

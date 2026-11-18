@@ -219,7 +219,7 @@ The defect is not design, it is **integration** (F1 + F2) and **activation**
 | P1.3.4 internal Git | `verified` | `backend/pkg/engine/gitrepo.go` + tests | None (emulated D1 only) |
 | P1.3.5 commit hook | `planned` | absent in `generation.go` | Whole task (F7) |
 | P1.3.6 secret scan | `planned` | absent | Whole task |
-| P1.4 / P1.5 History | `planned` | absent | Depends on P1.3.5 |
+| P1.4 / P1.5 History | `implemented_unverified` | API + History tab shipped 2026-11-18 | GitHub mirror (P1.4.5–P1.4.7) and the mirror banner open; no browser E2E |
 | P1.6–P1.10 | `planned` | absent | — |
 | P1.11 maxTokens | `planned` | `backend/pkg/engine/room.go:562` drops the budget | Whole task (confirmed) |
 | P2.1–P2.8 | `planned` | absent | — |
@@ -250,8 +250,8 @@ The defect is not design, it is **integration** (F1 + F2) and **activation**
 5. **P1.11 + P1.8** — budget plumbing and the difficulty gate; both feed the
    router. *(Both landed 2026-11-18, `implemented_unverified`.)*
 6. **F5 — one gateway wiring slice** on the live generation path.
-7. **P1.4 / P1.5** — History API and UI, now that commits exist. *(API landed
-   2026-11-18; UI still open.)*
+7. **P1.4 / P1.5** — History API and UI, now that commits exist. *(API and UI
+   landed 2026-11-18; the GitHub mirror is the remaining P1.4 work.)*
 8. Then P2 catalog, P7.5 / P7.7, and the P5 reference-system work.
 
 <a id="decisions-needed"></a>

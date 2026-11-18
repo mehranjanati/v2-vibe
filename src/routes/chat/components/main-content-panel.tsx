@@ -17,6 +17,7 @@ import { PreviewHeaderActions } from './preview-header-actions';
 import { EditorHeaderActions } from './editor-header-actions';
 import { Copy } from './copy';
 import { DatabaseViewer } from './database-viewer';
+import { HistoryPanel } from './history-panel';
 import { featureRegistry } from '@/features';
 import type { FileType, BlueprintType, BehaviorType, ModelConfigsInfo, TemplateDetails, ProjectType } from '@/api-types';
 import type { ContentDetectionResult } from '../utils/content-detector';
@@ -25,8 +26,8 @@ import type { Edit } from '../hooks/use-chat';
 
 interface MainContentPanelProps {
 	// View state
-	view: 'editor' | 'preview' | 'docs' | 'blueprint' | 'terminal' | 'presentation' | 'database' | 'workflow';
-	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow') => void;
+	view: 'editor' | 'preview' | 'docs' | 'blueprint' | 'terminal' | 'presentation' | 'database' | 'workflow' | 'history';
+	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history') => void;
 
 	// Content detection
 	hasDocumentation: boolean;
@@ -139,7 +140,7 @@ export function MainContentPanel(props: MainContentPanelProps) {
 	}, [vfsFiles, allFiles]);
 
 	const commonHeaderProps = {
-		view: view as 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow',
+		view: view as 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history',
 		onViewChange,
 		previewAvailable,
 		showTooltip,
@@ -148,6 +149,9 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		projectType,
 		databaseAvailable,
 		workflowAvailable,
+		// History exists as soon as the chat has an id: the tab's own empty
+		// state covers "no runs yet" better than a hidden button.
+		historyAvailable: Boolean(agentId),
 	};
 
 	const renderViewWithHeader = (
@@ -455,6 +459,14 @@ export function MainContentPanel(props: MainContentPanelProps) {
 		);
 	};
 
+	const renderHistoryView = () => {
+		if (!agentId) return null;
+		return renderViewWithHeader(
+			<span className="text-sm font-mono text-text-50/70">History</span>,
+			<HistoryPanel chatId={agentId} />,
+		);
+	};
+
 	const renderWorkflowView = () => {
 		if (!workflowAvailable) return null;
 		// Same merge logic as the preview: live VFS stream + restored files.
@@ -485,6 +497,8 @@ export function MainContentPanel(props: MainContentPanelProps) {
 				return renderDatabaseView();
 			case 'workflow':
 				return renderWorkflowView();
+			case 'history':
+				return renderHistoryView();
 			default:
 				return null;
 		}

@@ -4,8 +4,8 @@ import { HEADER_STYLES } from './view-header-styles';
 import type { ProjectType } from '@/api-types';
 
 interface ViewHeaderProps {
-	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow';
-	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow') => void;
+	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history';
+	onViewChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history') => void;
 	previewAvailable: boolean;
 	showTooltip: boolean;
 	hasDocumentation: boolean;
@@ -15,6 +15,7 @@ interface ViewHeaderProps {
 	projectType?: ProjectType;
 	databaseAvailable?: boolean;
 	workflowAvailable?: boolean;
+	historyAvailable?: boolean;
 }
 
 export function ViewHeader({
@@ -29,6 +30,7 @@ export function ViewHeader({
 	projectType,
 	databaseAvailable,
 	workflowAvailable,
+	historyAvailable,
 }: ViewHeaderProps) {
 	return (
 		<div className={`grid grid-cols-3 ${HEADER_STYLES.padding} ${HEADER_STYLES.container}`}>
@@ -43,6 +45,7 @@ export function ViewHeader({
 					projectType={projectType}
 					databaseAvailable={databaseAvailable}
 					workflowAvailable={workflowAvailable}
+					historyAvailable={historyAvailable}
 				/>
 			</div>
 			<div className="flex min-w-0 items-center justify-center">

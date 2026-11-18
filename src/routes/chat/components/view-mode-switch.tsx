@@ -1,6 +1,6 @@
 import { cn } from '@cloudflare/kumo';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Eye, Code, FileText, Presentation, Database, GitBranch } from 'lucide-react';
+import { Eye, Code, FileText, Presentation, Database, GitBranch, History } from 'lucide-react';
 import { featureRegistry } from '@/features';
 import type { ProjectType } from '@/api-types';
 
@@ -19,9 +19,10 @@ export function ViewModeSwitch({
 	projectType,
 	databaseAvailable = false,
 	workflowAvailable = false,
+	historyAvailable = false,
 }: {
-	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow'
-	onChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow') => void;
+	view: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history'
+	onChange: (mode: 'preview' | 'editor' | 'docs' | 'blueprint' | 'presentation' | 'database' | 'workflow' | 'history') => void;
 	previewAvailable: boolean;
 	showTooltip: boolean;
 	hasDocumentation: boolean;
@@ -31,6 +32,8 @@ export function ViewModeSwitch({
 	databaseAvailable?: boolean;
 	/** When true, the Backend Logic (workflow DAG) tab is shown. */
 	workflowAvailable?: boolean;
+	/** When true, the History (generation revisions) tab is shown. */
+	historyAvailable?: boolean;
 }) {
 	// Get feature definition to determine icon and label
 	const featureDefinition = projectType ? featureRegistry.getDefinition(projectType) : null;
@@ -105,6 +108,23 @@ export function ViewModeSwitch({
 					title="Backend Logic"
 				>
 					<GitBranch className="size-4" />
+				</button>
+			)}
+
+			{/* History button - generation revisions (P1.5). Shown whenever the
+			    chat has an id, because history starts with the first run. */}
+			{historyAvailable && (
+				<button
+					onClick={() => onChange('history')}
+					className={cn(
+						'p-1 flex items-center justify-between h-full rounded-md transition-colors',
+						view === 'history'
+							? 'bg-bg-4 text-text-primary'
+							: 'text-text-50/70 hover:text-text-primary hover:bg-brand',
+					)}
+					title="History"
+				>
+					<History className="size-4" />
 				</button>
 			)}
 

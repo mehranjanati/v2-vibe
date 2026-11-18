@@ -106,4 +106,21 @@ export const queryKeys = {
 		files: (projectId: string) =>
 			[...queryKeys.projects.filesAll(), projectId] as const,
 	},
+	/**
+	 * P1.4/P1.5 generation history (control plane). `generations.all` is the
+	 * broad key: a rollback invalidates history AND every cached diff at once.
+	 */
+	generations: {
+		all: ['generations'] as const,
+		historyAll: () => [...queryKeys.generations.all, 'history'] as const,
+		history: (chatId?: string | null) =>
+			[...queryKeys.generations.historyAll(), chatId ?? 'unknown'] as const,
+		diffAll: (chatId?: string | null) =>
+			[...queryKeys.generations.all, 'diff', chatId ?? 'unknown'] as const,
+		diff: (chatId?: string | null, generationId?: string | null) =>
+			[
+				...queryKeys.generations.diffAll(chatId),
+				generationId ?? 'unknown',
+			] as const,
+	},
 };
