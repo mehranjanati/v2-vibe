@@ -50,6 +50,13 @@ type roomVFSStore struct {
 }
 
 func (s roomVFSStore) VFSWrite(_ context.Context, _, path, content string) error {
+	// P1.9: a write must own its path. A path claimed by another holder is
+	// refused so two agents in one team cannot clobber each other; a free path
+	// is claimed for this writer, so the ownership signal exists even when the
+	// model never calls vfs_claim itself.
+	if err := s.r.claimsOrNew().claimWritePath(path, s.author); err != nil {
+		return err
+	}
 	s.r.UpsertFile(path, content, s.author)
 	return nil
 }
@@ -65,6 +72,9 @@ func (s roomVFSStore) VFSRead(_ context.Context, _, path string) (string, bool, 
 }
 
 func (s roomVFSStore) VFSDelete(_ context.Context, _, path string) error {
+	if err := s.r.claimsOrNew().claimWritePath(path, s.author); err != nil {
+		return err
+	}
 	s.r.DeleteFile(path, s.author)
 	return nil
 }

@@ -50,11 +50,11 @@ func TestTeamToolsLeastPrivilege(t *testing.T) {
 	if err != nil {
 		t.Fatalf("teamTools: %v", err)
 	}
-	if len(coderTools) != 3 {
-		t.Fatalf("coder needs write+read+list, got %d", len(coderTools))
+	if len(coderTools) != 6 {
+		t.Fatalf("coder needs write+read+list plus claim/release/status, got %d", len(coderTools))
 	}
-	if len(reviewerTools) != 2 {
-		t.Fatalf("reviewer needs read+list only, got %d", len(reviewerTools))
+	if len(reviewerTools) != 3 {
+		t.Fatalf("reviewer needs read+list+claim-status only, got %d", len(reviewerTools))
 	}
 	names := map[string]bool{}
 	for _, tl := range reviewerTools {
@@ -67,8 +67,25 @@ func TestTeamToolsLeastPrivilege(t *testing.T) {
 	if names["vfs_write"] {
 		t.Fatal("reviewer must never receive vfs_write")
 	}
-	if !names["vfs_read"] || !names["vfs_list"] {
-		t.Fatalf("reviewer missing read/list: %v", names)
+	if names["vfs_claim"] || names["vfs_release"] {
+		t.Fatalf("reviewer must never take or drop a claim: %v", names)
+	}
+	if !names["vfs_read"] || !names["vfs_list"] || !names["vfs_status"] {
+		t.Fatalf("reviewer missing read/list/status: %v", names)
+	}
+
+	coderNames := map[string]bool{}
+	for _, tl := range coderTools {
+		info, err := tl.Info(nil)
+		if err != nil {
+			t.Fatalf("coder tool info: %v", err)
+		}
+		coderNames[info.Name] = true
+	}
+	for _, want := range []string{"vfs_write", "vfs_claim", "vfs_release", "vfs_status"} {
+		if !coderNames[want] {
+			t.Errorf("coder is missing %s: %v", want, coderNames)
+		}
 	}
 }
 

@@ -83,6 +83,13 @@ func (r *ProjectRoom) teamTools() (coderTools, reviewerTools []tool.BaseTool, er
 		read,
 		list,
 	}
+	// P1.9: the writer gets the ownership tools (claim / release / status), so a
+	// delegated coder can take a path before writing it and give it back after.
+	claimTools, err := r.claimTools()
+	if err != nil {
+		return nil, nil, err
+	}
+	coderTools = append(coderTools, claimTools...)
 	rRead, err := tools.NewVFSReadTool(store)
 	if err != nil {
 		return nil, nil, err
@@ -91,7 +98,13 @@ func (r *ProjectRoom) teamTools() (coderTools, reviewerTools []tool.BaseTool, er
 	if err != nil {
 		return nil, nil, err
 	}
-	return coderTools, []tool.BaseTool{rRead, rList}, nil
+	// The reviewer may SEE ownership (who holds what) but never take or drop a
+	// claim: least privilege, same rule as its read-only file tools.
+	claimStatus, err := r.claimStatusTool()
+	if err != nil {
+		return nil, nil, err
+	}
+	return coderTools, []tool.BaseTool{rRead, rList, claimStatus}, nil
 }
 
 // runTeam executes the approved plan through the DeepAgent team: a

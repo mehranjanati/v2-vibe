@@ -152,6 +152,10 @@ type ProjectRoom struct {
 	// changed concurrently. FinishGenerationRecord stores it as
 	// generations.fork (P1.3.3).
 	genForked bool
+	// claims is the P1.9 path-ownership signal: which holder is writing which
+	// path right now. In-memory and per-room by design (a claim describes a live
+	// run, not durable state); finalizeGeneration releases all of them.
+	claims *claimStore
 
 	// Actor channels.
 	register   chan *Client
@@ -243,6 +247,7 @@ func NewProjectRoom(chatID string, rdb *redis.Client, llmClient *llm.Client, eng
 		clients:    make(map[*Client]bool),
 		vfs:        make(map[string]*models.FileEntry),
 		done:       make(chan struct{}),
+		claims:     newClaimStore(),
 	}
 	room.Touch()
 	return room
@@ -1209,6 +1214,12 @@ func (r *ProjectRoom) runGeneration(prompt string) {
 // (e.g. a model that ignored the fence contract), it falls back to parsing
 // the full output once.
 func (r *ProjectRoom) finalizeGeneration(output string, streamedFiles int) {
+	// P1.9: the run ends here, so no path stays claimed. A defer (not a call at
+	// the end) covers the early return below: a run that produced no parseable
+	// files still ends the run, and leaving claims behind would block the next
+	// generation for up to the TTL.
+	defer r.claimsOrNew().releaseAll()
+
 	if streamedFiles == 0 {
 		blocks := llm.ParseFileBlocks(output)
 		if len(blocks) == 0 {
