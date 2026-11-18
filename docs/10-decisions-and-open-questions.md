@@ -7,13 +7,13 @@
 > Register of
 > technology candidates: [`04-system-architecture.md`](04-system-architecture.md).
 >
-> **Status:** `adopted` — decisions D1–D7 are strategy direction adopted
-> 2026-10-06 through 2026-11-15 (documentation only; no implementation).
+> **Status:** `adopted` — decisions D1–D8 are strategy direction adopted
+> 2026-10-06 through 2026-11-18 (documentation only; no implementation).
 > D1–D6 history is preserved verbatim below; D7 records the Agentic Platform
-> shift. Open questions O1–O8
+> shift and D8 the M1 scope freeze. Open questions O1–O8
 > are explicitly **unresolved — none may be treated as finalized**, plus new
 > platform opens below. Last
-> reviewed: 2026-11-15.
+> reviewed: 2026-11-18.
 
 ## Adopted decisions (strategy direction)
 
@@ -26,6 +26,7 @@
 | D5 | **Vendor replaceability; no orchestration vendor owns business data.** | Dify (if adopted) orchestrates only; the data layer stays platform-owned. |
 | D6 | **AaaS-only; legacy SaaS ends; Web3 is next plan (M5–M6).** No new seat-based SaaS features; every capability ships as a versioned manifest; Web3 enters only via the marketplace trust and settlement gates. Strategy: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md); ADR: [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md). | Kills margin inversion and commoditization; preserves platform focus; defers wallet, gas, and token risk until proven demand. |
 | D7 | **Agentic Platform as primary product identity (2026-11-15).** VibeSDK is an Open Agentic Platform: Natural Language First, Visual Builder for developers, one Canonical System IR across NL/Visual/SDK/CLI/API, Open Core + Managed Cloud direction. Supersedes the Business OS / AI Sales wedge positioning as product identity only (D1 history preserved; AI Sales retained as optional reference template). Retires the M0-M5 wedge roadmap in favor of the M0-M6 platform roadmap; P0-P6 engineering IDs unchanged. Canonical strategy: [`12-agentic-platform-strategy.md`](12-agentic-platform-strategy.md). | The wedge proved too narrow as identity; the platform (builder / teams / runtime / ecosystem / ops / marketplace / factory) is the durable product. One IR prevents two divergent agent models. |
+| D8 | **M1 scope freeze until O1 evidence (2026-11-18).** While O1 is unresolved, **no new** team / routing / coordination capability is admitted: multi-agent composition beyond the existing primitive, routing breadth beyond the already-wired coder slice, MCP transport, and the P2 capability catalog all stay closed. In scope while frozen: the P0 rollout (the M0 launch gate), the M0 product surface, and finishing slices that are already open. | D7 makes the M0 Agent Builder the only sellable increment, and [`02-mvp.md`](02-mvp.md) lists multi-agent teams and delegation as must-NOT-build for M0; O1 requires ICP/problem/WTP evidence before any M1 scope lock. Without this freeze the "one narrow primitive" reading of M0 silently turns into M1 product work on an unvalidated ICP — the parallel build-out failure [`03-product-roadmap.md`](03-product-roadmap.md) forbids. Lifting it is itself a decision and needs O1 evidence recorded here. Scope of the freeze in the backlog: [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md) header rule. |
 
 ## Open questions (unresolved — do not claim as decided)
 

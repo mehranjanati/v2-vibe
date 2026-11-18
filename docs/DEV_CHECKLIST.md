@@ -20,6 +20,16 @@
 > `verified` | `blocked` | `obsolete`. Tick rule: only when the task's
 > tests/build are green (rule 1). Never mark planned work implemented because
 > the architecture "could support it".
+>
+> **M1 scope freeze (D8, 2026-11-18):** until O1 (ICP / problem / WTP evidence)
+> is answered, **no new** team, routing or coordination capability is admitted —
+> no multi-agent composition beyond the existing primitive, no routing breadth
+> beyond the wired coder slice, no MCP transport, no P2 capability catalog (see
+> D8 in
+> [`10-decisions-and-open-questions.md`](10-decisions-and-open-questions.md)).
+> In scope while frozen: the P0 rollout (the M0 launch gate), the M0 product
+> surface, and finishing slices that are already open. Opening a new capability
+> is out of scope **by decision, not by preference**.
 
 ## Historical ID → Target Phase Map (normative)
 
@@ -278,7 +288,7 @@ construction; P1.7 gates the phase.
   - [x] P1.11.3 — ✅ `backend/pkg/agent/budget_test.go`: a recording `ChatModel` proves the ADK delivers `12288` and the doubled `24576` to the model across two calls, and that plain `RunStepWith` still sends no budget; plus the option-shape case (`0`/`-1` → no run options). `go vet ./... && go test ./...` green. NOT verified end-to-end: no live provider call in the tests, and `verified` needs a deployed run where a chat/summarizer turn actually truncates.
   - Note: the team path is unaffected (each role's budget is baked into its own model via `Engine.NewRoleModel`). Details: `docs/MULTI_AGENT.md` → Known gaps #6.
 
-## P2 — Agentic Compiler and Composition (target)
+## P2 — Agentic Compiler and Composition (target) — ⛔ CLOSED BY D8 until O1 evidence (no new capability enters this phase)
 
 Purpose: turn a user outcome into a validated executable agent system —
 outcome parsing, capability discovery, agent selection, model routing, tool
@@ -486,7 +496,7 @@ owners are the target phases below.
 - **Verification:** `bun run docs:check` green (`system-ir: OK (4/4 cases [agents, agents, agents, workflow], 6 negative probes rejected, canonical round-trip)`); the negative probes cover runtime `status`, a `telemetry` block, an unpinned `@latest` ref, an unknown delegation target, both shapes at once and a dangling workflow edge — all rejected.
 - **Remaining for `verified`:** the compiler must load the IR and enforce it (capability-closure resolution, cycle detection, policy validation). P7.3 grants are runtime state and deliberately not IR fields, so `system-ir` still has no runtime consumer.
 
-### P7.3 — MCP trust slice — STATUS: `implemented_unverified` (trust boundary + 12 tests landed 2026-11-16; no wire transport, no route caller) → target P0 (+ P2) for M0
+### P7.3 — MCP trust slice — STATUS: `implemented_unverified` (trust boundary + 12 tests landed 2026-11-16; no wire transport, no route caller) → target P0 (+ P2) for M0. ⛔ MCP **transport** stays closed by D8 until O1 evidence — the trust boundary may be finished, the wire may not be opened.
 - **id:** P7.3 · **phase:** P0 · **title:** MCP client adapter behind the permission boundary · **status:** `implemented_unverified`.
 - **Goal:** governed MCP bridge: server registration, permission mapping, auth/secret handling (vault refs), lifecycle, timeouts, per-call audit, tenant isolation, trust policy; every MCP-exposed tool executes only through a versioned Tool Manifest.
 - **Why:** MCP is a core product priority (strategy); untrusted-external-boundary rule is launch-blocking (`docs/07-multitenancy-security.md`).
@@ -498,7 +508,7 @@ owners are the target phases below.
 - **Verification:** `cd backend && go vet ./... && go test ./...` green; `go test ./pkg/mcp/` runs 12 tests covering both acceptance criteria (grantless discovery authorizes nothing; granted calls audit tenant/user/agent + approval ref + idempotency key) plus revocation, expiry, policy drift, cross-tenant invisibility, idempotent replay, transport failure and unsafe-shape rejection.
 - **Remaining for `verified`:** a real stdio/SSE transport round-trip against one live MCP server and an authenticated route that calls the gate; persistence of registry/policy/grants with tenant isolation (currently in-memory).
 
-### P7.4 — Model gateway — STATUS: `implemented_unverified` (gateway package + 12 tests landed 2026-11-16; coder role wired to the router 2026-11-18, no streaming) → target P2 for M1–M2
+### P7.4 — Model gateway — STATUS: `implemented_unverified` (gateway package + 12 tests landed 2026-11-16; coder role wired to the router 2026-11-18, no streaming) → target P2 for M1–M2. ⛔ routing **breadth** is frozen by D8: the coder slice is the ceiling until O1 evidence (no reviewer/coordinator routing, no per-app policy surface).
 - **id:** P7.4 · **phase:** P2 · **title:** Provider/model registry + routing/fallback/budgets · **status:** `implemented_unverified`.
 - **Goal:** gateway serving hosted + open models behind one contract: registry, OpenAI-compatible adapter (+ provider adapters), per-agent selection, routing, fallback, retry, rate limits, timeouts, context-window awareness, cost estimation, usage tracking, provider health, evaluation, secret refs.
 - **Why:** provider integrations must be replaceable, never hardcoded into Agent business logic (strategy).
