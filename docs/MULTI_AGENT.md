@@ -435,16 +435,7 @@ families — but NOT the team. Do not confuse them:
 5. **Verdict parsing is substring matching.** Any `APPROVE` anywhere in the
    closing text (even quoted discussion) yields `approve`
    (`backend/pkg/engine/team.go:386-398`).
-6. **`maxTokens` is silently dropped on the engine path.** `Room.streamLLM`
-   accepts a `maxTokens` argument and forwards it to the raw client, but when
-   the engine is live it calls `Engine.RunStepWith`, which takes no budget — so
-   the per-role `*_MAX_TOKENS` overrides and the truncation-retry doubling
-   (`maxTokens *= 2`) are **no-ops** whenever a tool-calling engine is
-   configured. This affects the dual-model single-coder and legacy
-   fence-streaming paths, not the team (whose budgets are baked into each role's
-   model). The fix is to pass `model.WithMaxTokens` through
-   `adk.WithChatModelOptions`; tracked as gap **G-maxTokens** in
-   `docs/DEV_CHECKLIST.md`. Not enforced by any test today.
+6. ~~**`maxTokens` is silently dropped on the engine path.**~~ **Resolved 2026-11-18 (P1.11), with the inventory corrected.** The drop was real but narrower than this note claimed: only the two `Room.streamLLM` callers that run through the engine — the transcript summarizer (512) and the conversational chat turn (1024) — lost their budget, because `Engine.RunStepWith` took none. `RunStepWithBudget` now passes `model.WithMaxTokens` through `adk.WithChatModelOptions` per call, and `RunStepWith` keeps its signature with budget 0. The code-generation paths never had the bug: plan proposal and the truncation-retry loop call `streamLLMRaw` directly (via `streamAndApplyFiles`), so `maxTokens *= 2` was honored all along — the older claim in this gap was wrong. Pinned by `backend/pkg/agent/budget_test.go` (12288 → 24576 reach the model; plain `RunStepWith` sends none).
 
 <a id="authoritative-paths"></a>
 

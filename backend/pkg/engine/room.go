@@ -562,7 +562,7 @@ func (r *ProjectRoom) streamLLM(
 			hist = append(hist, chatToSchema(m))
 		}
 		var full strings.Builder
-		_, err := r.eng.RunStepWith(ctx, system, nil, msgs[len(msgs)-1].Content, hist,
+		_, err := r.eng.RunStepWithBudget(ctx, system, nil, msgs[len(msgs)-1].Content, hist, maxTokens,
 			func(ev agent.StreamEvent) {
 				if ev.Type == "token" && !ev.IsFinal && ev.Content != "" {
 					full.WriteString(ev.Content)

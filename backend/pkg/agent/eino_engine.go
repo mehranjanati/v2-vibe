@@ -185,6 +185,18 @@ func (e *Engine) NewRoleModel(ctx context.Context, cfg RoleModelConfig) (model.C
 	return newTolerantStreamModel(chatModel), nil
 }
 
+// runStepOptions builds the ADK run options of one step. Today that is only the
+// per-call token budget (P1.11); keeping it in one place is what makes the
+// budget assertable without a live provider.
+func runStepOptions(maxTokens int) []adk.AgentRunOption {
+	if maxTokens <= 0 {
+		return nil
+	}
+	return []adk.AgentRunOption{
+		adk.WithChatModelOptions([]model.Option{model.WithMaxTokens(maxTokens)}),
+	}
+}
+
 // RunStep executes one full ReAct step for the session using the engine's
 // default instruction and tool set. See RunStepWith for details.
 func (e *Engine) RunStep(
@@ -216,6 +228,25 @@ func (e *Engine) RunStepWith(
 	history []*schema.Message,
 	emit func(StreamEvent),
 ) ([]*schema.Message, error) {
+	return e.RunStepWithBudget(ctx, system, tools, userMessage, history, 0, emit)
+}
+
+// RunStepWithBudget is RunStepWith plus a per-call token budget (P1.11).
+//
+// maxTokens <= 0 keeps the provider default, i.e. exactly the pre-P1.11
+// behaviour. A positive budget is applied as an ADK *run* option
+// (`adk.WithChatModelOptions` + `model.WithMaxTokens`) rather than at model
+// construction, because the budget belongs to the CALL: the room doubles it on
+// a truncation retry (room.go), and a role model is reused across calls.
+func (e *Engine) RunStepWithBudget(
+	ctx context.Context,
+	system string,
+	tools []tool.BaseTool,
+	userMessage string,
+	history []*schema.Message,
+	maxTokens int,
+	emit func(StreamEvent),
+) ([]*schema.Message, error) {
 	if emit == nil {
 		emit = func(StreamEvent) {}
 	}
@@ -239,7 +270,7 @@ func (e *Engine) RunStepWith(
 		Agent:           a,
 		EnableStreaming: true,
 	})
-	iter := runner.Run(ctx, []*schema.Message{userMsg})
+	iter := runner.Run(ctx, []*schema.Message{userMsg}, runStepOptions(maxTokens)...)
 
 	updated := make([]*schema.Message, 0, len(history)+8)
 	updated = append(updated, history...)
