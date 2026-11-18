@@ -249,11 +249,16 @@ account authenticates fine and then fails per-resource with 7403.
 Three separate failures were hit on this macOS 12.6 box (2026-11-18). They look
 alike and are not the same problem — check them in this order.
 
-1. **Stale link.** Every `wrangler login` run is valid for roughly two minutes;
-   restarting the command invalidates the previous URL, and a finished run
-   leaves `localhost:8976` closed. A link from an earlier attempt shows a
-   consent page and then fails at the redirect. Always use the URL of the run
-   that is currently listening (`lsof -nP -iTCP:8976 -sTCP:LISTEN`).
+1. **Stale link, or two tabs for one code.** Every `wrangler login` run is valid
+   for roughly two minutes; restarting the command invalidates the previous URL,
+   and a finished run leaves `localhost:8976` closed. A link from an earlier
+   attempt shows a consent page and then fails at the redirect. **The
+   authorization code is single-use**: opening the URL a second time (e.g.
+   `open "$URL"` while wrangler already opened the browser) makes the second tab
+   fail and can leave the flow hanging with no error at all — that exact
+   duplicate-tab sequence burned four login attempts on 2026-11-18. Use the URL
+   of the run that is currently listening
+   (`lsof -nP -iTCP:8976 -sTCP:LISTEN`), and let wrangler open the browser.
 2. **`bun --bun` cannot exchange the code.** Under Bun, wrangler fails with
    `Failed to fetch auth token: TypeError: fetch failed`
    (`internalConnectMultipleTimeout`) even though the host is reachable. Confirm
@@ -304,13 +309,21 @@ read-back is written down, not just until the command exits 0.
 ### Step 3 — turn the boundary on in staging only
 
 ```bash
-bunx wrangler kv namespace create VibecoderStore-staging   # same account as above
+# run wrangler with Node >= 22 on this box: bun's fetch cannot reach the OAuth
+# endpoint (see "If wrangler login cannot complete"), and
+# `bun run db:migrate:remote` inherits the same runtime
+"$HOME/.nvm/versions/node/v22.23.1/bin/node" node_modules/wrangler/bin/wrangler.js \
+  kv namespace create VibecoderStore-staging
 ```
 
+The staging namespace already exists (created 2026-11-18):
+`VibecoderStore-staging` = `4748f35d77274731a17fa4f32c8c3e00` — the P03 real-KV
+proof above was run against it and passed.
+
 Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
-`VIBECODER_STORE_KV_ID=<staging id>`, and re-run Step 1 against that id. Keep
-production off until staging has exercised a full session: 401 without a token,
-200 with one, 403 cross-tenant.
+`VIBECODER_STORE_KV_ID=4748f35d77274731a17fa4f32c8c3e00`, and re-run Step 1
+against that id. Keep production off until staging has exercised a full session:
+401 without a token, 200 with one, 403 cross-tenant.
 
 Why a separate namespace and not the live one: sessions are the identity
 authority, so a staging logout (or a bug in a staging test) would invalidate
