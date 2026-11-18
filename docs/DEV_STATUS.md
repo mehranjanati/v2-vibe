@@ -103,10 +103,12 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
   lifecycle/quotas — all opt-in with the P0.3 boundary), the P0.9 decision
   record, team E2E approve path (P0.2 scope).
 - Still open: the end-to-end rollout that switches the P0.3–P0.8 guards on, the GitHub
-  mirror (P1.4.5–P1.4.7), the identity pipeline (P1.10) and the P1 exit gate (P1.7),
+  mirror (P1.4.5–P1.4.7), the identity pipeline (P1.10),
   and everything in P2–P6 (specs only,
   except live 7-type validation in `worker/workflow/VibeWorkflow.ts` +
-  `backend/pkg/engine/workflowschema.go`).
+  `backend/pkg/engine/workflowschema.go`). The P1 exit gate (P1.7) itself is
+  recorded as `implemented_unverified` — its only blocked item is the push E2E,
+  which needs the mirror.
 
 <a id="verified-work"></a>
 
@@ -142,6 +144,7 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 - **P1.9 path ownership (`vfs_claim`) (2026-11-18).** A per-room `claimStore` (`backend/pkg/engine/claims.go:74`) with an injectable clock and a 10-minute TTL provides the ownership signal; `claimWritePath` (`backend/pkg/engine/claims.go:155`) makes EVERY tool write honour it, so a path held by one agent is refused with the owner's name even if the model never claims explicitly. The coder gets `vfs_claim`/`vfs_release`/`vfs_status` (`backend/pkg/engine/claims.go:207`), the reviewer only `vfs_status` (`backend/pkg/engine/team.go:88`), and `finalizeGeneration` releases all claims through a `defer` (`backend/pkg/engine/room.go:1221`) so no run leaves an orphan. Scope note: both `roomVFSStore` call sites use the `coder` author, so claim-on-write refuses a *different* holder — reachable today through the explicit tools and pinned by tests — while gap-fill writes directly through `UpsertFile` (`backend/pkg/engine/gapfill.go:242`) and is therefore never blocked by a coder claim. Verified by 6 cases in `backend/pkg/engine/claims_test.go` (deny with owner, refresh, owner-only release, TTL reclaim with a fake clock, refused gapfill write, tool JSON contract, finalize cleanup) plus `go vet ./... && go test ./...` green; NOT verified end-to-end — no real team run has two agents racing for one path.
 - **P1.5 History UI (2026-11-18).** A `History` view in the chat (`src/routes/chat/components/history-panel.tsx`, reached from the view switch and rendered through the same header/container as Docs) consumes the P1.4 API through TanStack Query hooks (`src/hooks/use-generation-history.ts`) with keys under `queryKeys.generations`: the list shows the verdict badge, short `commit_sha`/branch/timestamp/fork/parent, selecting a generation shows its recorded diff (op + short hashes + sizes + author, never contents), and rollback goes through a Kumo `Dialog` that states the truth — a NEW revert commit, no history rewrite — then invalidates `generations.all` and the project file snapshot so list and preview refresh. Verified by `bun run typecheck`, `bun run lint` (0 errors) and `bun run build` (chunk 2,685 kB vs 2,671 kB, no new dependency); NOT verified in a browser — the two-generation → diff → rollback scenario still needs a live control plane. The mirror-pending banner (P1.5.4) stays open until the GitHub mirror (P1.4.5–P1.4.7) exists.
 - **P1.6 diff-aware reviewer (2026-11-18).** The reviewer's instruction is built per run (`backend/pkg/engine/team.go:170`) from this run's diff and the app's hub files: `generationChangedFiles` (`backend/pkg/engine/team_hub.go:42`) diffs the open generation's baseline against the live VFS with the recorder's own `diffGenerationFiles` (path + op only, capped at 40, never contents), and `HubFiles` (`backend/pkg/engine/team_hub.go`) ranks the files other files depend on (≥2 inbound references or a plan mention, top 3, deterministic). The instruction ends with a RELATIVE-review rule, and `backend/skills/03_reviewer.md` now tells the reviewer that a `delete` others still reference is a `REQUEST_CHANGES` and that `HUB:` means blast-radius. Verified by 6 cases in `backend/pkg/engine/team_hub_test.go` plus `go vet ./... && go test ./...` green; NOT verified end-to-end — `canRunTeam` is false in tests, so no real verdict has referenced the hub line yet.
+- **P1.7 exit gate (2026-11-18).** Three of four items are green and the fourth is blocked by missing features, not by this repo's code: `go vet ./... && go test ./...` (14 packages) and `typecheck`/`lint`/`build`/`docs:check` pass, and the two-generation → parent → diff → rollback chain now has a **route-level E2E** (`backend/e2e/p17_history_test.go`, build tag `e2e`, run `go test -tags e2e ./e2e/ -run P17 -v`) that drives the real `RegisterRoutes` + `EngineHub` + D1 client over an emulated D1 and asserts the revert commit's tree, HEAD movement (through a fresh handle, since refs are primed at `Init`) and the audit row. P1.7.4 (push + PR E2E) stays blocked because the GitHub mirror (P1.4.5–P1.4.7) does not exist; the browser E2E of the History UI and the live-D1 pass are environmental.
 - P0.2 team E2E approve path — build green, full run manual-only (no live engine in tests, `canRunTeam` false). See `docs/MULTI_AGENT.md` Known gaps 1.
 
 <a id="in-progress"></a>
@@ -276,6 +279,7 @@ owner document, so the next docs pass can close it without archaeology:
 bun run docs:check
 bun run typecheck && bun run lint && bun run build
 cd backend && go vet ./... && go test ./...
+cd backend && go test -tags e2e ./e2e/ -run 'P03|P05|P17'   # emulator mode; no credentials
 ```
 
 Focused: `bunx vitest run path/to/file.test.ts`; `go test -race ./pkg/engine/ -run 'TestRunDualModelPipeline|TestGeneration'`.
