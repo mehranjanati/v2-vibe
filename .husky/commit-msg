@@ -1,9 +1,17 @@
 # Add common bun installation paths to PATH
 export PATH="/opt/homebrew/bin:$HOME/.bun/bin:$PATH"
 
-# Run commitlint if bunx is available
-if command -v bunx >/dev/null 2>&1; then
-  bunx commitlint --edit $1
+# Run commitlint only when the CLI is installed locally. `bunx commitlint`
+# resolves the package from the network when it is absent, which makes every
+# commit depend on the network — and fails it outright behind a proxy or with a
+# stale certificate chain. Only @commitlint/config-conventional is a
+# devDependency, so prefer the local binary and otherwise skip with a warning
+# rather than blocking the commit.
+if [ -x node_modules/.bin/commitlint ]; then
+  node_modules/.bin/commitlint --edit "$1"
+elif command -v bunx >/dev/null 2>&1; then
+  echo "⚠️  commitlint CLI not installed locally, skipping message lint"
+  exit 0
 else
   echo "⚠️  bunx not found in PATH, skipping commitlint"
   exit 0
