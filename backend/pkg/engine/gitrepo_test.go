@@ -34,7 +34,8 @@ type fakeGitD1 struct {
 	objects  map[string]fakeGitObject // "appID\x00sha" -> row
 	refs     map[string]string        // "appID\x00name" -> commit sha
 	inserts  []fakeGitInsert
-	serverUS []string // every SQL string, to prove content is never inlined
+	requests []fakeGitInsert // every statement + params, for audit/lineage assertions
+	serverUS []string        // every SQL string, to prove content is never inlined
 }
 
 type fakeGitInsert struct {
@@ -56,6 +57,7 @@ func newFakeGitD1(t *testing.T) (*fakeGitD1, *cloudflare.D1Client) {
 		}
 		f.mu.Lock()
 		f.serverUS = append(f.serverUS, req.SQL)
+		f.requests = append(f.requests, fakeGitInsert{sql: req.SQL, params: req.Params})
 		results := f.apply(req.SQL, req.Params)
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")

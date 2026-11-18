@@ -180,6 +180,9 @@ History API (P1.4) has nothing to read for ordinary generations.
 `finalizeGeneration` and stamps `generations.commit_sha`/`branch`. It is
 `implemented_unverified`: the tests run on the emulated D1 only, and the
 plan-execute path still opens no lineage row, so it produces no revision.
+P1.3.6's pre-commit gate (credential scan that names `path:line` only, a 1 MiB
+per-file skip, a mandatory author) landed the same day at
+`backend/pkg/engine/generation_git.go:116`.
 
 ### F8 — Audit note on the use case itself
 

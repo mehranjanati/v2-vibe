@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -165,6 +166,180 @@ func TestGenerationCommitAuthor(t *testing.T) {
 	for _, tc := range cases {
 		if got := generationCommitAuthor(tc.authors); got != tc.want {
 			t.Errorf("%s: generationCommitAuthor = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// waitForCommitAudit blocks until the detached audit writer has issued a
+// generation_audits row with the given action (it runs on its own goroutine by
+// design, so the test polls instead of assuming an order).
+func waitForCommitAudit(t *testing.T, fake *fakeGitD1, action string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		fake.mu.Lock()
+		found := false
+		for _, req := range fake.requests {
+			if !strings.HasPrefix(req.sql, "INSERT INTO generation_audits") {
+				continue
+			}
+			for _, p := range req.params {
+				if s, ok := p.(string); ok && s == action {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		fake.mu.Unlock()
+		if found {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("no %q audit row reached D1", action)
+}
+
+func TestPreCommitGateBlocksHardcodedCredential(t *testing.T) {
+	ctx := context.Background()
+	room, fake := newGenerationCommitRoom(t)
+
+	openedGeneration(room, "gen-secret")
+	room.UpsertFile("src/api.js", "const base = 1;\nconst API_KEY = \"sk-live-9f3ab7c21d4e\";\n", "coder")
+
+	sha, err := room.commitGeneration()
+	if err == nil {
+		t.Fatalf("commit of a hardcoded credential = (%q, nil), want a refusal", sha)
+	}
+	if !strings.Contains(err.Error(), "src/api.js:2") {
+		t.Errorf("error %q should name the offending path:line", err)
+	}
+	if strings.Contains(err.Error(), "sk-live-9f3ab7c21d4e") {
+		t.Error("the refusal error leaks the credential value")
+	}
+
+	// No revision is created for the run.
+	repo, oerr := OpenGitRepo(ctx, room.d1, room.chatID)
+	if oerr != nil {
+		t.Fatalf("OpenGitRepo: %v", oerr)
+	}
+	if log, lerr := repo.Log(ctx, gitMainRef, 0); lerr != nil || len(log) != 0 {
+		t.Fatalf("blocked generation produced a revision: %v / %v", log, lerr)
+	}
+
+	// The block is auditable, and the consumed id prevents a retry into a commit.
+	waitForCommitAudit(t, fake, "commit_blocked")
+	if sha, err := room.commitGeneration(); sha != "" || err != nil {
+		t.Fatalf("retry after a block = (%q, %v), want (\"\", nil)", sha, err)
+	}
+}
+
+func TestPreCommitGateAllowsRealCodeValues(t *testing.T) {
+	ctx := context.Background()
+	room, fake := newGenerationCommitRoom(t)
+
+	openedGeneration(room, "gen-forms")
+	room.UpsertFile("src/login.tsx", strings.Join([]string{
+		"const [state, setState] = useState({ password: \"\" });",
+		"onChange={(e) => setState({ password: e.target.value })}",
+		"const token = form.password;",
+		"const key2 = process.env.API_KEY;",
+		"const placeholder = '{{API_KEY}}';",
+		"const apiKey = import.meta.env.VITE_API_KEY;",
+		`<input type="password" name="password" />`,
+	}, "\n"), "coder")
+
+	if sha, err := room.commitGeneration(); err != nil || sha == "" {
+		t.Fatalf("commit of ordinary form code = (%q, %v), want a commit", sha, err)
+	}
+	repo, err := OpenGitRepo(ctx, room.d1, room.chatID)
+	if err != nil {
+		t.Fatalf("OpenGitRepo: %v", err)
+	}
+	if log, lerr := repo.Log(ctx, gitMainRef, 0); lerr != nil || len(log) != 1 {
+		t.Fatalf("expected 1 commit, got %d (%v)", len(log), lerr)
+	}
+	fake.mu.Lock()
+	joined := strings.Join(fake.serverUS, "\n")
+	fake.mu.Unlock()
+	if strings.Contains(joined, "commit_blocked") {
+		t.Error("an ordinary login form was flagged as a credential leak")
+	}
+}
+
+func TestPreCommitGateSkipsOversizeFile(t *testing.T) {
+	ctx := context.Background()
+	room, fake := newGenerationCommitRoom(t)
+
+	big := strings.Repeat("a", generationCommitMaxFileBytes+1)
+	openedGeneration(room, "gen-big")
+	room.UpsertFile("assets/huge.txt", big, "coder")
+	room.UpsertFile("index.html", "<h1>ok</h1>", "coder")
+
+	sha, err := room.commitGeneration()
+	if err != nil || sha == "" {
+		t.Fatalf("commit with one oversize file = (%q, %v), want a commit of the rest", sha, err)
+	}
+
+	// The oversized content never reaches D1 and the skip is recorded.
+	fake.mu.Lock()
+	for _, ins := range fake.inserts {
+		for _, p := range ins.params {
+			if s, ok := p.(string); ok && s == big {
+				fake.mu.Unlock()
+				t.Fatal("oversize file content was written to the object table")
+			}
+		}
+	}
+	fake.mu.Unlock()
+	waitForCommitAudit(t, fake, "commit_file_skipped")
+
+	repo, oerr := OpenGitRepo(ctx, room.d1, room.chatID)
+	if oerr != nil {
+		t.Fatalf("OpenGitRepo: %v", oerr)
+	}
+	changes, derr := repo.Diff(ctx, "", gitMainRef)
+	if derr != nil {
+		t.Fatalf("Diff: %v", derr)
+	}
+	for _, ch := range changes {
+		if ch.Path == "assets/huge.txt" {
+			t.Error("the skipped file is part of the revision")
+		}
+	}
+}
+
+func TestGenerationCredentialRule(t *testing.T) {
+	leaks := []string{
+		`const API_KEY = "sk-live-9f3ab7c21d4e";`,
+		`token: 'ghp_A1b2C3d4E5f6G7h8I9j0'`,
+		`PASSWORD=hunter2hunter2`,
+		`secret: "c2VjcmV0LXZhbHVl"`,
+		`api-key = ABCDEFGHIJKLMNOPQRSTUVWXYZ123456`,
+	}
+	for _, line := range leaks {
+		if !generationLineHasCredential(line) {
+			t.Errorf("expected a credential match for %q", line)
+		}
+	}
+	allowed := []string{
+		`password: e.target.value,`,
+		`const password = form.password.value;`,
+		`token: "",`,
+		`secret: null,`,
+		`apiKey: process.env.API_KEY,`,
+		`const apiKey = import.meta.env.VITE_API_KEY;`,
+		`placeholder: 'your-api-key-here'`,
+		"token: `${session.token}`,",
+		`password: "{{PASSWORD}}",`,
+		`<input type="password" name="password" />`,
+		`if (password === confirmPassword) {`,
+	}
+	for _, line := range allowed {
+		if generationLineHasCredential(line) {
+			t.Errorf("false positive: %q would have blocked the commit", line)
 		}
 	}
 }
