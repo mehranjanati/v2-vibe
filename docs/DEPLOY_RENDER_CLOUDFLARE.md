@@ -244,6 +244,43 @@ instead of re-debugged:
 `wrangler.v2.jsonc` and the `VibecoderStore` namespace; a token from a different
 account authenticates fine and then fails per-resource with 7403.
 
+#### If `wrangler login` cannot complete
+
+Three separate failures were hit on this macOS 12.6 box (2026-11-18). They look
+alike and are not the same problem — check them in this order.
+
+1. **Stale link.** Every `wrangler login` run is valid for roughly two minutes;
+   restarting the command invalidates the previous URL, and a finished run
+   leaves `localhost:8976` closed. A link from an earlier attempt shows a
+   consent page and then fails at the redirect. Always use the URL of the run
+   that is currently listening (`lsof -nP -iTCP:8976 -sTCP:LISTEN`).
+2. **`bun --bun` cannot exchange the code.** Under Bun, wrangler fails with
+   `Failed to fetch auth token: TypeError: fetch failed`
+   (`internalConnectMultipleTimeout`) even though the host is reachable. Confirm
+   the runtime is the problem, not the network:
+
+   ```bash
+   node -e "fetch('https://dash.cloudflare.com/oauth2/token',{method:'POST'}).then(r=>console.log(r.status))"   # 400 = reachable
+   ```
+
+   Run wrangler with **Node >= 22** instead (wrangler 4.90 refuses Node 20):
+
+   ```bash
+   "$HOME/.nvm/versions/node/v22.23.1/bin/node" node_modules/wrangler/bin/wrangler.js login
+   ```
+
+3. **`request_forbidden` on the exchange.** Login reached Cloudflare and was
+   refused. That is a grant/account-level decision (the consenting user or
+   account is not permitted for this OAuth client), not a local networking
+   fault — retrying the same flow will fail the same way. Use a **static token**
+   instead: Dashboard → My Profile → API Tokens → Create Token → Custom token
+   with `Account → D1 → Edit`, `Account → Workers KV Storage → Edit`,
+   `Account → Workers Scripts → Edit`, then put it in `.env` as
+   `CLOUDFLARE_API_TOKEN`. A static token needs only `api.cloudflare.com`, which
+   this box reaches; after that `bun run db:migrate:remote` and the rollback
+   commands work without OAuth at all.
+
+
 ### Step 1 — prove the verifier against a real KV namespace
 
 See **Cross-origin auth** above (`VIBE_P03_KV=real`); the harness seeds and
