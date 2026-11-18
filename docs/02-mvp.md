@@ -164,7 +164,9 @@ claims beyond it.
 
 No new dependencies, no schema change, no new route. The only new artifacts are
 a demo script and the recorded evidence — everything else is turning on what
-already exists and proving it. **Sequencing: after the P0 rollout (ب)**, because
+already exists and proving it. **Execution script:**
+[`M0_SLICE_V0_RUNBOOK.md`](M0_SLICE_V0_RUNBOOK.md) (steps, expected outputs and
+the evidence table). **Sequencing: after the P0 rollout (ب)**, because
 criterion 2 cannot be met without a staging boundary; running it before would
 produce a green demo that quietly skips the one gate it was built to close.
 
