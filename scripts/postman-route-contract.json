@@ -75,6 +75,9 @@
       "POST /api/projects/:id/github-export",
       "POST /api/workflows/trigger",
       "GET /api/workflows/:workflowId",
+      "GET /api/generations/:chatId",
+      "GET /api/generations/:chatId/:genId/diff",
+      "POST /api/generations/:chatId/:genId/rollback",
       "GET /ws/:id",
       "POST /api/debug/replay"
     ]

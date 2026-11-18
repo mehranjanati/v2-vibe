@@ -475,3 +475,54 @@ export type {
     GitHubExportOptions,
     GitHubExportResult,
 } from 'worker/types/github-types';
+
+// ---------- History API (P1.4) ----------
+// One generation as the history list returns it. `commitSha`/`branch` link the
+// row to the internal Git commit (P1.3.5); `hook`-style extras are absent on
+// purpose — the list is a version pointer, not a diff.
+export interface GenerationSummary {
+  id: string;
+  chatId: string;
+  parent: string | null;
+  status: string;
+  verdict: string | null;
+  fork: boolean;
+  commitSha: string | null;
+  branch: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface GenerationHistoryData {
+  chatId: string;
+  generations: GenerationSummary[];
+}
+
+/** One recorded change of a run: op + hashes + sizes, never contents. */
+export interface GenerationDiffFile {
+  path: string;
+  op: string;
+  beforeHash: string | null;
+  afterHash: string | null;
+  beforeSize: number | null;
+  afterSize: number | null;
+  author: string | null;
+}
+
+export interface GenerationDiffData {
+  chatId: string;
+  generationId: string;
+  commitSha: string | null;
+  branch: string | null;
+  files: GenerationDiffFile[];
+}
+
+export interface GenerationRollbackData {
+  chatId: string;
+  generationId: string;
+  /** The NEW revert commit — history is never rewritten. */
+  commitSha: string;
+  restoredFiles: number;
+  /** false when no live room was attached, so the working set was not rewritten. */
+  applied: boolean;
+}

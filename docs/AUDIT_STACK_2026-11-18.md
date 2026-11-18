@@ -250,7 +250,8 @@ The defect is not design, it is **integration** (F1 + F2) and **activation**
 5. **P1.11 + P1.8** — budget plumbing and the difficulty gate; both feed the
    router. *(Both landed 2026-11-18, `implemented_unverified`.)*
 6. **F5 — one gateway wiring slice** on the live generation path.
-7. **P1.4 / P1.5** — History API and UI, now that commits exist.
+7. **P1.4 / P1.5** — History API and UI, now that commits exist. *(API landed
+   2026-11-18; UI still open.)*
 8. Then P2 catalog, P7.5 / P7.7, and the P5 reference-system work.
 
 <a id="decisions-needed"></a>

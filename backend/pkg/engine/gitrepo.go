@@ -81,7 +81,6 @@ func newD1Storer(appID string, d1 *cloudflare.D1Client) *d1Storer {
 	return &d1Storer{Storage: memory.NewStorage(), appID: appID, d1: d1}
 }
 
-
 // encodedPayload returns the uncompressed object payload (what Git hashes).
 func encodedPayload(obj plumbing.EncodedObject) ([]byte, error) {
 	r, err := obj.Reader()
@@ -711,6 +710,77 @@ func (r *GitRepo) treeObject(h plumbing.Hash) (*object.Tree, error) {
 	return object.DecodeTree(r.st, obj)
 }
 
+// FilesAt materialises one revision as path → contents (P1.4).
+//
+// Rollback uses it to restore the working set from the commit the revert just
+// created, and the round-trip test uses it to prove VFS → Git → VFS is
+// byte-identical. It walks the tree that `writeTree` produced, so the paths are
+// the same flat paths the VFS uses.
+func (r *GitRepo) FilesAt(ctx context.Context, rev string) (map[string]string, error) {
+	commit, err := r.commitByRev(ctx, rev)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := r.treeObject(commit.TreeHash)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string)
+	if err := r.collectTree(tree, "", out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// collectTree walks one tree recursively into out.
+func (r *GitRepo) collectTree(tree *object.Tree, prefix string, out map[string]string) error {
+	for _, entry := range tree.Entries {
+		path := entry.Name
+		if prefix != "" {
+			path = prefix + "/" + entry.Name
+		}
+		switch entry.Mode {
+		case filemode.Dir:
+			sub, err := r.treeObject(entry.Hash)
+			if err != nil {
+				return err
+			}
+			if err := r.collectTree(sub, path, out); err != nil {
+				return err
+			}
+		case filemode.Regular, filemode.Executable, filemode.Deprecated:
+			content, err := r.blobAt(entry.Hash)
+			if err != nil {
+				return err
+			}
+			out[path] = content
+		default:
+			// Symlinks and submodules are never produced by writeTree, so there
+			// is no content to invent for them here.
+			continue
+		}
+	}
+	return nil
+}
+
+// blobAt decodes one stored blob.
+func (r *GitRepo) blobAt(h plumbing.Hash) (string, error) {
+	obj, err := r.st.EncodedObject(plumbing.BlobObject, h)
+	if err != nil {
+		return "", fmt.Errorf("gitrepo: blob %s: %w", h, err)
+	}
+	rc, err := obj.Reader()
+	if err != nil {
+		return "", fmt.Errorf("gitrepo: blob %s: %w", h, err)
+	}
+	defer rc.Close() //nolint:errcheck
+	content, err := io.ReadAll(rc)
+	if err != nil {
+		return "", fmt.Errorf("gitrepo: blob %s: %w", h, err)
+	}
+	return string(content), nil
+}
+
 // isFullHash reports whether s is a full lowercase hex SHA-1.
 func isFullHash(s string) bool {
 	if len(s) != 40 {
@@ -732,4 +802,3 @@ func shortHash(h plumbing.Hash) string {
 	}
 	return s
 }
-

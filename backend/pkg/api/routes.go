@@ -359,6 +359,14 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// REST: export a project's VFS to a GitHub repository (push files).
 	app.Post("/api/projects/:id/github-export", guard, ownerGuard(hub), handleGitHubExport(hub))
 
+	// REST (P1.4): generation history of one app, the recorded diff of one run,
+	// and rollback (a new revert commit + working-set restore, never a rewrite).
+	// Same boundary as the project routes: session first, then ownership of the
+	// addressed chat.
+	app.Get("/api/generations/:chatId", guard, ownerGuardFor(hub, "chatId"), handleGenerationList(hub))
+	app.Get("/api/generations/:chatId/:genId/diff", guard, ownerGuardFor(hub, "chatId"), handleGenerationDiff(hub))
+	app.Post("/api/generations/:chatId/:genId/rollback", guard, ownerGuardFor(hub, "chatId"), handleGenerationRollback(hub))
+
 	// REST: trigger a workflow run (validates the DAG, records the run,
 	// starts the Cloudflare Workflow execution) and inspect a workflow's
 	// runs + per-step logs. See workflows.go. P0.7: both routes are scoped
@@ -395,11 +403,18 @@ func sessionGuard(hub *engine.EngineHub) fiber.Handler {
 // An unowned/unknown project answers 404 (never leaking another tenant's
 // existence) and an unreachable ownership store fails closed with 503.
 func ownerGuard(hub *engine.EngineHub) fiber.Handler {
+	return ownerGuardFor(hub, "id")
+}
+
+// ownerGuardFor is ownerGuard generalized over the path parameter holding the
+// chat/project id: the room/VFS routes use `:id`, the History API uses
+// `:chatId`.
+func ownerGuardFor(hub *engine.EngineHub, param string) fiber.Handler {
 	if hub.SessionVerifier() == nil {
 		return func(c *fiber.Ctx) error { return c.Next() }
 	}
 	return RequireResourceOwner(func(c *fiber.Ctx) (string, bool, error) {
-		chatID := c.Params("id")
+		chatID := c.Params(param)
 		if chatID == "" {
 			return "", false, nil
 		}

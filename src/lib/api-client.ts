@@ -68,6 +68,9 @@ import type{
 	OutcomeRunDetailData,
 	OutcomeRunsData,
 	OutcomeRunTriggerData,
+	GenerationHistoryData,
+	GenerationDiffData,
+	GenerationRollbackData,
 } from '@/api-types';
 import {
 	RateLimitExceededError,
@@ -1179,6 +1182,43 @@ class ApiClient {
 	): Promise<ApiResponse<OutcomeRunsData>> {
 		return this.request<OutcomeRunsData>(
 			`/api/outcomes/${encodeURIComponent(outcomeId)}`,
+		);
+	}
+
+	/**
+	 * P1.4 — generation history of one app (chat), newest first.
+	 */
+	async getGenerationHistory(
+		chatId: string,
+	): Promise<ApiResponse<GenerationHistoryData>> {
+		return this.request<GenerationHistoryData>(
+			`/api/generations/${encodeURIComponent(chatId)}`,
+		);
+	}
+
+	/**
+	 * P1.4 — the recorded changes of one generation: op + hashes + sizes only.
+	 */
+	async getGenerationDiff(
+		chatId: string,
+		generationId: string,
+	): Promise<ApiResponse<GenerationDiffData>> {
+		return this.request<GenerationDiffData>(
+			`/api/generations/${encodeURIComponent(chatId)}/${encodeURIComponent(generationId)}/diff`,
+		);
+	}
+
+	/**
+	 * P1.4 — roll a generation back: a NEW revert commit plus a working-set
+	 * restore. History is never rewritten, so this is safe to repeat.
+	 */
+	async rollbackGeneration(
+		chatId: string,
+		generationId: string,
+	): Promise<ApiResponse<GenerationRollbackData>> {
+		return this.request<GenerationRollbackData>(
+			`/api/generations/${encodeURIComponent(chatId)}/${encodeURIComponent(generationId)}/rollback`,
+			{ method: 'POST' },
 		);
 	}
 
