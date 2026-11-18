@@ -219,6 +219,68 @@ Consequences:
   boundary off for that flow, or teach the Worker to pass the caller's
   `X-Session-Token` before turning enforcement on.
 
+## P0 rollout runbook (the M0 launch gate)
+
+Four steps, in this order. Do not start with the last one: each step fails
+loudly and names the credential it is missing.
+
+### Step 0 — credential preflight (read-only)
+
+```bash
+bunx wrangler whoami      # must list the account that owns the `v2-vibe` D1
+bun run d1:token          # refreshes the OAuth token, validates with SELECT 1, rewrites .env
+```
+
+Failure modes observed on 2026-11-18 (this workstation), so they are recognised
+instead of re-debugged:
+
+| Symptom | Meaning | Fix |
+|---|---|---|
+| KV/D1 HTTP `401` with `code 10000` | the `CLOUDFLARE_API_TOKEN` in `.env` is expired or invalid | `bun run d1:token`, or paste a static token |
+| `wrangler whoami` → `Invalid access token [code: 9109]` | the stored OAuth grant is revoked, so nothing can refresh it | `bunx wrangler login` (interactive — a browser round-trip) |
+| `bun run d1:token` → `HTTP 403` `7403 … not authorized to access this service` | the refreshed token does not cover `CLOUDFLARE_ACCOUNT_ID` | log in to the account that owns the D1, and keep `.env`'s account id in sync |
+
+`CLOUDFLARE_ACCOUNT_ID` must be the account that owns the D1 database id in
+`wrangler.v2.jsonc` and the `VibecoderStore` namespace; a token from a different
+account authenticates fine and then fails per-resource with 7403.
+
+### Step 1 — prove the verifier against a real KV namespace
+
+See **Cross-origin auth** above (`VIBE_P03_KV=real`); the harness seeds and
+deletes one throwaway `session:token:<nonce>` key, so it is safe while the
+boundary is still off. Do this against the **staging** namespace first.
+
+### Step 2 — apply migrations and read the applied set back
+
+```bash
+bun run db:migrate:remote
+bun --bun wrangler d1 execute v2-vibe --remote --config wrangler.v2.jsonc --json -y \
+  --command "SELECT name FROM d1_migrations ORDER BY id"
+```
+
+Expected additions: `0012_github_tokens_seal`, `0013_first_mesmero`,
+`0014_outcome_runs`, `0015_skinny_tomorrow_man` (0016/0017 belong to the parked
+use-case branch and are not on `main`). Record the returned set in
+`DEV_STATUS.md` Immediate Next Tasks item 10 — the step is not done until the
+read-back is written down, not just until the command exits 0.
+
+### Step 3 — turn the boundary on in staging only
+
+```bash
+bunx wrangler kv namespace create VibecoderStore-staging   # same account as above
+```
+
+Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
+`VIBECODER_STORE_KV_ID=<staging id>`, and re-run Step 1 against that id. Keep
+production off until staging has exercised a full session: 401 without a token,
+200 with one, 403 cross-tenant.
+
+Why a separate namespace and not the live one: sessions are the identity
+authority, so a staging logout (or a bug in a staging test) would invalidate
+production sessions if both shared `VibecoderStore`. Isolation here is the
+point of staging, not tidiness.
+
+
 
 ## Free-plan caveats
 
