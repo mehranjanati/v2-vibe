@@ -320,15 +320,27 @@ The staging namespace already exists (created 2026-11-18):
 `VibecoderStore-staging` = `4748f35d77274731a17fa4f32c8c3e00` — the P03 real-KV
 proof above was run against it and passed.
 
-Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
-`VIBECODER_STORE_KV_ID=4748f35d77274731a17fa4f32c8c3e00`, and re-run Step 1
-against that id. Keep production off until staging has exercised a full session:
-401 without a token, 200 with one, 403 cross-tenant.
+**Correction (2026-11-18, after a live staging run returned 401 for every
+authenticated request):** the staging Go plane must verify against the namespace
+the Edge **actually mints sessions into** — `VibecoderStore`
+(`56d249930a4447ee92493a7ff061a3ae`). A separate namespace means the Go plane
+sees an empty session store and rejects every real login with 401. Sharing is
+safe because the Edge is the identity authority and the Go plane only **reads**
+session tokens (`KVClient.Put/Delete` are used solely by the rollout harness);
+a staging logout cannot invalidate production sessions.
 
-Why a separate namespace and not the live one: sessions are the identity
-authority, so a staging logout (or a bug in a staging test) would invalidate
-production sessions if both shared `VibecoderStore`. Isolation here is the
-point of staging, not tidiness.
+Diagnostic for exactly this failure: count `session:token:*` keys per
+namespace — the Edge's namespace will show your live sessions while the one the
+service is configured with shows zero.
+
+Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
+`VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (same as production —
+see the correction above), and re-run Step 1 against that id. Keep production
+itself untouched: the boundary still stays off there until this same proof has
+run against a deployed control plane.
+
+An isolation-complete variant (a staging Edge Worker minting into the staging
+namespace) remains open — it is deploy work, not a code change.
 
 
 

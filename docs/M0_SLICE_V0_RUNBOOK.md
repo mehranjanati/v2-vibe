@@ -23,7 +23,7 @@ no feature, only the proof.
 
 | # | Condition | Why |
 |---|---|---|
-| 1 | Staging control plane deployed, `CONTROL_PLANE_REQUIRE_SESSION=true`, `VIBECODER_STORE_KV_ID=4748f35d77274731a17fa4f32c8c3e00` | acceptance criterion 2 cannot be met boundary-off |
+| 1 | Staging control plane deployed, `CONTROL_PLANE_REQUIRE_SESSION=true`, `VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (the namespace the Edge mints sessions into — a staging-specific namespace returns 401 for every login, see the deploy runbook correction) | acceptance criterion 2 cannot be met boundary-off |
 | 2 | `bun run d1:token` succeeds locally and `.env` holds `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `D1_DATABASE_ID` | the evidence read-backs use D1 directly |
 | 3 | A **throwaway** second account on staging (never production) | the 403 proof needs a second identity |
 | 4 | `jq` available locally (or substitute `python3 -m json.tool`) | readable evidence |
@@ -48,7 +48,23 @@ curl -sS "${auth[@]}" "$API/api/limits/usage" | jq -r '.success'   # expect true
 ```
 
 Then confirm the staging namespace really is the boundary's store — this is the
-same proof as the P0 runbook, and it must stay green:
+same proof as the P0 runbook, and it must stay green. **Also verify the
+identity-store pairing**, because a mismatch here looks exactly like a broken
+boundary: the `VIBECODER_STORE_KV_ID` the service verifies against must be the
+namespace the Edge mints `session:token:*` into — if the service's namespace
+shows zero sessions while the Edge's shows your live logins, that is the 401
+cause:
+
+```bash
+ACC=$(grep -m1 '^CLOUDFLARE_ACCOUNT_ID=' ../.env | cut -d= -f2-)
+TOK=$(grep -m1 '^CLOUDFLARE_API_TOKEN=' ../.env | cut -d= -f2-)
+for NS in 56d249930a4447ee92493a7ff061a3ae 4748f35d77274731a17fa4f32c8c3e00; do
+  echo -n "session count in $NS: "
+  curl -s -H "Authorization: Bearer $TOK" \
+    "https://api.cloudflare.com/client/v4/accounts/$ACC/storage/kv/namespaces/$NS/keys?prefix=session%3Atoken%3A&limit=100" \
+    | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get("result") or []))'
+done
+```
 
 ```bash
 cd backend && VIBE_P03_KV=real \
