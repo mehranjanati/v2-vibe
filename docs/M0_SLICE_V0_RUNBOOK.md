@@ -1,10 +1,10 @@
 # M0 Vertical Slice v0 — Execution Runbook (D9)
 
-> **Status:** `adopted` scope (D9) / **executed 2026-11-21 on PRODUCTION** — 6 of the
-> 7 acceptance criteria carry live evidence (recorded under *Implemented But
-> Unverified* in [`DEV_STATUS.md`](DEV_STATUS.md)); criterion 2 is partial (the
-> cross-tenant 403 leg needs a throwaway second account) and criterion 4 is
-> API-level only (the History UI has not been exercised in a browser).
+> **Status:** `adopted` scope (D9) / **executed 2026-11-21 on PRODUCTION** — all seven
+> acceptance criteria carry live evidence (recorded under *Implemented But
+> Unverified* in [`DEV_STATUS.md`](DEV_STATUS.md)): the 403 leg used a throwaway
+> second identity that was removed afterwards, and the History UI was exercised in
+> a real browser.
 >
 > Owner docs: slice definition + acceptance criteria in
 > [`02-mvp.md`](02-mvp.md); scope freeze [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md);
@@ -235,9 +235,9 @@ replaces that entry. Numbers, not adjectives.
 | # | Criterion | Evidence to paste | 2026-11-21 |
 |---|---|---|---|
 | 1 | Loop | run id + `status` + `commitSha` | ✅ `2dc6aa64…` succeeded · `eaf402b5…` |
-| 2 | Governance | the four HTTP codes (anonymous / other / owner) | ⚠️ anon=401 · owner=200 · **other not run** |
+| 2 | Governance | the four HTTP codes (anonymous / other / owner) | ✅ anon=401 · other=403 (5 routes) · owner=200 · unknown=404 |
 | 3 | Attribution | the `generation_files` rows with `author_agent` + audit actions | ✅ 3/3 (`coder`/`gapfill`/`coder`) |
-| 4 | Visibility | History screenshot description + diff row count | ⚠️ API only (`1` row, `3` diff entries) |
+| 4 | Visibility | History screenshot description + diff row count | ✅ browser: `1` row (`eaf402b5` done/main) + `3` diff entries |
 | 5 | Rollback safety | revert commit + "list still N rows" + both SHAs | ✅ `4904bc2d…` · list still `1` row |
 | 6 | Loud failure | cancelled row (`status`, `commitSha: null`) | ✅ `972856df…` cancelled · null |
 | 7 | Reproducible | this table itself, dated | ✅ dated 2026-11-21 |
@@ -250,7 +250,7 @@ Recorded `DEV_STATUS` line (already applied):
   file rows carry author_agent; rollback left the list at 1 row; cancelled run
   `972856df…` → status=cancelled, commitSha=null. Boundary ON,
   VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae (the Edge's store).
-  Criterion 2 partial (no second account); criterion 4 API-level only.
+  Criteria 2 (throwaway second identity) and 4 (browser) also proven.
 ```
 
 ## Failure playbook
