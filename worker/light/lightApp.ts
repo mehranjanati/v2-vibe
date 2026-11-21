@@ -15,6 +15,7 @@ import bcrypt from 'bcryptjs';
 
 import type { LightWorkerBindings } from '../types/bindings';
 import { getGitHubToken, revokeGitHubToken, sealGitHubToken, storeGitHubToken } from './tokenVault';
+import { mirrorProjectToGitHub } from './githubMirror';
 
 const SESSION_COOKIE = 'access_token';
 const CSRF_COOKIE = 'csrf_token';
@@ -519,47 +520,32 @@ export function buildLightApp(): Hono<LightAppEnv> {
 		return data.html_url || null;
 	}
 
-	/** Push a single file to a GitHub repo via the Contents API. */
-	async function pushFile(token: string, owner: string, repo: string, path: string, content: string): Promise<boolean> {
-		const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
-		let sha = '';
-		const getRes = await fetch(url, {
-			headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+	/**
+	 * Compatibility shim kept for the call sites that only need a boolean.
+	 *
+	 * P1.4.5: the push itself is the atomic mirror (blobs → tree → commit →
+	 * ref, one generation = one commit). The old Contents-API loop pushed one
+	 * commit per file, so a half-failed export left a repository no generation
+	 * produced.
+	 */
+	async function pushFiles(
+		env: LightWorkerBindings,
+		userId: string,
+		agentId: string,
+		token: string,
+		owner: string,
+		repo: string,
+		files: Record<string, string>,
+	): Promise<{ ok: boolean; commitSha?: string; skipped?: 'up-to-date'; step?: string; status?: number; error?: string }> {
+		return mirrorProjectToGitHub(env, {
+			userId,
+			agentId,
+			token,
+			owner,
+			repo,
+			files,
+			deployWorkflow: CLOUDFLARE_PAGES_WORKFLOW,
 		});
-		if (getRes.ok) {
-			const existing = (await getRes.json()) as { sha?: string };
-			sha = existing.sha || '';
-		}
-
-		const putRes = await fetch(url, {
-			method: 'PUT',
-			headers: {
-				Authorization: `Bearer ${token}`,
-				Accept: 'application/vnd.github+json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				message: `Update ${path}`,
-				content: b64encode(content),
-				sha: sha || undefined,
-			}),
-		});
-		return putRes.ok;
-	}
-
-	/** Push all files (plus deploy workflow) to a GitHub repo. */
-	async function pushFiles(token: string, owner: string, repo: string, files: Record<string, string>): Promise<boolean> {
-		const allFiles: Record<string, string> = {
-			...files,
-			'.github/workflows/deploy.yml': CLOUDFLARE_PAGES_WORKFLOW,
-		};
-
-		for (const [path, content] of Object.entries(allFiles)) {
-			const ok = await pushFile(token, owner, repo, path, content);
-			if (!ok) return false;
-		}
-		return true;
 	}
 
 	// GitHub token storage / resolve / revoke live in `./tokenVault` (P0.6:
@@ -606,15 +592,34 @@ export function buildLightApp(): Hono<LightAppEnv> {
 				return c.json(fail('Invalid repository URL', 500), 500);
 			}
 
-			const pushed = await pushFiles(stored.token, repoInfo.owner, repoInfo.repo, files);
-			if (!pushed) {
-				return c.json(fail('Failed to push files to GitHub', 500), 500);
+			const mirror = await pushFiles(
+				c.env,
+				userId,
+				body.agentId,
+				stored.token,
+				repoInfo.owner,
+				repoInfo.repo,
+				files,
+			);
+			if (!mirror.ok) {
+				// Loud failure: name the step that failed instead of a bare 500.
+				return c.json(
+					fail(
+						`Failed to mirror files to GitHub${mirror.step ? ` (${mirror.step}${mirror.status ? ` ${mirror.status}` : ''})` : ''}`,
+						502,
+					),
+					502,
+				);
 			}
 
 			return c.json(ok({
 				success: true,
 				repositoryUrl: finalRepoUrl,
 				skippedOAuth: true,
+				// P1.4.5: one generation = one atomic commit on the branch.
+				atomic: true,
+				commitSha: mirror.commitSha,
+				skipped: mirror.skipped,
 			}));
 		}
 
@@ -697,7 +702,25 @@ export function buildLightApp(): Hono<LightAppEnv> {
 					if (repoUrl && repoUrl !== 'exists') {
 						const repoInfo = extractRepoInfo(repoUrl);
 						if (repoInfo) {
-							await pushFiles(accessToken, repoInfo.owner, repoInfo.repo, files);
+							const mirrored = await pushFiles(
+								c.env,
+								stateData.userId,
+								stateData.agentId,
+								accessToken,
+								repoInfo.owner,
+								repoInfo.repo,
+								files,
+							);
+							if (!mirrored.ok) {
+								// The redirect still happens (the user just authenticated);
+								// the failure is logged with its step so the log names it.
+								console.warn(
+									'[github-export] atomic mirror failed:',
+									mirrored.step ?? 'unknown',
+									mirrored.status ?? '',
+									mirrored.error ?? '',
+								);
+							}
 						}
 					}
 				}

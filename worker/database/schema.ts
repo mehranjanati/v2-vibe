@@ -958,6 +958,32 @@ export const gitRefs = sqliteTable('git_refs', {
     pk: primaryKey({ columns: [table.appId, table.name], name: 'git_refs_pk' }),
 }));
 
+/**
+ * GitHub mirror state table (P1.4.5) - one row per (user, app) pair.
+ *
+ * The mirror pushes a generation to GitHub as ONE atomic commit
+ * (worker/light/githubMirror.ts). `last_pushed_sha` is the GitHub commit the
+ * branch currently points at and `last_generation_id` the internal generation it
+ * mirrored, so a second export of an unchanged generation is a no-op instead of
+ * a duplicate commit. `repo_full_name` is part of the row (not the key) so a
+ * re-export to a different repository invalidates the skip naturally.
+ *
+ * Written best-effort: a deployment that has not applied this migration still
+ * mirrors, it just cannot skip duplicates.
+ */
+export const githubMirrors = sqliteTable('github_mirrors', {
+    userId: text('user_id').notNull(),
+    agentId: text('agent_id').notNull(), // chat/project id
+    repoFullName: text('repo_full_name').notNull(), // owner/repo
+    branch: text('branch').notNull().default('main'),
+    lastPushedSha: text('last_pushed_sha'), // GitHub commit sha of the last mirror
+    lastGenerationId: text('last_generation_id'), // generations.id it mirrored
+    createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.agentId], name: 'github_mirrors_pk' }),
+}));
+
 // ========================================
 // TYPE EXPORTS FOR APPLICATION USE
 // ========================================
