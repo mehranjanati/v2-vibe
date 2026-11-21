@@ -19,6 +19,7 @@
 		"tui": "tsx --tsconfig tsconfig.app.json cli/tui.tsx",
 		"cf-typegen": "bun --bun wrangler types --include-runtime false --config wrangler.v2.jsonc",
 		"d1:token": "tsx scripts/sync-d1-token.ts",
+		"check:cp-auth": "node scripts/check-control-plane-auth.mjs",
 		"test": "node scripts/run-tests.mjs",
 		"test:integration": "VIBESDK_RUN_INTEGRATION_TESTS=1 vitest run sdk/test/integration/integration.test.ts",
 		"test:watch": "vitest",

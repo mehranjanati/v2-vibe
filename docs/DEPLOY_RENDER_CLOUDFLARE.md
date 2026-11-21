@@ -329,9 +329,11 @@ safe because the Edge is the identity authority and the Go plane only **reads**
 session tokens (`KVClient.Put/Delete` are used solely by the rollout harness);
 a staging logout cannot invalidate production sessions.
 
-Diagnostic for exactly this failure: count `session:token:*` keys per
-namespace — the Edge's namespace will show your live sessions while the one the
-service is configured with shows zero.
+Diagnostic for exactly this failure (`bun run check:cp-auth --url <staging host>`):
+it counts `session:token:*` keys per namespace — the Edge's namespace will show
+your live sessions while the one the service is configured with shows zero — then
+probes the service anonymously (must be 401: otherwise the boundary is off) and
+with one live Edge token (PASS = 404/200, MISMATCH = 401, MISCONFIGURED = 503).
 
 Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
 `VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (same as production —

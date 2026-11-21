@@ -56,8 +56,18 @@ shows zero sessions while the Edge's shows your live logins, that is the 401
 cause:
 
 ```bash
-ACC=$(grep -m1 '^CLOUDFLARE_ACCOUNT_ID=' ../.env | cut -d= -f2-)
-TOK=$(grep -m1 '^CLOUDFLARE_API_TOKEN=' ../.env | cut -d= -f2-)
+bun run check:cp-auth --url "$API"
+```
+
+The script counts live `session:token:*` keys per namespace (Edge's store vs the
+service's), probes the control plane anonymously (must be 401 with the boundary
+on — anything else means the boundary is off and the runbook stops), then probes
+with one live Edge token (PASS = 404/200, MISMATCH = 401, MISCONFIGURED = 503).
+It never prints a session token. Manual equivalent of the counting step:
+
+```bash
+ACC=$(grep -m1 '^CLOUDFLARE_ACCOUNT_ID=' .env | cut -d= -f2-)
+TOK=$(grep -m1 '^CLOUDFLARE_API_TOKEN=' .env | cut -d= -f2-)
 for NS in 56d249930a4447ee92493a7ff061a3ae 4748f35d77274731a17fa4f32c8c3e00; do
   echo -n "session count in $NS: "
   curl -s -H "Authorization: Bearer $TOK" \
@@ -70,7 +80,7 @@ done
 cd backend && VIBE_P03_KV=real \
   CLOUDFLARE_ACCOUNT_ID=$(grep -m1 '^CLOUDFLARE_ACCOUNT_ID=' ../.env | cut -d= -f2-) \
   CLOUDFLARE_API_TOKEN=$(grep -m1 '^CLOUDFLARE_API_TOKEN=' ../.env | cut -d= -f2-) \
-  VIBECODER_STORE_KV_ID=4748f35d77274731a17fa4f32c8c3e00 \
+  VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae \
   go test -tags e2e ./e2e/ -run P03 -v
 ```
 
@@ -237,7 +247,7 @@ Suggested `DEV_STATUS` line (replace the placeholders):
   revert=<sha>; governance a/anon=401 · b/other=403 · owner=200;
   attribution: <n>/<n> file rows carry author_agent; rollback left the list at
   <n> rows with both SHAs resolvable; cancelled run → status=cancelled,
-  commitSha=null. Boundary ON (VIBECODER_STORE_KV_ID=4748f35d…).
+  commitSha=null. Boundary ON (VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae — the Edge's store; see Step 0).
 ```
 
 ## Failure playbook
