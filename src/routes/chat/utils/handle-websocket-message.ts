@@ -55,6 +55,8 @@ export interface HandleMessageDeps {
     setFiles: React.Dispatch<React.SetStateAction<FileType[]>>;
     setPhaseTimeline: React.Dispatch<React.SetStateAction<PhaseTimelineItem[]>>;
     setProjectStages: React.Dispatch<React.SetStateAction<any[]>>;
+    /** P1.4.6: offered after a completed run (generation_complete / team_completed). */
+    setIsPullRequestReady?: React.Dispatch<React.SetStateAction<boolean>>;
     setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
     setBlueprint: React.Dispatch<React.SetStateAction<BlueprintType | undefined>>;
     setQuery: React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -158,6 +160,7 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
             setPreviewUrl,
             setTotalFiles,
             setIsRedeployReady,
+            setIsPullRequestReady,
             setIsPreviewDeploying,
             setIsThinking,
             setIsInitialStateRestored,
@@ -689,6 +692,8 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
             }
 
             case 'generation_started': {
+                // A new run invalidates the previous run's pull-request offer.
+                setIsPullRequestReady?.(false);
                 updateStage('code', { status: 'active' });
                 setTotalFiles(message.totalFiles);
                 setIsGenerating(true);
@@ -715,6 +720,9 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 setIsPhaseProgressActive(false);
                 setIsThinking(false);
                 setIsGenerating(false);
+                // Think runs are conversational (one completion per turn), so the
+                // offer would reappear every turn — same rule as the message above.
+                setIsPullRequestReady?.(behaviorType !== 'think');
                 break;
             }
 
@@ -728,6 +736,9 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 setIsPhaseProgressActive(false);
                 setIsThinking(false);
                 setIsGenerating(false);
+                // No pull-request offer here: a cancelled/interrupted run has no
+                // new generation to propose.
+                setIsPullRequestReady?.(false);
                 sendMessage(createAIMessage(`generation-${message.type === 'generation_cancelled' ? 'cancelled' : 'interrupted'}`, message.reason));
                 break;
             }
@@ -757,6 +768,8 @@ export function createWebSocketMessageHandler(deps: HandleMessageDeps) {
                 if (message.verdict === 'error') {
                     toast.error(message.summary || 'Team run failed');
                 }
+                // A failed team run has nothing to propose for review.
+                setIsPullRequestReady?.(message.verdict !== 'error');
                 sendMessage(createAIMessage('team-completed', `Team ${message.verdict}${message.summary ? `: ${message.summary}` : ''}`));
                 break;
             }

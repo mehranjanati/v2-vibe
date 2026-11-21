@@ -174,6 +174,9 @@ export function useChat({
 	
 	// Redeployment state - tracks when redeploy button should be enabled
 	const [isRedeployReady, setIsRedeployReady] = useState(false);
+	// P1.4.6: a run finished, so the post-run "create pull request" banner is
+	// offered until the user dismisses it or starts the next run.
+	const [isPullRequestReady, setIsPullRequestReady] = useState(false);
 	// const [lastDeploymentPhaseCount, setLastDeploymentPhaseCount] = useState(0);
 	const [isGenerationPaused, setIsGenerationPaused] = useState(false);
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -286,6 +289,7 @@ export function useChat({
 			setPreviewUrl,
 			setTotalFiles,
 			setIsRedeployReady,
+			setIsPullRequestReady,
 			setIsPreviewDeploying,
 			setIsThinking,
 			setIsInitialStateRestored,
@@ -951,6 +955,8 @@ export function useChat({
 		cloudflareDeploymentUrl,
 		deploymentError,
 		isRedeployReady,
+		isPullRequestReady,
+		dismissPullRequestBanner: () => setIsPullRequestReady(false),
 		isGenerationPaused,
 		isGenerating,
 		handleStopGeneration,

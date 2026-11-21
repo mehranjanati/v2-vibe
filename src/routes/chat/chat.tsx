@@ -39,6 +39,7 @@ import { UserMessage, AIMessage } from './components/messages';
 import { PhaseTimeline } from './components/phase-timeline';
 import { type DebugMessage } from './components/debug-panel';
 import { DeploymentControls } from './components/deployment-controls';
+import { GitHubPullRequestBanner } from './components/github-pr-banner';
 import { useChat } from './hooks/use-chat';
 import {
 	type ModelConfigsInfo,
@@ -241,6 +242,8 @@ function ChatSession() {
 		cloudflareDeploymentUrl,
 		deploymentError,
 		isRedeployReady,
+		isPullRequestReady,
+		dismissPullRequestBanner,
 		isGenerationPaused,
 		isGenerating,
 		handleStopGeneration,
@@ -1294,6 +1297,11 @@ function ChatSession() {
 										isGenerating={isGenerating}
 										isThinking={isThinking}
 									/>
+								)}
+
+								{/* P1.4.6: offered after a completed run; dismissed or replaced by the next run. */}
+								{chatId && isPullRequestReady && (
+									<GitHubPullRequestBanner chatId={chatId} onDismiss={dismissPullRequestBanner} />
 								)}
 
 								{/* Deployment and Generation Controls - Only for phasic mode */}
