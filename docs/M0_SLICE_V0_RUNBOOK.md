@@ -1,9 +1,10 @@
 # M0 Vertical Slice v0 — Execution Runbook (D9)
 
-> **Status:** `adopted` scope (D9) / **not yet executed**. Everything below is a
-> script, not a claim: until it runs with the boundary ON against staging and the
-> evidence table is filled in [`DEV_STATUS.md`](DEV_STATUS.md), the slice is
-> unproven.
+> **Status:** `adopted` scope (D9) / **executed 2026-11-21 on PRODUCTION** — 6 of the
+> 7 acceptance criteria carry live evidence (recorded under *Implemented But
+> Unverified* in [`DEV_STATUS.md`](DEV_STATUS.md)); criterion 2 is partial (the
+> cross-tenant 403 leg needs a throwaway second account) and criterion 4 is
+> API-level only (the History UI has not been exercised in a browser).
 >
 > Owner docs: slice definition + acceptance criteria in
 > [`02-mvp.md`](02-mvp.md); scope freeze [`DEV_CHECKLIST.md`](DEV_CHECKLIST.md);
@@ -23,7 +24,7 @@ no feature, only the proof.
 
 | # | Condition | Why |
 |---|---|---|
-| 1 | Staging control plane deployed, `CONTROL_PLANE_REQUIRE_SESSION=true`, `VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (the namespace the Edge mints sessions into — a staging-specific namespace returns 401 for every login, see the deploy runbook correction) | acceptance criterion 2 cannot be met boundary-off |
+| 1 | A deployed control plane with `CONTROL_PLANE_REQUIRE_SESSION=true` and `VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (the namespace the Edge mints sessions into — a staging-specific namespace returns 401 for every login, see the deploy runbook correction). The 2026-11-21 run used **production** | acceptance criterion 2 cannot be met boundary-off |
 | 2 | `bun run d1:token` succeeds locally and `.env` holds `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `D1_DATABASE_ID` | the evidence read-backs use D1 directly |
 | 3 | A **throwaway** second account on staging (never production) | the 403 proof needs a second identity |
 | 4 | `jq` available locally (or substitute `python3 -m json.tool`) | readable evidence |
@@ -226,28 +227,30 @@ path is lying: stop and investigate before recording anything.
 
 ## Step 8 — record the evidence (criterion 7)
 
-Fill this table while the state is live, then paste it into
-[`DEV_STATUS.md`](DEV_STATUS.md) under *Implemented But Unverified* for the slice
-with the date. Numbers, not adjectives.
+The 2026-11-21 run against production is recorded in
+[`DEV_STATUS.md`](DEV_STATUS.md) under *Implemented But Unverified* with its ids
+and SHAs. Re-running the slice fills this table while the state is live, then
+replaces that entry. Numbers, not adjectives.
 
-| # | Criterion | Evidence to paste | Pass? |
+| # | Criterion | Evidence to paste | 2026-11-21 |
 |---|---|---|---|
-| 1 | Loop | run 1 id + `status` + `commitSha` | |
-| 2 | Governance | the four HTTP codes (anonymous / other / owner) | |
-| 3 | Attribution | the `generation_files` rows with `author_agent` + audit actions | |
-| 4 | Visibility | History screenshot description + diff row count | |
-| 5 | Rollback safety | revert commit + "list still 2 rows" + both SHAs | |
-| 6 | Loud failure | cancelled row (`status`, `commitSha: null`) | |
-| 7 | Reproducible | this table itself, dated | |
+| 1 | Loop | run id + `status` + `commitSha` | ✅ `2dc6aa64…` succeeded · `eaf402b5…` |
+| 2 | Governance | the four HTTP codes (anonymous / other / owner) | ⚠️ anon=401 · owner=200 · **other not run** |
+| 3 | Attribution | the `generation_files` rows with `author_agent` + audit actions | ✅ 3/3 (`coder`/`gapfill`/`coder`) |
+| 4 | Visibility | History screenshot description + diff row count | ⚠️ API only (`1` row, `3` diff entries) |
+| 5 | Rollback safety | revert commit + "list still N rows" + both SHAs | ✅ `4904bc2d…` · list still `1` row |
+| 6 | Loud failure | cancelled row (`status`, `commitSha: null`) | ✅ `972856df…` cancelled · null |
+| 7 | Reproducible | this table itself, dated | ✅ dated 2026-11-21 |
 
-Suggested `DEV_STATUS` line (replace the placeholders):
+Recorded `DEV_STATUS` line (already applied):
 
 ```text
-- **M0 slice v0 (D9) — executed <date> on staging.** run1=<sha> run2=<sha>
-  revert=<sha>; governance a/anon=401 · b/other=403 · owner=200;
-  attribution: <n>/<n> file rows carry author_agent; rollback left the list at
-  <n> rows with both SHAs resolvable; cancelled run → status=cancelled,
-  commitSha=null. Boundary ON (VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae — the Edge's store; see Step 0).
+- **M0 slice v0 (D9) — executed 2026-11-21 on PRODUCTION.** run `2dc6aa64…`
+  succeeded (commit `eaf402b5…`), 3 files; revert `4904bc2d…`; attribution 3/3
+  file rows carry author_agent; rollback left the list at 1 row; cancelled run
+  `972856df…` → status=cancelled, commitSha=null. Boundary ON,
+  VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae (the Edge's store).
+  Criterion 2 partial (no second account); criterion 4 API-level only.
 ```
 
 ## Failure playbook
