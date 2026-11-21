@@ -637,10 +637,17 @@ func handleConnectAgent(hub *engine.EngineHub) fiber.Handler {
 		// Ensure the room exists so the WebSocket handshake has a target.
 		hub.GetOrCreateRoom(chatID)
 
+		// Contract: the standard envelope, `data` = AgentConnectionData
+		// ({agentId, websocketUrl}). Both clients read `data` —
+		// src/lib/api-client.ts#connectToAgent and sdk/src/client.ts#connect —
+		// so a flat body silently breaks "reopen an existing chat": the SPA
+		// logs `Failed to fetch existing chat` and never opens the WebSocket.
 		return c.JSON(fiber.Map{
-			"success":      true,
-			"websocketUrl": buildWebSocketURL(c, chatID),
-			"agentId":      chatID,
+			"success": true,
+			"data": fiber.Map{
+				"agentId":      chatID,
+				"websocketUrl": buildWebSocketURL(c, chatID),
+			},
 		})
 	}
 }

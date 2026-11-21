@@ -84,6 +84,13 @@ async function request<T>(
 		return code ? { success: false, error: message, code } : { success: false, error: message };
 	}
 	const json = (await res.json()) as ControlPlaneResponse<T>;
+	// The Go plane answers in two shapes: enveloped ({success, data}) — e.g.
+	// GET /api/agent/:id/connect — and flat (fields at the top level) — e.g.
+	// POST /api/agent/session. Normalize so every caller can read `data`
+	// without caring which route it called.
+	if (json.success !== false && json.data === undefined) {
+		return { success: true, data: json as unknown as T };
+	}
 	return json;
 }
 
