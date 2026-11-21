@@ -526,3 +526,20 @@ export interface GenerationRollbackData {
   /** false when no live room was attached, so the working set was not rewritten. */
   applied: boolean;
 }
+
+/**
+ * P1.4.6 — result of opening a pull request for one generation.
+ *
+ * `head` is derived from lineage server-side (`gen/<generation short id>`), and
+ * `base` is the branch the app mirrors to. `reused` is true when an open PR for
+ * that head already existed, so clicking twice never creates two PRs.
+ */
+export interface GenerationPullRequestData {
+  prUrl?: string;
+  prNumber?: number;
+  head: string;
+  base: string;
+  commitSha?: string;
+  files: number;
+  reused: boolean;
+}

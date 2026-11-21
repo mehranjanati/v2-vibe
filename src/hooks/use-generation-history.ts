@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type {
 	GenerationDiffData,
+	GenerationPullRequestData,
 	GenerationRollbackData,
 	GenerationSummary,
 } from '@/api-types';
@@ -59,6 +60,30 @@ export function useGenerationDiff(
 		// A generation's diff is immutable once the run closed.
 		staleTime: 5 * 60_000,
 		retry: false,
+	});
+}
+
+/**
+ * P1.4.6 — open (or reuse) a pull request for the newest succeeded generation.
+ *
+ * The Edge mirrors the tree onto `gen/<short>` and opens the PR against the
+ * app's base branch; the head branch comes from lineage, not from the browser.
+ * A repeated click returns the existing open PR (`reused`), so this mutation
+ * has no invalidation side effects — nothing local changes.
+ */
+export function useCreatePullRequest(chatId?: string | null) {
+	return useMutation({
+		mutationFn: async (options: { title?: string; notes?: string } = {}): Promise<GenerationPullRequestData> => {
+			const res = await apiClient.pushPullRequest({
+				agentId: chatId ?? '',
+				...(options.title ? { title: options.title } : {}),
+				...(options.notes ? { notes: options.notes } : {}),
+			});
+			if (!res.success || !res.data) {
+				throw new Error(res.error?.message || 'Failed to open the pull request');
+			}
+			return res.data;
+		},
 	});
 }
 

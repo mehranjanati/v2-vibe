@@ -15,7 +15,7 @@ import bcrypt from 'bcryptjs';
 
 import type { LightWorkerBindings } from '../types/bindings';
 import { getGitHubToken, revokeGitHubToken, sealGitHubToken, storeGitHubToken } from './tokenVault';
-import { mirrorProjectToGitHub } from './githubMirror';
+import { mirrorProjectToGitHub, openGenerationPullRequest, readMirrorState } from './githubMirror';
 
 const SESSION_COOKIE = 'access_token';
 const CSRF_COOKIE = 'csrf_token';
@@ -636,6 +636,79 @@ export function buildLightApp(): Hono<LightAppEnv> {
 
 		return c.json(ok({ authUrl }));
 	});
+	// POST /api/github-app/push-pr — open (or reuse) a pull request for the
+	// newest succeeded generation (P1.4.6).
+	//
+	// The head branch is derived from lineage server-side (`gen/<id>`), never
+	// from the client, so the PR always shows the generation the control plane
+	// recorded. An app that was never exported has no repository to open a PR
+	// against, and inventing one here would create repositories the user did
+	// not ask for — so that case answers 409 NOT_EXPORTED instead.
+	app.post('/api/github-app/push-pr', async (c) => {
+		const userId = await getUserId(c);
+		if (!userId) return c.json(fail('Authentication required', 401), 401);
+
+		const body = (await c.req.json().catch(() => null)) as {
+			agentId?: string;
+			title?: string;
+			notes?: string;
+			base?: string;
+		} | null;
+		if (!body?.agentId) return c.json(fail('agentId is required'));
+
+		// `repo` scope (requested by /authorize) is what GitHub requires to
+		// create a pull request; a token stored before that scope existed
+		// answers 401 here and the UI sends the user through OAuth again.
+		const stored = await getGitHubToken(c.env, userId);
+		if (!stored) {
+			return c.json(fail('No cached GitHub token. Re-authenticate to open a pull request.', 401), 401);
+		}
+
+		const state = await readMirrorState(c.env, userId, body.agentId);
+		if (!state?.repoFullName.includes('/')) {
+			return c.json(
+				{ ...fail('Export this app to GitHub first; a pull request needs a repository.', 409), code: 'NOT_EXPORTED' },
+				409,
+			);
+		}
+		const [owner, repo] = state.repoFullName.split('/');
+		if (!owner || !repo) return c.json(fail('Stored repository is invalid', 500), 500);
+
+		const files = await fetchProjectFiles(c.env, body.agentId);
+		if (!files || Object.keys(files).length === 0) {
+			return c.json(fail('No generated files found for this project', 404), 404);
+		}
+
+		const pr = await openGenerationPullRequest(c.env, {
+			userId,
+			agentId: body.agentId,
+			token: stored.token,
+			owner,
+			repo,
+			base: body.base || state.branch || 'main',
+			files,
+			deployWorkflow: CLOUDFLARE_PAGES_WORKFLOW,
+			...(body.title ? { title: body.title } : {}),
+			...(body.notes ? { notes: body.notes } : {}),
+		});
+
+		if (!pr.ok) {
+			const where = pr.step ? ` (${pr.step}${pr.status ? ` ${pr.status}` : ''})` : '';
+			return c.json(fail(`Failed to open pull request${where}: ${pr.error ?? 'unknown error'}`, 502), 502);
+		}
+
+		return c.json(ok({
+			prUrl: pr.prUrl,
+			prNumber: pr.prNumber,
+			head: pr.head,
+			base: pr.base,
+			commitSha: pr.commitSha,
+			files: pr.fileCount,
+			reused: pr.reused ?? false,
+		}));
+	});
+
+
 
 	// GET /api/github-app/authorize — start OAuth flow
 	app.get('/api/github-app/authorize', (c) => {

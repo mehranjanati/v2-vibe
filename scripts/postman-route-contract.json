@@ -28,6 +28,7 @@
       "GET /api/github-app/authorize",
       "GET /api/github-app/callback",
       "POST /api/github-app/check-remote",
+      "POST /api/github-app/push-pr",
       "POST /api/github-app/revoke",
       "GET /api/apps",
       "GET /api/apps/favorites",

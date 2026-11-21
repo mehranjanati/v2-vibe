@@ -3,8 +3,10 @@ import { Badge, Button, Dialog, Empty, Loader, cn } from '@cloudflare/kumo';
 import {
 	ArrowCounterClockwise,
 	ClockCounterClockwise,
+	GitPullRequest,
 } from '@phosphor-icons/react';
 import {
+	useCreatePullRequest,
 	useGenerationDiff,
 	useGenerationHistory,
 	useRollbackGeneration,
@@ -20,8 +22,10 @@ import type { GenerationSummary } from '@/api-types';
  * rollback creates a NEW revert commit — the copy says so instead of implying a
  * history rewrite.
  *
- * Deliberately absent: the mirror-pending state (P1.5.4) — the GitHub mirror
- * (P1.4.5/P1.4.6) does not exist yet, so there is no flag to show.
+ * The pull-request action (P1.4.6) uses the Edge mirror: it pushes this
+ * generation onto `gen/<id>` as one atomic commit and opens (or reuses) a PR
+ * against the base branch. The mirror-pending state (P1.5.4) stays absent — a
+ * failed mirror is reported by the action itself, not by a stale flag.
  */
 
 type BadgeVariant = 'success' | 'warning' | 'error' | 'neutral' | 'orange';
@@ -66,6 +70,7 @@ export function HistoryPanel({ chatId }: { chatId?: string }) {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const diff = useGenerationDiff(chatId, selectedId);
 	const rollback = useRollbackGeneration(chatId);
+	const createPr = useCreatePullRequest(chatId);
 	const [notice, setNotice] = useState<{ tone: 'success' | 'alert'; text: string } | null>(null);
 	const [pendingRollback, setPendingRollback] = useState<GenerationSummary | null>(null);
 
@@ -208,22 +213,60 @@ export function HistoryPanel({ chatId }: { chatId?: string }) {
 									</span>
 									<span> · {diff.data?.files.length ?? 0} file(s) changed</span>
 								</div>
-								<Button
-									variant="secondary"
-									size="sm"
-									icon={<ArrowCounterClockwise />}
-									onClick={() => {
-										if (selected) setPendingRollback(selected);
-									}}
-									disabled={!selected?.commitSha || rollback.isPending}
-									title={
-										selected?.commitSha
-											? 'Restore this revision as a new commit'
-											: 'This generation has no internal commit to restore'
-									}
-								>
-									Roll back to this
-								</Button>
+								<div className="flex flex-wrap items-center gap-2">
+									<Button
+										variant="secondary"
+										size="sm"
+										icon={<GitPullRequest />}
+										onClick={() =>
+											createPr.mutate({}, {
+												onSuccess: (data) => {
+													// The Edge derives head/base from lineage, so a
+													// second click reuses the open PR instead of
+													// opening another one.
+													setNotice({
+														tone: 'success',
+														text: data.reused
+															? `Pull request #${data.prNumber ?? '—'} is already open for ${data.head} → ${data.base}.`
+															: `Opened pull request #${data.prNumber ?? '—'} (${data.head} → ${data.base}, ${data.files} file(s)).`,
+													});
+													if (data.prUrl) {
+														window.open(data.prUrl, '_blank', 'noopener,noreferrer');
+													}
+												},
+												onError: (error) => {
+													setNotice({
+														tone: 'alert',
+														text:
+															error instanceof Error
+																? error.message
+																: 'Failed to open the pull request',
+													});
+												},
+											})
+										}
+										loading={createPr.isPending}
+										title="Mirror this generation onto gen/<id> and open a pull request against the base branch"
+									>
+										Create pull request
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
+										icon={<ArrowCounterClockwise />}
+										onClick={() => {
+											if (selected) setPendingRollback(selected);
+										}}
+										disabled={!selected?.commitSha || rollback.isPending}
+										title={
+											selected?.commitSha
+												? 'Restore this revision as a new commit'
+												: 'This generation has no internal commit to restore'
+										}
+									>
+										Roll back to this
+									</Button>
+								</div>
 							</div>
 
 							{(diff.data?.files.length ?? 0) === 0 ? (

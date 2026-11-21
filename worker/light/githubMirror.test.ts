@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+	buildPullRequestBody,
 	buildTreeEntries,
 	GITHUB_API,
 	mirrorFiles,
 	mirrorProjectToGitHub,
 	modeForPath,
 	normaliseRepoPath,
+	openGenerationPullRequest,
 } from './githubMirror';
 
 interface RecordedCall {
@@ -190,6 +192,9 @@ function fakeDB(
 					if (sql.includes('FROM generations')) return options.generation ?? null;
 					return null;
 				},
+				async all() {
+					return { results: [] };
+				},
 				async run() {
 					writes.push(statement.bound);
 					return { success: true };
@@ -281,6 +286,145 @@ describe('mirrorProjectToGitHub', () => {
 
 		expect(result.ok).toBe(true);
 		expect(result.commitSha).toBe('commit-gh');
+	});
+});
+
+
+describe('buildPullRequestBody', () => {
+	it('carries the generation, the internal commit and the changed files', () => {
+		const body = buildPullRequestBody({
+			appId: 'ab017b60-1111-2222-3333-444455556666',
+			generationId: '8d729e17-aaaa-bbbb-cccc-ddddeeeeffff',
+			verdict: 'approve',
+			internalCommit: 'eaf402b53916b7fd4b6f337e19a2e0f5ba06f73d',
+			branch: 'gen/8d729e17',
+			files: [
+				{ path: 'public/index.html', op: 'create', afterSize: 207, author: 'coder' },
+				{ path: 'public/js/main.js', op: 'modify', afterSize: 339, author: 'gapfill' },
+			],
+			fileCount: 2,
+		});
+		expect(body).toContain('| generation | `8d729e17-aaaa-bbbb-cccc-ddddeeeeffff` |');
+		expect(body).toContain('| verdict | approve |');
+		expect(body).toContain('`eaf402b53916b7fd4b6f337e19a2e0f5ba06f73d`');
+		expect(body).toContain('| `public/index.html` | create | 207 | coder |');
+		expect(body).toContain('| `public/js/main.js` | modify | 339 | gapfill |');
+		expect(body).toContain('### Changed files (2)');
+	});
+
+	it('cap the file table and say how many were hidden', () => {
+		const files = Array.from({ length: 45 }, (_, index) => ({
+			path: `public/f${String(index).padStart(2, '0')}.js`,
+			op: 'create',
+			afterSize: index,
+			author: 'coder',
+		}));
+		const body = buildPullRequestBody({
+			appId: 'a',
+			generationId: 'g',
+			verdict: null,
+			internalCommit: null,
+			branch: 'gen/g',
+			files,
+			fileCount: 45,
+		});
+		expect(body).toContain('### Changed files (45)');
+		expect(body).toContain('…and 5 more.');
+		expect(body).toContain('| verdict | not recorded |');
+	});
+});
+
+describe('openGenerationPullRequest', () => {
+	it('mirrors the generation onto gen/<short> and opens the PR against base', async () => {
+		let blobs = 0;
+		const db = fakeDB({ generation: { id: 'gen-abcdef12', commit_sha: 'internal-sha-9' } });
+		const { transport, calls } = fakeTransport({
+			'POST /repos/o/r/git/blobs': () => ({ status: 201, body: { sha: `b${++blobs}` } }),
+			'POST /repos/o/r/git/trees': () => ({ status: 201, body: { sha: 'tree' } }),
+			'POST /repos/o/r/git/commits': () => ({ status: 201, body: { sha: 'commit-head' } }),
+			'POST /repos/o/r/git/refs': () => ({ status: 201, body: {} }),
+			'POST /repos/o/r/pulls': () => ({ status: 201, body: { number: 7, html_url: 'https://github.com/o/r/pull/7' } }),
+		});
+
+		const result = await openGenerationPullRequest(envWith(db), {
+			userId: 'u1',
+			agentId: 'app-1',
+			token: 't',
+			owner: 'o',
+			repo: 'r',
+			files: { 'public/index.html': '<html></html>' },
+			transport,
+		});
+
+		expect(result).toMatchObject({
+			ok: true,
+			prUrl: 'https://github.com/o/r/pull/7',
+			prNumber: 7,
+			head: 'gen/gen-abcd',
+			base: 'main',
+		});
+		// head branch comes from lineage, never from the client
+		const refCall = calls.find((call) => call.method === 'POST' && call.url === '/repos/o/r/git/refs');
+		expect(refCall?.body?.ref).toBe('refs/heads/gen/gen-abcd');
+		const pullCall = calls.find((call) => call.method === 'POST' && call.url === '/repos/o/r/pulls');
+		expect(pullCall?.body).toMatchObject({ head: 'gen/gen-abcd', base: 'main' });
+		expect(String(pullCall?.body?.body)).toContain('gen/gen-abcd');
+	});
+
+	it('reuses the open PR when GitHub answers 422 for an existing one', async () => {
+		let blobs = 0;
+		const db = fakeDB({ generation: { id: 'gen-abcdef12', commit_sha: null } });
+		const { transport } = fakeTransport({
+			'POST /repos/o/r/git/blobs': () => ({ status: 201, body: { sha: `b${++blobs}` } }),
+			'POST /repos/o/r/git/trees': () => ({ status: 201, body: { sha: 'tree' } }),
+			'POST /repos/o/r/git/commits': () => ({ status: 201, body: { sha: 'commit-head' } }),
+			'POST /repos/o/r/git/refs': () => ({ status: 201, body: {} }),
+			'POST /repos/o/r/pulls': () => ({ status: 422, body: { message: 'A pull request already exists' } }),
+			'GET /repos/o/r/pulls?state=open&head=o%3Agen%2Fgen-abcd': () => ({
+				status: 200,
+				body: [{ number: 3, html_url: 'https://github.com/o/r/pull/3' }],
+			}),
+		});
+
+		const result = await openGenerationPullRequest(envWith(db), {
+			userId: 'u1',
+			agentId: 'app-1',
+			token: 't',
+			owner: 'o',
+			repo: 'r',
+			files: { 'public/index.html': '<html></html>' },
+			transport,
+		});
+
+		expect(result).toMatchObject({ ok: true, reused: true, prNumber: 3, prUrl: 'https://github.com/o/r/pull/3' });
+	});
+
+	it('reports "nothing to compare" when the head is already merged', async () => {
+		let blobs = 0;
+		const db = fakeDB({ generation: { id: 'gen-abcdef12', commit_sha: null } });
+		const { transport } = fakeTransport({
+			'POST /repos/o/r/git/blobs': () => ({ status: 201, body: { sha: `b${++blobs}` } }),
+			'POST /repos/o/r/git/trees': () => ({ status: 201, body: { sha: 'tree' } }),
+			'POST /repos/o/r/git/commits': () => ({ status: 201, body: { sha: 'commit-head' } }),
+			'POST /repos/o/r/git/refs': () => ({ status: 201, body: {} }),
+			'POST /repos/o/r/pulls': () => ({ status: 422, body: { message: 'No commits between main and gen/gen-abcd' } }),
+			'GET /repos/o/r/pulls?state=open&head=o%3Agen%2Fgen-abcd': () => ({ status: 200, body: [] }),
+		});
+
+		const result = await openGenerationPullRequest(envWith(db), {
+			userId: 'u1',
+			agentId: 'app-1',
+			token: 't',
+			owner: 'o',
+			repo: 'r',
+			files: { 'public/index.html': '<html></html>' },
+			transport,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.step).toBe('pull-request');
+		expect(result.status).toBe(422);
+		expect(result.error).toContain('no changes to pull');
 	});
 });
 

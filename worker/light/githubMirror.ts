@@ -479,3 +479,221 @@ export async function mirrorProjectToGitHub(
 }
 
 
+/** One recorded file change of a generation (P1.4 diff rows, no contents). */
+export interface GenerationFileRow {
+	path: string;
+	op: string;
+	afterSize: number | null;
+	author: string | null;
+}
+
+/** The recorded diff of one generation — the evidence the PR body carries. */
+export async function generationFiles(
+	env: LightWorkerBindings,
+	generationId: string,
+): Promise<GenerationFileRow[]> {
+	try {
+		const { results } = await env.DB.prepare(
+			`SELECT path, op, after_size, author_agent FROM generation_files
+			  WHERE generation_id = ? ORDER BY path`,
+		)
+			.bind(generationId)
+			.all<{ path: string; op: string; after_size: number | null; author_agent: string | null }>();
+		return (results ?? []).map((row) => ({
+			path: row.path,
+			op: row.op,
+			afterSize: row.after_size,
+			author: row.author_agent,
+		}));
+	} catch (error) {
+		console.warn('[mirror] generation diff read failed:', error instanceof Error ? error.message : String(error));
+		return [];
+	}
+}
+
+/** PR body: what changed, which generation produced it, and the internal commit. */
+export function buildPullRequestBody(input: {
+	appId: string;
+	generationId: string | null;
+	verdict: string | null;
+	internalCommit: string | null;
+	branch: string;
+	files: GenerationFileRow[];
+	fileCount: number;
+	notes?: string;
+}): string {
+	const lines: string[] = [];
+	lines.push(
+		input.notes?.trim() ||
+			`Generation ${input.generationId?.slice(0, 8) ?? 'latest'} of app ${input.appId.slice(0, 8)}.`,
+	);
+	lines.push('');
+	lines.push('| field | value |');
+	lines.push('|---|---|');
+	lines.push(`| app | \`${input.appId}\` |`);
+	lines.push(`| generation | \`${input.generationId ?? 'unknown'}\` |`);
+	lines.push(`| verdict | ${input.verdict ?? 'not recorded'} |`);
+	lines.push(`| internal commit | ${input.internalCommit ? `\`${input.internalCommit}\`` : 'not recorded'} |`);
+	lines.push(`| branch | \`${input.branch}\` |`);
+	lines.push('');
+	if (input.files.length > 0) {
+		const shown = input.files.slice(0, 40);
+		lines.push(`### Changed files (${input.files.length})`);
+		lines.push('');
+		lines.push('| path | op | size | author |');
+		lines.push('|---|---|---|---|');
+		for (const file of shown) {
+			lines.push(`| \`${file.path}\` | ${file.op} | ${file.afterSize ?? '—'} | ${file.author ?? 'unknown'} |`);
+		}
+		if (input.files.length > shown.length) {
+			lines.push('');
+			lines.push(`…and ${input.files.length - shown.length} more.`);
+		}
+	} else {
+		lines.push(`### Files (${input.fileCount})`);
+		lines.push('');
+		lines.push('The lineage diff for this generation is not recorded; the tree carries all files.');
+	}
+	lines.push('');
+	lines.push('---');
+	lines.push(
+		'Mirrored from the VibeSDK control plane as one atomic commit (P1.4.5); this PR was opened from the app History surface (P1.4.6).',
+	);
+	return lines.join('\n');
+}
+
+
+export interface PullRequestResult {
+	ok: boolean;
+	prUrl?: string;
+	prNumber?: number;
+	/** Commit the head branch points at after the mirror. */
+	commitSha?: string;
+	head?: string;
+	base?: string;
+	fileCount?: number;
+	/** True when an open PR for the same head already existed and was returned. */
+	reused?: boolean;
+	step?: MirrorStep | 'pull-request' | 'pull-list';
+	status?: number;
+	error?: string;
+}
+
+/**
+ * Open (or reuse) a pull request for the newest succeeded generation (P1.4.6).
+ *
+ * The tree is mirrored onto `gen/<short>` with the same atomic push as P1.4.5,
+ * so the head branch is exactly one commit; the PR then targets `base`. A 422
+ * "A pull request already exists" is not a failure — the open PR for that head
+ * is returned, so a double click never creates two PRs.
+ *
+ * `head` is derived from lineage, never from the client: the PR always shows
+ * the generation the control plane recorded, not whatever the UI had selected.
+ */
+export async function openGenerationPullRequest(
+	env: LightWorkerBindings,
+	input: {
+		userId: string;
+		agentId: string;
+		token: string;
+		owner: string;
+		repo: string;
+		base?: string;
+		files: Record<string, string>;
+		deployWorkflow?: string;
+		title?: string;
+		notes?: string;
+		transport?: FetchLike;
+	},
+): Promise<PullRequestResult> {
+	const transport = input.transport ?? fetch;
+	const base = input.base ?? 'main';
+	const generation = await latestSucceededGeneration(env, input.agentId);
+	const head = `gen/${(generation?.id ?? 'latest').slice(0, 8)}`;
+	const fullRepo = `${input.owner}/${input.repo}`;
+
+	const mirror = await mirrorFiles(transport, {
+		token: input.token,
+		owner: input.owner,
+		repo: input.repo,
+		branch: head,
+		files: {
+			...input.files,
+			...(input.deployWorkflow ? { [DEPLOY_WORKFLOW_PATH]: input.deployWorkflow } : {}),
+		},
+		message:
+			`chore(mirror): generation ${generation?.id.slice(0, 8) ?? 'latest'} on ${head}` +
+			(generation?.commitSha ? `\n\ninternal commit ${generation.commitSha.slice(0, 8)}` : ''),
+	});
+	if (!mirror.ok) {
+		return { ok: false, step: mirror.step, status: mirror.status, error: mirror.error, head, base };
+	}
+
+	const diff = generation?.id ? await generationFiles(env, generation.id) : [];
+	const title =
+		input.title?.trim() ||
+		`Generation ${(generation?.id ?? '').slice(0, 8) || 'latest'} of app ${input.agentId.slice(0, 8)}`;
+	const body = buildPullRequestBody({
+		appId: input.agentId,
+		generationId: generation?.id ?? null,
+		verdict: null,
+		internalCommit: generation?.commitSha ?? null,
+		branch: head,
+		files: diff,
+		fileCount: mirror.fileCount ?? 0,
+		...(input.notes ? { notes: input.notes } : {}),
+	});
+
+	const create = await ghCall(transport, `/repos/${fullRepo}/pulls`, {
+		method: 'POST',
+		headers: headers(input.token, true),
+		body: JSON.stringify({ title, head, base, body }),
+	});
+	const common = {
+		commitSha: mirror.commitSha,
+		head,
+		base,
+		fileCount: mirror.fileCount,
+	};
+	if (create.status === 201) {
+		return {
+			ok: true,
+			...common,
+			prUrl: typeof create.body.html_url === 'string' ? create.body.html_url : undefined,
+			prNumber: typeof create.body.number === 'number' ? create.body.number : undefined,
+			reused: false,
+		};
+	}
+
+	if (create.status === 422) {
+		const listed = await ghCall(
+			transport,
+			`/repos/${fullRepo}/pulls?state=open&head=${encodeURIComponent(`${input.owner}:${head}`)}`,
+			{ headers: headers(input.token) },
+		);
+		if (listed.status === 200 && Array.isArray(listed.body)) {
+			const existing = (listed.body as Array<Record<string, unknown>>)[0];
+			if (existing) {
+				return {
+					ok: true,
+					...common,
+					prUrl: typeof existing.html_url === 'string' ? existing.html_url : undefined,
+					prNumber: typeof existing.number === 'number' ? existing.number : undefined,
+					reused: true,
+				};
+			}
+		}
+		// Nothing to compare: the head tree is already what base has.
+		return {
+			ok: false,
+			...common,
+			step: 'pull-request',
+			status: 422,
+			error: 'no changes to pull (head is already merged into base)',
+		};
+	}
+
+	return { ok: false, ...common, step: 'pull-request', status: create.status, error: messageOf(create.body) };
+}
+
+

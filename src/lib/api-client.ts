@@ -71,6 +71,7 @@ import type{
 	GenerationHistoryData,
 	GenerationDiffData,
 	GenerationRollbackData,
+	GenerationPullRequestData,
 } from '@/api-types';
 import {
 	RateLimitExceededError,
@@ -1049,6 +1050,23 @@ class ApiClient {
 		}>;
 	}>> {
 		return this.request('/api/github-app/check-remote', {
+			method: 'POST',
+			body: data,
+		});
+	}
+
+	/**
+	 * P1.4.6 — open (or reuse) a pull request for the newest succeeded
+	 * generation. The Edge derives the head branch from lineage server-side, so
+	 * nothing about the branch/target comes from the browser.
+	 */
+	async pushPullRequest(data: {
+		agentId: string;
+		title?: string;
+		notes?: string;
+		base?: string;
+	}): Promise<ApiResponse<GenerationPullRequestData>> {
+		return this.request<GenerationPullRequestData>('/api/github-app/push-pr', {
 			method: 'POST',
 			body: data,
 		});
