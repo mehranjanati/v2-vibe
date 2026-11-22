@@ -139,17 +139,26 @@ export function useControlPlane({
 	}, []);
 
 	const connect = useCallback(
-		(id: string) => {
+		async (id: string) => {
 			socketRef.current?.close();
-			const ws = openControlPlaneSocket(id);
-			socketRef.current = ws;
-			setSocket(ws);
-			setConnected(false);
+			// P0-SEC-008: minting the ticket is a network call, so the socket
+			// opens asynchronously; the handlers are attached immediately after.
+			// A failed ticket request must surface as a UI error, never as an
+			// unhandled rejection.
+			try {
+				const ws = await openControlPlaneSocket(id);
+				socketRef.current = ws;
+				setSocket(ws);
+				setConnected(false);
 
-			ws.onopen = () => setConnected(true);
-			ws.onclose = () => setConnected(false);
-			ws.onerror = () => setError('Control plane WebSocket error');
-			ws.onmessage = (event) => handleMessage(String(event.data));
+				ws.onopen = () => setConnected(true);
+				ws.onclose = () => setConnected(false);
+				ws.onerror = () => setError('Control plane WebSocket error');
+				ws.onmessage = (event) => handleMessage(String(event.data));
+			} catch {
+				setConnected(false);
+				setError('Could not open the control plane WebSocket');
+			}
 		},
 		[handleMessage],
 	);

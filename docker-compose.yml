@@ -43,6 +43,14 @@ services:
       # wrangler.v2.jsonc d1_databases[0].database_id. No default on purpose:
       # a wrong id silently points the control plane at another database.
       D1_DATABASE_ID: ${D1_DATABASE_ID:-}
+      # P0.3 control-plane session boundary (opt-in). Turning it on makes every
+      # guarded route require an Edge session token and fail closed (401/503) —
+      # this is how to prove the deployed-plane behaviour locally without a paid
+      # staging environment (docs/DEPLOY_RENDER_CLOUDFLARE.md, P0 rollout).
+      #   VIBECODER_STORE_KV_ID must be the namespace the Edge mints into
+      #   (56d249930a4447ee92493a7ff061a3ae), not a separate staging one.
+      CONTROL_PLANE_REQUIRE_SESSION: ${CONTROL_PLANE_REQUIRE_SESSION:-false}
+      VIBECODER_STORE_KV_ID: ${VIBECODER_STORE_KV_ID:-}
     ports:
       - "8080:8080"
     restart: unless-stopped

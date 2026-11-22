@@ -84,4 +84,5 @@ Also out of scope (unchanged): `POST /api/ws-ticket` (referenced by `sdk/src/htt
 | `GET /health` | Control/Go (Worker answers `/api/status`, not `/health`) | `backend/pkg/api/routes.go:51` |
 | `POST /api/agent` (NDJSON) | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:118` |
 | `POST /api/agent/session`, `GET /api/agent/:id/connect` | Control/Go (Worker: 503) | `backend/pkg/api/routes.go:298,301` |
+| `POST /api/ws-ticket` | Control/Go — P0-SEC-008 short-lived single-use WebSocket ticket (session + room ownership required; `{ticket, expiresIn, expiresAt}`) | `backend/pkg/api/routes.go:352` |
 | `GET /api/apps/:id` | Control/Go stub + Worker D1 list routes | `backend/pkg/api/routes.go:255`, `worker/light/lightApp.ts:809` |

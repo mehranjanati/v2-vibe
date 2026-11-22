@@ -83,10 +83,16 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 		if jerr != nil {
 			return c.Status(400).JSON(fiber.Map{"success": false, "error": "input is not JSON-serializable"})
 		}
-		// P0.7: the run carries its tenant (workflow_dags.user_id, resolved by
-		// workflowGuard) so the runtime refuses to execute a DAG that belongs
-		// to someone else. An unowned workflow records a NULL tenant.
-		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, dag.UserID, string(inputJSON)); err != nil {
+		// P0.7 + P0-SEC-005: the run carries the tenant workflowGuard resolved
+		// and authorized, so the runtime can always compare it against the DAG.
+		// Legacy rows (workflow_dags.user_id NULL) are authorized through the
+		// room-ownership fallback — stamping the raw dag.UserID there would
+		// record a NULL tenant and make the runtime's mismatch check vacuous.
+		runTenant := dag.UserID
+		if resolved, ok := c.Locals(workflowOwnerLocals).(string); ok && resolved != "" {
+			runTenant = resolved
+		}
+		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, runTenant, string(inputJSON)); err != nil {
 			return c.Status(500).JSON(fiber.Map{"success": false, "error": "failed to record the workflow run"})
 		}
 

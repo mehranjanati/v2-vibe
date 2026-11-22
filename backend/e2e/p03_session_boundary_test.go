@@ -370,7 +370,7 @@ func TestP03SessionBoundaryRollout(t *testing.T) {
 		}{
 			{"X-Session-Token", map[string]string{"X-Session-Token": token}},
 			{"Authorization: Bearer", map[string]string{"Authorization": "Bearer " + token}},
-			{"session cookie", map[string]string{"Cookie": "session=" + token}},
+			{"access_token cookie", map[string]string{"Cookie": "access_token=" + token}},
 		}
 		for _, tc := range cases {
 			r := p03Do(t, guarded, http.MethodGet, "/api/projects/p03/files", tc.headers)

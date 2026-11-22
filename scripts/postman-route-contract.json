@@ -71,6 +71,7 @@
       "GET /api/apps/:id",
       "POST /api/agent/session",
       "GET /api/agent/:id/connect",
+  "POST /api/ws-ticket",
       "POST /api/projects/:id/deploy",
       "GET /api/projects/:id/files",
       "POST /api/projects/:id/github-export",

@@ -162,7 +162,7 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 		agentID := uuid.NewString()
 		line, err := json.Marshal(fiber.Map{
 			"agentId":      agentID,
-			"websocketUrl": buildWebSocketURL(c, agentID),
+			"websocketUrl": buildWebSocketURL(c, hub, agentID),
 			"behaviorType": "phasic",
 			"projectType":  "app",
 			"template": fiber.Map{
@@ -346,6 +346,11 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// React frontend connects to. Creation claims the room for its caller.
 	app.Post("/api/agent/session", guard, handleCreateSession(hub))
 
+	// P0-SEC-008: mint a short-lived, single-use WebSocket ticket for one room.
+	// This is the endpoint the SDK already calls (sdk/src/http.ts getWsTicket);
+	// the upgrade refuses a long-lived session token in the URL.
+	app.Post("/api/ws-ticket", guard, handleWSTicket(hub))
+
 	// REST: connect to an existing agent session.
 	app.Get("/api/agent/:id/connect", guard, ownerGuard(hub), handleConnectAgent(hub))
 
@@ -378,7 +383,15 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// boundary first (a no-op until CONTROL_PLANE_REQUIRE_SESSION installs a
 	// verifier), so a connection without a valid ticket/session is rejected
 	// before the room is touched.
-	app.Get("/ws/:id", wsGuard(hub), websocket.New(handleWebSocket(hub)))
+	// Wire format for `websocketUrl` is `wss://<host>/ws/<chatId>?ticket=<token>`
+	// when the boundary is on (see buildWebSocketURL).
+	//
+	// P0.5 (authentication) + P0-SEC-003 (authorization): the upgrade runs the
+	// session guard FIRST and the per-room ownership guard SECOND — the same
+	// guard pair the HTTP project routes use — so a socket is bound to the room's
+	// owner, not merely to "some logged-in user". Both guards are no-ops when no
+	// SessionVerifier is installed, preserving the boundary-off behaviour.
+	app.Get("/ws/:id", wsOriginGuard(), wsGuard(hub), ownerGuardFor(hub, "id"), websocket.New(handleWebSocket(hub)))
 }
 
 // sessionGuard returns the middleware every guarded control-plane route runs
@@ -443,6 +456,13 @@ func ownerGuardFor(hub *engine.EngineHub, param string) fiber.Handler {
 // Like the other guards it is a no-op when no SessionVerifier is installed, so
 // a deployment that has not turned the P0.3 boundary on keeps its previous
 // behaviour (single-tenant dev/CI).
+// workflowOwnerLocals carries the tenant workflowGuard resolved and authorized,
+// so the trigger handler stamps the run with the SAME identity that was checked
+// (P0-SEC-005). Without it, a legacy row whose `workflow_dags.user_id` is NULL —
+// authorized through the P0.4 room-ownership fallback — would record a NULL
+// tenant, leaving the runtime's mismatch check nothing to compare against.
+const workflowOwnerLocals = "workflow.owner"
+
 func workflowGuard(hub *engine.EngineHub) fiber.Handler {
 	if hub.SessionVerifier() == nil {
 		return func(c *fiber.Ctx) error { return c.Next() }
@@ -469,7 +489,10 @@ func workflowGuard(hub *engine.EngineHub) fiber.Handler {
 
 		if identity.UserID != "" && identity.UserID != owner {
 			auditWorkflowAccessDenial(hub, c, workflowID, identity.UserID, owner)
+			return owner, true, nil
 		}
+		// Only the authorized path records the tenant for the handler.
+		c.Locals(workflowOwnerLocals, owner)
 		return owner, true, nil
 	})
 }
@@ -524,7 +547,143 @@ func wsGuard(hub *engine.EngineHub) fiber.Handler {
 	if verifier == nil {
 		return func(c *fiber.Ctx) error { return c.Next() }
 	}
-	return RequireWebSocketSession(verifier)
+	return RequireWebSocketSession(verifier, hub)
+}
+
+// originAllowed reports whether a browser Origin may be trusted. Used by the
+// WebSocket handshake (P0-SEC-008) and by the cookie-authenticated CSRF rule
+// (P0-SEC-009).
+//
+// P0-SEC-008 (W2): CORS does not apply to the WebSocket handshake, so without
+// this check any web page could open a socket to the control plane and drive a
+// room (cross-site WebSocket hijacking). The rules:
+//
+//   - no Origin header → allowed. Non-browser clients (SDK, CLI, the e2e dial)
+//     cannot forge Origin, and a browser cannot omit it; CSWSH is a browser-only
+//     attack, so requiring an Origin for those clients would break them without
+//     adding protection.
+//   - exact match against the same allow-list CORS uses (defaults plus
+//     CORS_ALLOWED_ORIGINS).
+//   - one leading `*.` wildcard segment is honoured, because the shipped
+//     allow-list contains `https://*.vibeos-dda.pages.dev` and exact matching
+//     would silently reject every preview deployment.
+func originAllowed(origin string) bool {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if origin == "" {
+		return true
+	}
+	for _, allowed := range corsAllowedOrigins() {
+		if origin == allowed {
+			return true
+		}
+		if strings.HasPrefix(allowed, "https://*.") {
+			suffix := allowed[len("https://*"):] // ".vibeos-dda.pages.dev"
+			if strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, suffix) {
+				// The wildcard covers sub-domains only, never the bare host.
+				if len(origin) > len("https://")+len(suffix) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// wsOriginGuard enforces the browser Origin allow-list on the WebSocket
+// handshake. P0-SEC-008 (W2): CORS does not apply to the WebSocket handshake, so
+// without this check any web page could open a socket to the control plane and
+// drive a room (cross-site WebSocket hijacking).
+//
+// It is middleware rather than an upgrader option because the Fiber websocket
+// config only supports exact `Origins` matching, while the shipped allow-list
+// contains a `https://*.` wildcard and non-browser clients send no Origin at all.
+//
+// The rules: no Origin → allowed (a browser cannot omit it and CSWSH is a
+// browser-only attack, so requiring it would only break the SDK/CLI/e2e dial);
+// exact match against the CORS allow-list → allowed; `https://*.host` → allowed
+// for real sub-domains only.
+func wsOriginGuard() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if originAllowed(c.Get(fiber.HeaderOrigin)) {
+			return c.Next()
+		}
+		log.Printf("[ws] rejected upgrade from origin %q (not in the allow-list)", c.Get(fiber.HeaderOrigin))
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"success": false,
+			"error":   "origin not allowed",
+		})
+	}
+}
+
+// authorizeRoomOwner enforces the same ownership contract as ownerGuard, for
+// handlers that learn the room id from the request BODY rather than a route
+// param (POST /api/ws-ticket). Returns nil when the caller owns the room, or the
+// fiber error to answer with: 401 no identity, 404 unowned/unknown, 403 another
+// tenant, 503 ownership-store outage.
+func authorizeRoomOwner(c *fiber.Ctx, hub *engine.EngineHub, chatID string) error {
+	identity, ok := CurrentIdentity(c)
+	if !ok || identity.UserID == "" {
+		return unauthenticated(c)
+	}
+	if chatID == "" {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"success": false, "error": "resource not found"})
+	}
+	owner, claimed, err := hub.RoomOwner(chatID)
+	if err != nil {
+		log.Printf("[api] ws-ticket owner lookup failed for %s: %v", chatID, err)
+		return sessionStoreUnavailable(c)
+	}
+	if !claimed || owner == "" {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"success": false, "error": "resource not found"})
+	}
+	if owner != identity.UserID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"success": false, "error": "forbidden"})
+	}
+	return nil
+}
+
+// handleWSTicket implements POST /api/ws-ticket — the short-lived ticket the
+// WebSocket upgrade requires (P0-SEC-008).
+//
+// The contract is the one the SDK already implements
+// (sdk/src/http.ts getWsTicket): body { resourceType: "agent", resourceId },
+// response { ticket, expiresIn, expiresAt }. The ticket is single-use, lives
+// WSTicketTTL (15s) and is bound to the caller and that one room, so it is safe
+// to carry in a URL where the session token was not.
+func handleWSTicket(hub *engine.EngineHub) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var body struct {
+			ResourceType string `json:"resourceType"`
+			ResourceID   string `json:"resourceId"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "invalid request body"})
+		}
+		if rt := strings.TrimSpace(body.ResourceType); rt != "" && rt != "agent" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "unsupported resourceType"})
+		}
+		chatID := strings.TrimSpace(body.ResourceID)
+		if chatID == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"success": false, "error": "resourceId is required"})
+		}
+		if err := authorizeRoomOwner(c, hub, chatID); err != nil {
+			return err
+		}
+		identity, _ := CurrentIdentity(c)
+		ticket, expiresAt, err := hub.IssueWSTicket(identity.UserID, chatID)
+		if err != nil {
+			log.Printf("[api] failed to issue ws ticket for %s: %v", chatID, err)
+			return sessionStoreUnavailable(c)
+		}
+		return c.JSON(fiber.Map{
+			"success": true,
+			"data": fiber.Map{
+				"ticket":    ticket,
+				"expiresIn": int(engine.WSTicketTTL / time.Second),
+				"expiresAt": expiresAt.UTC().Format(time.RFC3339),
+			},
+		})
+	}
 }
 
 // buildWebSocketURL derives the ws:// or wss:// URL the frontend should
@@ -534,7 +693,7 @@ func wsGuard(hub *engine.EngineHub) fiber.Handler {
 // the raw request scheme — decides ws vs wss. A ws:// URL returned to an
 // https page is blocked as mixed content, which is exactly the failure mode
 // this guards against.
-func buildWebSocketURL(c *fiber.Ctx, chatID string) string {
+func buildWebSocketURL(c *fiber.Ctx, hub *engine.EngineHub, chatID string) string {
 	host := c.Get("X-Forwarded-Host")
 	if host == "" {
 		host = c.Hostname()
@@ -557,13 +716,17 @@ func buildWebSocketURL(c *fiber.Ctx, chatID string) string {
 		scheme = "wss"
 	}
 	base := scheme + "://" + host + "/ws/" + chatID
-	// P0.5: when the request is authenticated (the boundary is on), carry the
-	// session token as the WebSocket ticket on the URL the browser already
-	// connects to — a WebSocket handshake cannot set headers, so this is how a
-	// same-flow caller satisfies RequireWebSocketSession. With the boundary off
-	// there is no identity and the URL is unchanged.
-	if identity, ok := CurrentIdentity(c); ok && identity.Token != "" {
-		base += "?ticket=" + url.QueryEscape(identity.Token)
+	// P0-SEC-008: when the request is authenticated (the boundary is on), mint a
+	// short-lived single-use ticket for THIS room instead of embedding the
+	// session token. A WebSocket handshake cannot set headers, so the URL is the
+	// only channel a browser has — and a URL is logged, so it may only carry a
+	// credential that is narrow (one room), short-lived (WSTicketTTL) and already
+	// spent after one use. With the boundary off there is no identity and the
+	// URL stays bare (no ticket to mint).
+	if identity, ok := CurrentIdentity(c); ok && identity.UserID != "" && hub != nil {
+		if ticket, _, err := hub.IssueWSTicket(identity.UserID, chatID); err == nil && ticket != "" {
+			base += "?ticket=" + url.QueryEscape(ticket)
+		}
 	}
 	return base
 }
@@ -618,7 +781,7 @@ func handleCreateSession(hub *engine.EngineHub) fiber.Handler {
 
 		log.Printf("[api] created agent session %s", chatID)
 		return c.JSON(fiber.Map{
-			"websocketUrl": buildWebSocketURL(c, chatID),
+			"websocketUrl": buildWebSocketURL(c, hub, chatID),
 			"agentId":      chatID,
 			"behaviorType": "phasic",
 			"projectType":  "app",
@@ -646,7 +809,7 @@ func handleConnectAgent(hub *engine.EngineHub) fiber.Handler {
 			"success": true,
 			"data": fiber.Map{
 				"agentId":      chatID,
-				"websocketUrl": buildWebSocketURL(c, chatID),
+				"websocketUrl": buildWebSocketURL(c, hub, chatID),
 			},
 		})
 	}

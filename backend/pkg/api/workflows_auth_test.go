@@ -165,6 +165,14 @@ func (f *fakeWorkflowD1) setFailOwnership(fail bool) {
 	f.failOwnership = fail
 }
 
+// cloudflareRuns returns the Cloudflare Workflows instances the control plane
+// asked the emulator to start (P0-SEC-005: a refused trigger must start none).
+func (f *fakeWorkflowD1) cloudflareRuns() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]any(nil), f.cfRuns...)
+}
+
 // workflowEnv is one P0.7 test fixture: the real routes over emulated stores.
 type workflowEnv struct {
 	app *fiber.App
@@ -285,7 +293,58 @@ func TestWorkflowTenantIsolationCrossUserDeniedAndAudited(t *testing.T) {
 	}
 }
 
-// TestWorkflowTenantIsolationOwnerAllowed proves the guard is not a blanket
+// TestWorkflowTriggerStampsAuthorizedTenantForLegacyDag is the P0-SEC-005
+// acceptance criterion on the legacy path: a row whose `workflow_dags.user_id`
+// is NULL is authorized through the P0.4 room-ownership fallback, and the run
+// must therefore carry the tenant that was actually authorized — not NULL.
+// A NULL stamp would leave the runtime's mismatch check nothing to compare
+// against, so a cross-tenant run could never be refused there.
+func TestWorkflowTriggerStampsAuthorizedTenantForLegacyDag(t *testing.T) {
+	env := newWorkflowEnv(t, p07Tokens(), map[string]map[string]any{"wf-a": generatedDagRow(nil)})
+	if _, _, err := env.hub.ClaimRoomOwner("wf-a", "user-a"); err != nil {
+		t.Fatalf("claim room owner: %v", err)
+	}
+
+	status, _ := workflowRequest(t, env.app, http.MethodPost, "/api/workflows/trigger", "token-a",
+		map[string]any{"workflowId": "wf-a"})
+	if status != http.StatusOK {
+		t.Fatalf("owner trigger on a legacy DAG: expected 200, got %d", status)
+	}
+
+	instances := env.d1.instanceRows()
+	if len(instances) != 1 {
+		t.Fatalf("expected exactly one run row, got %d", len(instances))
+	}
+	if got := instances[0]["user_id"]; got != "user-a" {
+		t.Fatalf("legacy DAG run must carry the authorized tenant, got %v (DAG user_id was NULL)", got)
+	}
+
+	// The other tenant stays refused, audited, and rowless.
+	status, _ = workflowRequest(t, env.app, http.MethodPost, "/api/workflows/trigger", "token-b",
+		map[string]any{"workflowId": "wf-a"})
+	if status != http.StatusForbidden {
+		t.Fatalf("cross-tenant trigger on a legacy DAG: expected 403, got %d", status)
+	}
+	if got := len(env.d1.instanceRows()); got != 1 {
+		t.Fatalf("a denied trigger must not add a run row, got %d rows", got)
+	}
+}
+
+// TestWorkflowTriggerDeniedInvokesNoRuntime pins the second half of the
+// acceptance criterion: a refused trigger never reaches Cloudflare Workflows, so
+// no execution exists to leak or bill against.
+func TestWorkflowTriggerDeniedInvokesNoRuntime(t *testing.T) {
+	env := newWorkflowEnv(t, p07Tokens(), map[string]map[string]any{"wf-a": generatedDagRow("user-a")})
+
+	if status, _ := workflowRequest(t, env.app, http.MethodPost, "/api/workflows/trigger", "token-b",
+		map[string]any{"workflowId": "wf-a"}); status != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", status)
+	}
+	if runs := env.d1.cloudflareRuns(); len(runs) != 0 {
+		t.Fatalf("a denied trigger must not start a runtime instance, got %v", runs)
+	}
+}
+
 // deny: the owner reads the DAG (200) and triggers a run (200), and the run
 // row carries the workflow's tenant.
 func TestWorkflowTenantIsolationOwnerAllowed(t *testing.T) {

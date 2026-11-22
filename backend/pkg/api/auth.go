@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -47,13 +48,20 @@ type Identity struct {
 // identityLocals is the c.Locals key carrying the resolved Identity.
 const identityLocals = "auth.identity"
 
-// sessionCookieName mirrors the light Worker's SESSION_COOKIE
-// (worker/light/lightApp.ts) so a same-origin request can be authenticated by
-// the cookie alone.
-const sessionCookieName = "session"
+// sessionCookieName is the light Worker's SESSION_COOKIE
+// (worker/light/lightApp.ts). It is `access_token`, not `session`: the control
+// plane used to look for `session`, a cookie the Edge never sets, so the
+// documented cookie transport was dead weight and its comment was wrong
+// (P0-SEC-009).
+//
+// The cookie is normally NOT usable from the split deployment, because it is
+// scoped to the Worker origin (Render serves the control plane from another
+// host). It works only when both planes are served from one origin (a proxied or
+// self-hosted single-domain deployment), which is why the transport exists.
+const sessionCookieName = "access_token"
 
 // sessionTokenFromRequest extracts a session token and the source it came
-// from. Priority: Authorization: Bearer, X-Session-Token, then the `session`
+// from. Priority: Authorization: Bearer, X-Session-Token, then the session
 // cookie.
 func sessionTokenFromRequest(c *fiber.Ctx) (token, source string) {
 	if auth := strings.TrimSpace(c.Get(fiber.HeaderAuthorization)); auth != "" {
@@ -101,6 +109,21 @@ func RequireSession(verifier engine.SessionVerifier) fiber.Handler {
 		}
 		if userID == "" {
 			return unauthenticated(c)
+		}
+
+		// P0-SEC-009: cookie authentication is the one transport a browser
+		// attaches automatically, so it is the one that needs a CSRF check.
+		// The header transports cannot be set by a cross-site page, but a
+		// cookie can — therefore a cookie-authenticated request must come from
+		// an allowed Origin (or send no Origin at all, which a browser cannot
+		// do for a cross-site request). Same allow-list the CORS/WebSocket
+		// layers use.
+		if source == "cookie" && !originAllowed(c.Get(fiber.HeaderOrigin)) {
+			log.Printf("[api] refused cookie-authenticated request from origin %q", c.Get(fiber.HeaderOrigin))
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"success": false,
+				"error":   "origin not allowed",
+			})
 		}
 
 		c.Locals(identityLocals, Identity{UserID: userID, Token: token, Source: source})
@@ -255,43 +278,87 @@ func (v StaticSessionVerifier) VerifyUserID(_ context.Context, token string) (st
 // sessionTokenFromRequest already understands are kept as fallbacks for
 // programmatic and same-origin clients.
 
-// wsTokenFromRequest extracts the session token a WebSocket upgrade presents.
-// Priority: the `ticket` query param, the `token` query param, then the
-// standard HTTP transports (Authorization: Bearer, X-Session-Token, `session`
-// cookie). The returned source is "query" for the URL transports.
-func wsTokenFromRequest(c *fiber.Ctx) (token, source string) {
+// wsTokenFromRequest extracts what a WebSocket upgrade presents to authenticate.
+//
+// P0-SEC-008 split the credential by channel, because the two leak differently:
+//
+//   - the `ticket` query parameter must be a SHORT-LIVED, SINGLE-USE ticket
+//     (engine.WSTicketTTL) — never a session token. A query string is recorded by
+//     proxies and CDNs, so only a narrow, already-expiring credential may travel
+//     there. The legacy `token` query alias was removed for the same reason: it
+//     accepted the long-lived session token in the URL.
+//   - the header transports (Authorization: Bearer, X-Session-Token, the session
+//     cookie) still accept the session token: headers are not logged in URLs.
+//
+// The returned source is "query" for the ticket and the transport name
+// otherwise, so the caller can pick the matching verifier.
+func wsTokenFromRequest(c *fiber.Ctx, tickets engine.WSTicketRedeemer) (identity Identity, reject error) {
 	if q := strings.TrimSpace(c.Query("ticket")); q != "" {
-		return q, "query"
+		if tickets == nil {
+			return Identity{}, sessionStoreUnavailable(c)
+		}
+		userID, chatID, ok, err := tickets.RedeemWSTicket(q)
+		if err != nil {
+			return Identity{}, sessionStoreUnavailable(c)
+		}
+		if !ok || userID == "" {
+			// Unknown, expired or already-redeemed ticket.
+			return Identity{}, unauthenticated(c)
+		}
+		// A ticket authorizes exactly one room, so a leaked ticket cannot be
+		// replayed against a different chat id.
+		if chatID != "" && chatID != c.Params("id") {
+			return Identity{}, unauthenticated(c)
+		}
+		return Identity{UserID: userID, Source: "query"}, nil
 	}
-	if q := strings.TrimSpace(c.Query("token")); q != "" {
-		return q, "query"
+	token, source := sessionTokenFromRequest(c)
+	if token == "" {
+		return Identity{}, unauthenticated(c)
 	}
-	return sessionTokenFromRequest(c)
+	return Identity{Token: token, Source: source}, nil
 }
 
 // RequireWebSocketSession authenticates a WebSocket upgrade request before the
-// upgrader (websocket.New) runs. It shares RequireSession's contract — a nil
-// verifier and a store outage fail closed with 503, a missing/unknown token is
-// 401 — so a rejected upgrade never reaches the room. On success it attaches
-// the resolved Identity (CurrentIdentity), binding the socket to the same
-// caller as the HTTP control-plane routes.
-func RequireWebSocketSession(verifier engine.SessionVerifier) fiber.Handler {
+// upgrader (websocket.New) runs. A nil verifier and a store outage fail closed
+// with 503; a missing/unknown credential is 401 — so a rejected upgrade never
+// reaches the room. On success it attaches the resolved Identity
+// (CurrentIdentity), binding the socket to the same caller as the HTTP routes.
+//
+// Query credentials are redeemed as single-use tickets (P0-SEC-008); header
+// credentials are verified as session tokens.
+func RequireWebSocketSession(verifier engine.SessionVerifier, tickets engine.WSTicketRedeemer) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		token, source := wsTokenFromRequest(c)
-		if token == "" {
-			return unauthenticated(c)
+		identity, rejectErr := wsTokenFromRequest(c, tickets)
+		if rejectErr != nil {
+			return rejectErr
+		}
+		if identity.Source == "query" {
+			// Already resolved by the ticket store.
+			c.Locals(identityLocals, identity)
+			return c.Next()
 		}
 		if verifier == nil {
 			return sessionStoreUnavailable(c)
 		}
-		userID, err := verifier.VerifyUserID(context.Background(), token)
+		userID, err := verifier.VerifyUserID(context.Background(), identity.Token)
 		if err != nil {
 			return sessionStoreUnavailable(c)
 		}
 		if userID == "" {
 			return unauthenticated(c)
 		}
-		c.Locals(identityLocals, Identity{UserID: userID, Token: token, Source: source})
+		// P0-SEC-009: same CSRF rule as RequireSession — a browser attaches the
+		// cookie automatically, so a cookie-authenticated upgrade must come from
+		// a trusted Origin.
+		if identity.Source == "cookie" && !originAllowed(c.Get(fiber.HeaderOrigin)) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"success": false,
+				"error":   "origin not allowed",
+			})
+		}
+		identity.UserID = userID
+		c.Locals(identityLocals, identity)
 		return c.Next()
 	}
 }

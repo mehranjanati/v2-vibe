@@ -16,8 +16,10 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,41 @@ func p05Dial(t *testing.T, base, path string) (int, *websocket.Conn) {
 	return status, conn
 }
 
+// p05Ticket fetches a short-lived WebSocket ticket over HTTP (P0-SEC-008) from
+// POST /api/ws-ticket, using the ws:// base the listener handed back.
+func p05Ticket(t *testing.T, wsBase, sessionToken, room string) string {
+	t.Helper()
+	httpBase := "http://" + strings.TrimPrefix(wsBase, "ws://")
+	body := strings.NewReader(`{"resourceType":"agent","resourceId":"` + room + `"}`)
+	req, err := http.NewRequest(http.MethodPost, httpBase+"/api/ws-ticket", body)
+	if err != nil {
+		t.Fatalf("build ticket request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Session-Token", sessionToken)
+	res, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatalf("ticket request: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("ticket request: expected 200, got %d", res.StatusCode)
+	}
+	var payload struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Ticket string `json:"ticket"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode ticket: %v", err)
+	}
+	if !payload.Success || payload.Data.Ticket == "" {
+		t.Fatalf("ticket request returned no ticket")
+	}
+	return payload.Data.Ticket
+}
+
 // TestP05WebSocketAuthorization proves the P0.5 acceptance criterion end to end:
 // no ticket -> handshake rejected (401, no socket); unknown ticket -> rejected;
 // valid ticket -> 101 upgrade with the agent handshake payloads; and the
@@ -93,7 +130,15 @@ func TestP05WebSocketAuthorization(t *testing.T) {
 	t.Log("unknown-ticket connect rejected with 401 (no upgrade)")
 
 	// --- valid ticket -> 101 upgrade + handshake payloads ---
-	status, conn = p05Dial(t, base, "/ws/p05-room?ticket=p05-valid")
+	// P0-SEC-003 made the upgrade owner-scoped (the room is claimed by the same
+	// user the ticket resolves to) and P0-SEC-008 requires a SHORT-LIVED ticket
+	// instead of the session token, so the ticket is fetched over HTTP from
+	// POST /api/ws-ticket — the endpoint the SDK calls.
+	if _, _, err := hub.ClaimRoomOwner("p05-room", "user-a"); err != nil {
+		t.Fatalf("claim owner: %v", err)
+	}
+	ticket := p05Ticket(t, base, "p05-valid", "p05-room")
+	status, conn = p05Dial(t, base, "/ws/p05-room?ticket="+url.QueryEscape(ticket))
 	if status != http.StatusSwitchingProtocols || conn == nil {
 		t.Fatalf("valid-ticket connect: expected 101 upgrade, got status=%d conn=%v", status, conn != nil)
 	}

@@ -524,6 +524,34 @@
           "response": []
         },
         {
+          "name": "Get WebSocket Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceType\": \"agent\",\n  \"resourceId\": \"{{agent_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{controlUrl}}/api/ws-ticket",
+              "host": [
+                "{{controlUrl}}"
+              ],
+              "path": [
+                "api",
+                "ws-ticket"
+              ]
+            },
+            "description": "plane: control | P0-SEC-008: mint the short-lived single-use WebSocket ticket the /ws/:id upgrade requires (session + room ownership). Re-mint for every connect; a spent ticket answers 401."
+          },
+          "response": []
+        },
+        {
           "name": "Get App Details",
           "request": {
             "method": "GET",

@@ -144,18 +144,36 @@ export async function healthCheck(): Promise<boolean> {
 }
 
 /**
+ * Request a short-lived, single-use WebSocket ticket for one room.
+ *
+ * P0-SEC-008: the upgrade no longer accepts the long-lived session token in the
+ * URL (query strings are logged by proxies/CDNs), so the socket credential must
+ * be fetched first. Contract mirrors the SDK (`getWsTicket`).
+ */
+export async function getWsTicket(agentId: string): Promise<string | null> {
+	const res = await request<{ ticket: string; expiresIn: number; expiresAt: string }>('/api/ws-ticket', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ resourceType: 'agent', resourceId: agentId }),
+	});
+	if (!res.success || !res.data?.ticket) return null;
+	return res.data.ticket;
+}
+
+/**
  * Open a WebSocket to the control plane for a given agent/room.
  * Returns a native WebSocket (or partysocket-compatible) connection.
  *
- * P0.5: the control-plane upgrade is authenticated with the same session the
- * HTTP client presents. A WebSocket handshake cannot set headers, so the token
- * is carried as the `ticket` query parameter — the guard
- * (backend/pkg/api/auth.go RequireWebSocketSession) accepts it.
+ * P0-SEC-008: fetches a fresh short-lived single-use ticket, then connects with
+ * `?ticket=`. Callers must re-mint on every (re)connect — a ticket is spent
+ * after one upgrade. When the ticket cannot be minted (boundary off, or the
+ * caller owns no room) the socket opens without a ticket, which the boundary-off
+ * deployment accepts and a boundary-on deployment answers 401.
  */
-export function openControlPlaneSocket(agentId: string): WebSocket {
-	const sessionToken = readControlPlaneSessionToken();
-	const ticket = sessionToken ? `?ticket=${encodeURIComponent(sessionToken)}` : '';
-	return new WebSocket(`${wsControlPlaneUrl}/ws/${agentId}${ticket}`);
+export async function openControlPlaneSocket(agentId: string): Promise<WebSocket> {
+	const ticket = await getWsTicket(agentId);
+	const query = ticket ? `?ticket=${encodeURIComponent(ticket)}` : '';
+	return new WebSocket(`${wsControlPlaneUrl}/ws/${agentId}${query}`);
 }
 
 /** Convenience accessor for the control-plane base URL. */

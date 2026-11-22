@@ -84,6 +84,12 @@ type EngineHub struct {
 	// identity decision lands.
 	sessionVerifier SessionVerifier
 
+	// wsTickets holds pending short-lived WebSocket tickets (P0-SEC-008).
+	// Guarded by wsTicketsMu (its own lock: socket opens must not contend
+	// with room lookups). Redis is the cross-instance backstop.
+	wsTicketsMu sync.Mutex
+	wsTickets   map[string]wsTicket
+
 	// policy is the room lifecycle policy (P0.8: idle TTL, per-user cap,
 	// sweep interval) enforced by EnsureRoom/EvictIdleRooms/StartJanitor.
 	// Guarded by policyMu because the janitor and the request path read it
@@ -98,6 +104,7 @@ func NewEngineHub(rdb *redis.Client, llmClient *llm.Client, cfClient *cloudflare
 	return &EngineHub{
 		rooms:      make(map[string]*ProjectRoom),
 		roomOwners: make(map[string]string),
+		wsTickets:  make(map[string]wsTicket),
 		rdb:        rdb,
 		llm:        llmClient,
 		cf:         cfClient,

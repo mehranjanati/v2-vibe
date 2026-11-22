@@ -481,20 +481,38 @@ export function buildLightApp(): Hono<LightAppEnv> {
 	// GitHub App Export (create repo, push files, deploy)
 	// -------------------------------------------------------------------------
 
-	/** Get the current user ID from the session cookie. */
-	async function getUserId(c: { env: LightWorkerBindings; req: { raw: Request } }): Promise<string | null> {
+	/** Read the raw Edge session token from the session cookie (never logged). */
+	function getSessionToken(c: { req: { raw: Request } }): string | null {
 		const cookieHeader = c.req.raw.headers.get('Cookie') || '';
 		const match = cookieHeader.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
-		if (!match) return null;
-		const token = decodeURIComponent(match[1]);
+		return match ? decodeURIComponent(match[1]) : null;
+	}
+
+	/** Get the current user ID from the session cookie. */
+	async function getUserId(c: { env: LightWorkerBindings; req: { raw: Request } }): Promise<string | null> {
+		const token = getSessionToken(c);
+		if (!token) return null;
 		return await c.env.VibecoderStore.get(`session:token:${token}`);
 	}
 
-	/** Fetch generated files from the Go control plane. */
-	async function fetchProjectFiles(env: LightWorkerBindings, agentId: string): Promise<Record<string, string> | null> {
+	/**
+	 * Fetch generated files from the Go control plane.
+	 *
+	 * P0.3 rollout: the control plane's session boundary is verified against the
+	 * same Edge session store, so the caller's session token MUST be forwarded.
+	 * Without it, `GET /api/projects/:id/files` answers 401/503 as soon as
+	 * `CONTROL_PLANE_REQUIRE_SESSION` is on, and every GitHub export path breaks.
+	 */
+	async function fetchProjectFiles(
+		env: LightWorkerBindings,
+		agentId: string,
+		sessionToken?: string | null,
+	): Promise<Record<string, string> | null> {
 		const controlPlaneUrl = env.CONTROL_PLANE_URL || 'http://localhost:8080';
 		try {
-			const res = await fetch(`${controlPlaneUrl}/api/projects/${agentId}/files`);
+			const res = await fetch(`${controlPlaneUrl}/api/projects/${agentId}/files`, {
+				headers: sessionToken ? { 'X-Session-Token': sessionToken } : {},
+			});
 			if (!res.ok) return null;
 			const json = (await res.json()) as { success?: boolean; data?: { files?: Record<string, string> } };
 			return json.data?.files || null;
@@ -568,7 +586,7 @@ export function buildLightApp(): Hono<LightAppEnv> {
 
 		const stored = await getGitHubToken(c.env, userId);
 		if (stored) {
-			const files = await fetchProjectFiles(c.env, body.agentId);
+			const files = await fetchProjectFiles(c.env, body.agentId, getSessionToken(c));
 			if (!files || Object.keys(files).length === 0) {
 				return c.json(fail('No generated files found for this project', 404), 404);
 			}
@@ -674,7 +692,7 @@ export function buildLightApp(): Hono<LightAppEnv> {
 		const [owner, repo] = state.repoFullName.split('/');
 		if (!owner || !repo) return c.json(fail('Stored repository is invalid', 500), 500);
 
-		const files = await fetchProjectFiles(c.env, body.agentId);
+		const files = await fetchProjectFiles(c.env, body.agentId, getSessionToken(c));
 		if (!files || Object.keys(files).length === 0) {
 			return c.json(fail('No generated files found for this project', 404), 404);
 		}
@@ -764,7 +782,7 @@ export function buildLightApp(): Hono<LightAppEnv> {
 			await storeGitHubToken(c.env, stateData.userId, accessToken, gh.login || '');
 
 			if (stateData.agentId && stateData.repositoryName) {
-				const files = await fetchProjectFiles(c.env, stateData.agentId);
+				const files = await fetchProjectFiles(c.env, stateData.agentId, getSessionToken(c));
 				if (files && Object.keys(files).length > 0) {
 					const repoUrl = await createGitHubRepo(
 						accessToken,
@@ -821,7 +839,7 @@ export function buildLightApp(): Hono<LightAppEnv> {
 			return c.json(fail('No cached GitHub token. Please re-authenticate.', 401), 401);
 		}
 
-		const files = await fetchProjectFiles(c.env, body.agentId);
+		const files = await fetchProjectFiles(c.env, body.agentId, getSessionToken(c));
 		if (!files) {
 			return c.json(fail('No generated files found for this project', 404), 404);
 		}
@@ -856,30 +874,12 @@ export function buildLightApp(): Hono<LightAppEnv> {
 		const userId = await getUserId(c);
 		if (!userId) return c.json(fail('Authentication required', 401), 401);
 
-		// Best-effort provider-side revocation first (it needs the plaintext
-		// token, which we still hold in memory here); the local delete below is
-		// what the export routes actually gate on, so it runs regardless.
-		const stored = await getGitHubToken(c.env, userId);
-		if (stored && c.env.GITHUB_EXPORTER_CLIENT_ID && c.env.GITHUB_EXPORTER_CLIENT_SECRET) {
-			try {
-				await fetch(`https://api.github.com/applications/${c.env.GITHUB_EXPORTER_CLIENT_ID}/token`, {
-					method: 'DELETE',
-					headers: {
-						Authorization: `Basic ${b64encode(
-							`${c.env.GITHUB_EXPORTER_CLIENT_ID}:${c.env.GITHUB_EXPORTER_CLIENT_SECRET}`,
-						)}`,
-						Accept: 'application/vnd.github+json',
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify({ access_token: stored.token }),
-				});
-			} catch {
-				// Network failure — still revoke locally below.
-			}
-		}
-
-		await revokeGitHubToken(c.env, userId);
-		return c.json(ok({ revoked: true }));
+		// P0-SEC-004: the vault owns the whole revocation (provider call with a
+		// timeout + the authoritative local delete) so every caller gets the same
+		// contract. `providerRevoked` tells the UI whether GitHub confirmed it —
+		// claiming a hard revoke when the provider refused would be a lie.
+		const result = await revokeGitHubToken(c.env, userId);
+		return c.json(ok({ revoked: result.localRevoked, providerRevoked: result.providerRevoked }));
 	});
 
 	// -------------------------------------------------------------------------

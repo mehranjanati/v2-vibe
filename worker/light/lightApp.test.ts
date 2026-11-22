@@ -10,8 +10,9 @@
  * resolve, but drives `buildLightApp()` directly with a minimal fake env.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { buildLightApp } from './lightApp';
+import { sealGitHubToken } from './tokenVault';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -240,7 +241,10 @@ describe('Light Worker — API route contract', () => {
 			);
 			expect(res.status).toBe(200);
 			const body = await res.json();
-			expect(body).toEqual({ success: true, data: { revoked: true } });
+			// P0-SEC-004: the response now also reports whether GitHub confirmed
+			// the revocation. The fake env has no OAuth app credentials, so the
+			// provider call is skipped and only the local revoke is claimed.
+			expect(body).toEqual({ success: true, data: { revoked: true, providerRevoked: false } });
 		});
 	});
 
@@ -253,5 +257,120 @@ describe('Light Worker — API route contract', () => {
 			const text = await res.text();
 			expect(text).toContain('SPA');
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// P0.3 rollout — control-plane session forwarding
+// ---------------------------------------------------------------------------
+
+/**
+ * The control plane verifies sessions against the same Edge store, so the
+ * Worker's server-side fetch of project files must carry the caller's session
+ * token. Without it, `GET /api/projects/:id/files` answers 401/503 the moment
+ * `CONTROL_PLANE_REQUIRE_SESSION` is turned on and every GitHub export path
+ * (export, push-pr, check-remote, OAuth callback) breaks.
+ *
+ * This test locks the forwarding contract in place so the boundary can be
+ * enabled without silently breaking the export flow.
+ */
+describe('Light Worker — control-plane session forwarding (P0.3 rollout)', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	async function buildEnvWithStoredToken(userId: string) {
+		const env = makeFakeEnv({ sessionUserId: userId }) as any;
+		// A real AES-GCM envelope, so the route gets past getGitHubToken().
+		const sealed = await sealGitHubToken(env, userId, 'gh-access-token');
+		env.DB = {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({ access_token: sealed, username: 'octocat' }),
+					run: async () => ({ success: true }),
+					all: async () => ({ results: [], success: true }),
+				}),
+			}),
+		};
+		return env;
+	}
+
+	it('forwards the Edge session token as X-Session-Token when fetching project files', async () => {
+		const sessionToken = 'test-session-token';
+		const userId = 'user-1';
+		const env = await buildEnvWithStoredToken(userId);
+
+		const controlPlaneCalls: Headers[] = [];
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			// Only the control-plane request is under test here.
+			if (url.includes('/api/projects/')) {
+				controlPlaneCalls.push(new Headers(init?.headers));
+				return new Response(JSON.stringify({ success: true, data: { files: { 'index.html': '<h1/>' } } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			// GitHub repository probe.
+			return new Response(JSON.stringify({ full_name: 'octocat/repo' }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		});
+
+		const app = buildLightApp();
+		const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
+		const res = await app.fetch(
+			new Request('https://example.com/api/github-app/check-remote', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Cookie: `access_token=${sessionToken}` },
+				body: JSON.stringify({
+					repositoryUrl: 'https://github.com/octocat/repo',
+					agentId: 'agent-1',
+				}),
+			}),
+			env,
+			ctx,
+		);
+
+		expect(res.status).toBe(200);
+		expect(controlPlaneCalls).toHaveLength(1);
+		expect(controlPlaneCalls[0].get('X-Session-Token')).toBe(sessionToken);
+	});
+
+	it('sends no session header when the caller has no session cookie', async () => {
+		const env = await buildEnvWithStoredToken('user-1');
+
+		const controlPlaneCalls: Headers[] = [];
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.includes('/api/projects/')) {
+				controlPlaneCalls.push(new Headers(init?.headers));
+				return new Response(JSON.stringify({ success: true, data: { files: {} } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+		});
+
+		const app = buildLightApp();
+		const ctx = { waitUntil: () => {}, passThroughOnException: () => {} } as any;
+		// No cookie: the route answers 401 before touching the control plane,
+		// which is the fail-closed behaviour the boundary relies on.
+		const res = await app.fetch(
+			new Request('https://example.com/api/github-app/check-remote', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ repositoryUrl: 'https://github.com/octocat/repo', agentId: 'agent-1' }),
+			}),
+			env,
+			ctx,
+		);
+
+		expect(res.status).toBe(401);
+		expect(controlPlaneCalls).toHaveLength(0);
 	});
 });

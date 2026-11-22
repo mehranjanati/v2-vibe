@@ -28,6 +28,9 @@ import type { LightWorkerBindings } from '../types/bindings';
 /** Envelope marker — also what migration 0012 matches to purge plaintext rows. */
 export const CIPHER_PREFIX = 'enc:v1:';
 
+/** Bound on the provider-side revocation call (P0-SEC-004). */
+const PROVIDER_REVOKE_TIMEOUT_MS = 5000;
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const KEY_CONTEXT = 'vibesdk.v2.d1-credential-vault.v1|';
@@ -146,8 +149,74 @@ export async function getGitHubToken(
 	return { token: stored, username };
 }
 
-/** Revoke the stored GitHub credential (the local delete is authoritative). */
-export async function revokeGitHubToken(env: LightWorkerBindings, userId: string): Promise<void> {
+/** Outcome of a revocation attempt (P0-SEC-004). */
+export interface RevokeGitHubTokenResult {
+	/**
+	 * The local `github_tokens` row was deleted. This is authoritative: every
+	 * export path gates on it, so a provider failure never leaves the platform
+	 * handing out a credential it believes it revoked.
+	 */
+	localRevoked: boolean;
+	/**
+	 * GitHub confirmed the token is no longer usable. False when there was no
+	 * stored token, the OAuth app credentials are not configured, the call
+	 * failed, or it timed out — in which case the token stays valid at GitHub
+	 * and the caller should say so rather than claim a hard revoke.
+	 */
+	providerRevoked: boolean;
+}
+
+/**
+ * Revoke the stored GitHub credential: provider-side (best effort) and locally
+ * (authoritative).
+ *
+ * P0-SEC-004 moved the provider call into this module (it used to live in the
+ * route handler, untested) so that every caller gets the same contract, added a
+ * timeout, and made the outcome observable. The plaintext token is never logged
+ * and never returned.
+ */
+export async function revokeGitHubToken(
+	env: LightWorkerBindings,
+	userId: string,
+): Promise<RevokeGitHubTokenResult> {
+	let providerRevoked = false;
+
+	// Read before deleting: the provider call needs the plaintext token.
+	const stored = await getGitHubToken(env, userId);
+	if (stored && env.GITHUB_EXPORTER_CLIENT_ID && env.GITHUB_EXPORTER_CLIENT_SECRET) {
+		try {
+			const res = await fetch(
+				`https://api.github.com/applications/${env.GITHUB_EXPORTER_CLIENT_ID}/token`,
+				{
+					method: 'DELETE',
+					headers: {
+						Authorization: `Basic ${btoa(
+							`${env.GITHUB_EXPORTER_CLIENT_ID}:${env.GITHUB_EXPORTER_CLIENT_SECRET}`,
+						)}`,
+						Accept: 'application/vnd.github+json',
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({ access_token: stored.token }),
+					// A hung provider must not hang the revoke request.
+					signal: AbortSignal.timeout(PROVIDER_REVOKE_TIMEOUT_MS),
+				},
+			);
+			// 404/401 means GitHub no longer knows the token: it is revoked
+			// either way, so those count as success.
+			providerRevoked =
+				res.ok || res.status === 404 || res.status === 401;
+			if (!providerRevoked) {
+				console.warn('[vault] GitHub did not confirm token revocation', { status: res.status });
+			}
+		} catch (error) {
+			// Network failure or timeout — still revoke locally below. Never log
+			// the token or the request body.
+			console.warn('[vault] GitHub token revocation call failed', {
+				error: error instanceof Error ? error.name : 'unknown',
+			});
+		}
+	}
+
 	await env.DB.prepare('DELETE FROM github_tokens WHERE user_id = ?').bind(userId).run();
 	// `linked_identities` has no migration in this chain (the OAuth login write
 	// ignores failures), so tolerate its absence on delete as well.
@@ -158,4 +227,6 @@ export async function revokeGitHubToken(env: LightWorkerBindings, userId: string
 	} catch {
 		// Table absent — the github_tokens revoke already succeeded.
 	}
+
+	return { localRevoked: true, providerRevoked };
 }

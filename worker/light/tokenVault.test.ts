@@ -11,7 +11,7 @@
  * Runs on the vitest pool-workers runtime (WebCrypto available), driving the
  * vault against a scripted fake D1 that records every prepared statement.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { LightWorkerBindings } from '../types/bindings';
 import {
 	CIPHER_PREFIX,
@@ -138,3 +138,100 @@ describe('P0.6 credential vault — D1 content', () => {
 		expect(getRow()).toBeNull();
 	});
 });
+
+// ---------------------------------------------------------------------------
+// P0-SEC-004 — revocation effectiveness (provider-side + local)
+// ---------------------------------------------------------------------------
+
+const GH_TOKEN = 'gho_token_for_revocation_tests';
+
+/** A vault whose stored row holds a sealed GH_TOKEN, plus optional OAuth creds. */
+async function makeVaultWithToken(extra: Record<string, unknown> = {}) {
+	const seed = makeVault();
+	const sealed = await sealGitHubToken(seed.env, 'user-a', GH_TOKEN);
+	const vault = makeVault({
+		row: { user_id: 'user-a', access_token: sealed, username: 'alice' },
+	});
+	const env = { ...vault.env, ...extra } as unknown as LightWorkerBindings;
+	return { ...vault, env };
+}
+
+describe('P0-SEC-004 credential revocation', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('revokes at GitHub and locally, and confirms it in the result', async () => {
+		const { env, calls, getRow } = await makeVaultWithToken({
+			GITHUB_EXPORTER_CLIENT_ID: 'client-123',
+			GITHUB_EXPORTER_CLIENT_SECRET: 'shhh-secret',
+		});
+
+		let seen: { url: string; init?: RequestInit } | null = null;
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+			seen = { url: String(input), init };
+			return new Response(null, { status: 204 });
+		});
+
+		const result = await revokeGitHubToken(env, 'user-a');
+
+		expect(result).toEqual({ localRevoked: true, providerRevoked: true });
+		expect(seen).not.toBeNull();
+		expect(seen!.url).toBe('https://api.github.com/applications/client-123/token');
+		expect(seen!.init?.method).toBe('DELETE');
+		const headers = new Headers(seen!.init?.headers);
+		expect(headers.get('Authorization')).toBe(`Basic ${btoa('client-123:shhh-secret')}`);
+		// The provider call carries the plaintext token in the body — the only
+		// place it may appear, and never in the result or the D1 binds.
+		expect(JSON.parse(String(seen!.init?.body))).toEqual({ access_token: GH_TOKEN });
+		expect(JSON.stringify(result)).not.toContain(GH_TOKEN);
+		expect(calls.some((c) => c.params.some((p) => String(p).includes(GH_TOKEN)))).toBe(false);
+		// Local delete is authoritative and always happens.
+		expect(getRow()).toBeNull();
+	});
+
+	it('treats 404/401 as already revoked', async () => {
+		const { env } = await makeVaultWithToken({
+			GITHUB_EXPORTER_CLIENT_ID: 'client-123',
+			GITHUB_EXPORTER_CLIENT_SECRET: 'shhh-secret',
+		});
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 404 }));
+		const result = await revokeGitHubToken(env, 'user-a');
+		expect(result.providerRevoked).toBe(true);
+		expect(result.localRevoked).toBe(true);
+	});
+
+	it('reports providerRevoked=false when GitHub refuses, but still revokes locally', async () => {
+		const { env, getRow } = await makeVaultWithToken({
+			GITHUB_EXPORTER_CLIENT_ID: 'client-123',
+			GITHUB_EXPORTER_CLIENT_SECRET: 'shhh-secret',
+		});
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 500 }));
+		const result = await revokeGitHubToken(env, 'user-a');
+		expect(result).toEqual({ localRevoked: true, providerRevoked: false });
+		expect(getRow()).toBeNull();
+	});
+
+	it('skips the provider call when the OAuth app is not configured', async () => {
+		const { env, getRow } = await makeVaultWithToken();
+		const fetchSpy = vi.spyOn(globalThis, 'fetch');
+		const result = await revokeGitHubToken(env, 'user-a');
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(result).toEqual({ localRevoked: true, providerRevoked: false });
+		expect(getRow()).toBeNull();
+	});
+
+	it('survives a network failure and still revokes locally', async () => {
+		const { env, getRow } = await makeVaultWithToken({
+			GITHUB_EXPORTER_CLIENT_ID: 'client-123',
+			GITHUB_EXPORTER_CLIENT_SECRET: 'shhh-secret',
+		});
+		vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+			throw new TypeError('network down');
+		});
+		const result = await revokeGitHubToken(env, 'user-a');
+		expect(result).toEqual({ localRevoked: true, providerRevoked: false });
+		expect(getRow()).toBeNull();
+	});
+});
+

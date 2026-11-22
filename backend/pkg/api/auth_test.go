@@ -111,7 +111,7 @@ func TestSessionTokenSources(t *testing.T) {
 	}{
 		{"X-Session-Token header", map[string]string{"X-Session-Token": "valid-token"}, http.StatusOK},
 		{"Authorization bearer", map[string]string{"Authorization": "Bearer valid-token"}, http.StatusOK},
-		{"session cookie", map[string]string{"Cookie": "session=valid-token"}, http.StatusOK},
+		{"access_token cookie", map[string]string{"Cookie": "access_token=valid-token"}, http.StatusOK},
 		{"wrong bearer", map[string]string{"Authorization": "Bearer nope"}, http.StatusUnauthorized},
 	}
 	for _, tc := range cases {
