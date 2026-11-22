@@ -1,3 +1,8 @@
+> **Ecosystem consolidation (2026-11-21):** preserved as the VibeSDK agent-model
+> history (thirteen-part contract, Eino DeepAgent team). Canonical ecosystem
+> contract: `05-agent-platform-architecture.md`. Commerce agents: `13-agentic-commerce.md`.
+
+
 # Agent Runtime Model (PROPOSED)
 
 > **Scope:** how single agents and multi-agent systems are modeled in the

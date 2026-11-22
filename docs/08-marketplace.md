@@ -1,3 +1,10 @@
+> **Ecosystem consolidation (2026-11-21):** preserved as the M5 marketplace
+> destination history. Canonical six-marketplace architecture:
+> `09-marketplace-architecture.md`. Extension lifecycle:
+> `15-community-extension-development.md`. Commerce integrations:
+> `13-agentic-commerce.md`.
+
+
 # Marketplace Strategy (PROPOSED — Phase M5)
 
 > **Scope:** why the marketplace is destination architecture, what it

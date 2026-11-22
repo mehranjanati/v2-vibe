@@ -190,7 +190,7 @@ those steps explicitly.
 
 ## Cross-origin auth (read before enabling the boundary)
 
-Auth stays on the Worker: the HttpOnly `session` cookie belongs to the Worker
+Auth stays on the Worker: the HttpOnly `access_token` cookie belongs to the Worker
 origin and is **not** sent to Render. The SPA mirrors the Edge session token in
 `localStorage` (`src/lib/control-plane-session.ts`) and the API client sends it
 as `X-Session-Token`, which the Go plane accepts (see
@@ -215,11 +215,42 @@ Consequences:
   still off. The token needs Workers KV Read+Write (a D1-only token is not
   enough); emulator mode (`VIBE_P03_KV=emu`, the default) needs no credentials.
 - The Worker's server-side GitHub export fetch (`worker/light/lightApp.ts` →
-  `GET /api/projects/:id/files`) does not forward a session token. Keep the
-  boundary off for that flow, or teach the Worker to pass the caller's
-  `X-Session-Token` before turning enforcement on.
+  `GET /api/projects/:id/files`) **now forwards the caller's Edge session token**
+  as `X-Session-Token` (fixed 2026-11-22 for the P0.3 rollout; previously it sent
+  no token, so every export path answered `404 No generated files` once
+  enforcement was on). The forwarding contract is pinned by
+  `worker/light/lightApp.test.ts`; keep it when adding new control-plane calls
+  from the Worker.
 
-## P0 rollout runbook (the M0 launch gate)
+## No dedicated staging environment (D17, 2026-11-22)
+
+**Decision:** Vibe operates **one** control plane. There is no staging
+environment and none will be provisioned — a Render workspace allows one Free Key
+Value and a second environment was only ever a cost, so the deploy target is
+production plus a locally-deployed plane for proofs.
+
+**What that means in practice:**
+
+- `render.yaml` is the only blueprint. A `render.staging.yaml` was drafted and
+  then removed with this decision; do not re-add one without a new decision
+  record.
+- The deployed-plane proof of the session boundary runs against **production**
+  (`CONTROL_PLANE_REQUIRE_SESSION=true`, `VIBECODER_STORE_KV_ID=<Edge
+  namespace>`) and, for a non-production instance, against the local binary —
+  `docker-compose.yml` forwards both variables so this is one command
+  (`docs/07-multitenancy-security.md`, P0-SEC-001 evidence). The proof is the
+  matrix, not the host: `/health` 200, anonymous 401, unknown token 503
+  fail-closed, cross-tenant 403.
+- `deploy-staging.yml` still exists and still targets **the production control
+  plane** by default (`VITE_CONTROL_PLANE_URL` → `vibesdk-backend.onrender.com`).
+  It is a Worker preview from the `staging` branch, not a second environment. If
+  that preview is retired, remove the workflow as its own change; do not point it
+  at a plane that does not exist.
+- Anything that would only be provable on a "staging" host — proxy behaviour, a
+  separate Key Value, cross-origin cookies — is explicitly **not** proven, and no
+  document may claim otherwise.
+
+
 
 Four steps, in this order. Do not start with the last one: each step fails
 loudly and names the credential it is missing.
@@ -286,11 +317,13 @@ alike and are not the same problem — check them in this order.
    commands work without OAuth at all.
 
 
-### Step 1 — prove the verifier against a real KV namespace
+### Step 1 — prove the verifier against the real KV namespace
 
 See **Cross-origin auth** above (`VIBE_P03_KV=real`); the harness seeds and
 deletes one throwaway `session:token:<nonce>` key, so it is safe while the
-boundary is still off. Do this against the **staging** namespace first.
+boundary is still off. Run it against the namespace the Edge mints into
+(`VibecoderStore` = `56d249930a4447ee92493a7ff061a3ae`) — see the correction
+below for why a separate one cannot work.
 
 ### Step 2 — apply migrations and read the applied set back
 
@@ -306,40 +339,55 @@ use-case branch and are not on `main`). Record the returned set in
 `DEV_STATUS.md` Immediate Next Tasks item 10 — the step is not done until the
 read-back is written down, not just until the command exits 0.
 
-### Step 3 — turn the boundary on in staging only
+### Step 3 — turn the boundary on (one control plane, D17)
 
-```bash
-# run wrangler with Node >= 22 on this box: bun's fetch cannot reach the OAuth
-# endpoint (see "If wrangler login cannot complete"), and
-# `bun run db:migrate:remote` inherits the same runtime
-"$HOME/.nvm/versions/node/v22.23.1/bin/node" node_modules/wrangler/bin/wrangler.js \
-  kv namespace create VibecoderStore-staging
-```
+There is **one** control plane (D17), so this is the production service or a
+locally-deployed plane — the matrix is identical, only the host differs.
 
-The staging namespace already exists (created 2026-11-18):
-`VibecoderStore-staging` = `4748f35d77274731a17fa4f32c8c3e00` — the P03 real-KV
-proof above was run against it and passed.
-
-**Correction (2026-11-18, after a live staging run returned 401 for every
-authenticated request):** the staging Go plane must verify against the namespace
-the Edge **actually mints sessions into** — `VibecoderStore`
+**Correction (2026-11-18, after a live run returned 401 for every
+authenticated request):** the Go plane must verify against the namespace the Edge
+**actually mints sessions into** — `VibecoderStore`
 (`56d249930a4447ee92493a7ff061a3ae`). A separate namespace means the Go plane
 sees an empty session store and rejects every real login with 401. Sharing is
 safe because the Edge is the identity authority and the Go plane only **reads**
-session tokens (`KVClient.Put/Delete` are used solely by the rollout harness);
-a staging logout cannot invalidate production sessions.
+session tokens (`KVClient.Put/Delete` are used solely by the rollout harness).
 
-Diagnostic for exactly this failure (`bun run check:cp-auth --url <staging host>`):
+Diagnostic for exactly this failure (`bun run check:cp-auth --url <plane host>`):
 it counts `session:token:*` keys per namespace — the Edge's namespace will show
 your live sessions while the one the service is configured with shows zero — then
 probes the service anonymously (must be 401: otherwise the boundary is off) and
 with one live Edge token (PASS = 404/200, MISMATCH = 401, MISCONFIGURED = 503).
 
-Then, on the **staging** service only: `CONTROL_PLANE_REQUIRE_SESSION=true` and
-`VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` (same as production —
-see the correction above), and re-run Step 1 against that id. Keep production
-itself untouched: the boundary still stays off there until this same proof has
-run against a deployed control plane.
+Set `CONTROL_PLANE_REQUIRE_SESSION=true` and
+`VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae` together, then re-run
+Step 1 against that id. A `VibecoderStore-staging` namespace exists from the
+2026-11-18 investigation but is **unused** — the Edge never mints into it.
+
+
+**Cost blocker for a dedicated staging service (found 2026-11-22, then declined by
+D17):** there is no
+staging control plane in `render.yaml` — it declares one web service
+(`vibesdk-backend`) plus one Key Value, and a Render workspace allows **one Free
+Key Value**, so a second environment needs a paid instance (see *Free-plan
+caveats*). The staging Worker (`deploy-staging.yml`) therefore points at the
+production Go plane by default. **D17 (2026-11-22) settled it: no staging
+environment** — one control plane, proven against production and locally.
+
+**The deployed-plane proof runs locally.** A real HTTP server
+with the boundary on exercises the same code path as a hosted plane (the only
+difference is the host), and `docker-compose.yml` now forwards both variables:
+
+```bash
+CONTROL_PLANE_REQUIRE_SESSION=true \
+VIBECODER_STORE_KV_ID=56d249930a4447ee92493a7ff061a3ae \
+  docker compose up -d --build backend
+
+# anonymous must be 401 (boundary on); with a live Edge token it must be 404/200
+bun run check:cp-auth --url http://localhost:8080
+```
+
+That covers the "deployed control plane with the boundary on" leg; the isolation
+variants below are **not** provisioned and must not be claimed as proven.
 
 An isolation-complete variant (a staging Edge Worker minting into the staging
 namespace) remains open — it is deploy work, not a code change.

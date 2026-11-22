@@ -292,7 +292,7 @@ isolation, trust policy. Security warning (normative): MCP servers and
 community tools are untrusted external boundaries — discovery never grants
 execution permission. No MCP client exists in the tree today (verified by
 search); MCP support is PROPOSED, gated on the trust/security slice of M0.
-Detail: [`06-functions-and-tools.md`](06-functions-and-tools.md); the trust boundary itself: [`architecture/mcp-trust-slice.md`](architecture/mcp-trust-slice.md) (P7.3).
+Detail: [`06-functions-and-tools.md`](06-functions-and-tools.md); the trust boundary itself: [`architecture/mcp-trust-slice.md`](architecture/mcp-trust-slice.md) (P7.3). **Status 2026-11-23:** a stdio transport PoC exists behind the trust boundary (`backend/pkg/mcp/stdio.go`; tests spawn a real server process) under the D8.1 owner-directed exception — an *execution proving ground*, not an enabled capability. No authenticated route or agent run calls it yet.
 
 <a id="memory-and-knowledge"></a>
 ## Memory and Knowledge

@@ -1,3 +1,35 @@
+> **Ecosystem consolidation (2026-11-21):** this document is now canonical for the
+> **Vibe Open Agentic Ecosystem** (eight products: Assistant, Research, Coder,
+> Commerce, Studio, Runtime, Cloud, Network). Status labels used below:
+> `IMPLEMENTED` = live code + tests green, `PARTIAL` = code exists but incomplete,
+> `DESIGNED` = contract/spec only, `PLANNED` = roadmap item, `RESEARCH` = open question.
+> Historical VibeSDK Agent Builder content is preserved below this notice.
+> Companion index: `ARCHITECTURE_CONSOLIDATION_REPORT.md`. Glossary:
+> `18-glossary-and-architecture-terms.md`.
+
+# Ecosystem vision (canonical, 2026-11-21)
+
+Vibe is one open, model-agnostic, self-hostable, extensible ecosystem of eight
+independently evolvable products sharing identity, security, and contract
+foundations (`01-product-ecosystem.md`, `02-product-boundaries.md`).
+
+Principles: open by default (MIT, see `LICENSE`); model-agnostic gateway with
+open-weight/local first-class; contract-first interoperability; security by
+design (`07-multitenancy-security.md`); protocols as adapters (MCP/A2A/UCP/AP2
+in `05-agent-platform-architecture.md` and `13-agentic-commerce.md`);
+community extensibility (`09-marketplace-architecture.md`,
+`15-community-extension-development.md`); commercially viable without a token
+(`11-web3-network-economy.md`, `14-product-and-business-model.md`).
+
+Today's live system (dual-plane: Go control plane in `backend`, light Worker
+plus React SPA) is the first reference workload on the path to Vibe Coder,
+Vibe Studio, and Vibe Runtime — repositioned, never discarded. Full product
+definitions: `01-product-ecosystem.md`. Roadmap P0–P9: `03-product-roadmap.md`.
+Target architecture: `04-system-architecture.md`. Gap analysis:
+`16-technical-debt-and-gap-analysis.md`.
+
+---
+
 # Product Vision — VibeSDK Open Agentic Platform
 
 > **Scope:** canonical product vision and positioning. This is the strategy

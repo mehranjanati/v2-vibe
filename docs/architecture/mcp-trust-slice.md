@@ -8,10 +8,10 @@
 > and the untrusted-boundary rule in
 > [`../07-multitenancy-security.md`](../07-multitenancy-security.md).
 >
-> **Status:** `implemented_unverified` — the trust boundary, its twelve unit
-> tests and the audit contract exist (`backend/pkg/mcp`); no MCP wire transport
-> is wired to a live server yet, and nothing calls the gate from a route or an
-> agent run. Last reviewed: 2026-11-16.
+> **Status:** `verified` for the trust boundary and the stdio transport
+> (2026-11-22) — twelve gate unit tests plus five new transport tests that spawn a
+> real MCP server process; nothing yet calls the gate from an HTTP route or an
+> agent run, and the registry/grants are still in memory. Last reviewed: 2026-11-22.
 >
 > **Bounded by:** [`manifest-schemas.md`](manifest-schemas.md) (Tool Manifest
 > contract), [`system-ir.md`](system-ir.md) (agents reference capabilities;
@@ -27,6 +27,7 @@
 | The execution gate (11 checks) | [`#gate`](#gate) |
 | Audit contract | [`#audit`](#audit) |
 | Idempotency | [`#idempotency`](#idempotency) |
+| The stdio transport | [`#transport`](#transport) |
 | Deliberately out of scope | [`#scope`](#scope) |
 | Tests that prove it | [`#tests`](#tests) |
 | Open items | [`#open-items`](#open-items) |
@@ -71,7 +72,7 @@ flowchart TB
     POL["PolicyStore<br/>(reviewed mappings)"]
     GR["Grant Store<br/>(tenant-scoped authority)"]
     AUD["AuditSink<br/>(append-only events)"]
-    TR["Transport<br/>(stdio / SSE - not shipped)"]
+    TR["Transport<br/>(stdio shipped; SSE open)"]
     SRV["MCP server<br/>(untrusted)"]
     AG -->|Discover| GATE
     AG -->|Call| GATE
@@ -142,14 +143,49 @@ side effects.
 
 
 <a id="scope"></a>
+## The stdio transport (P1-AGT-003, 2026-11-22)
+<a id="transport"></a>
+
+`Transport` was defined so a live adapter could land "without touching policy,
+grant, or audit code". `StdioTransport` (`backend/pkg/mcp/stdio.go`) is that
+adapter for MCP's stdio binding: newline-delimited JSON-RPC 2.0 over a child
+process, with the `initialize` + `notifications/initialized` handshake before
+`tools/list` or `tools/call`.
+
+Rules it enforces, each with a test:
+
+| Rule | Why | Test |
+|---|---|---|
+| stdout is the protocol channel **only** | a sloppy server must not smuggle free text into a tool result | `TestStdioTransportRejectsNonJSONStdout` |
+| one deadline covers the exchange; expiry kills the process | a hanging server cannot pin a worker | `TestStdioTransportTimesOut` |
+| `isError: true` becomes an error, never an empty success | the platform never reports a failed tool as success | `TestStdioTransportPropagatesToolError` |
+| no grant ⇒ the process is **never spawned** | discovery authorizes nothing, so denial must not even start the server | `TestStdioTransportGrantlessCallNeverSpawns` |
+| a granted call really round-trips | the trust checks are not bypassed — they are *exercised* | `TestStdioTransportLiveRoundTrip` |
+
+The live test builds and spawns `testdata/stub-mcp` (a real separate process), so
+the protocol path is proven end to end rather than against a mocked function.
+
+**Deliberate limits of this PoC** (documented, not silent): one process per call
+(no persistent session or reconnect rules yet), no SSE binding, and the child's
+environment is exactly what the caller passes — a tool cannot read ambient
+control-plane secrets.
+
+**Still missing before a route or an agent run may use it:** the gate has no HTTP
+surface and the registry/grants are in memory; and an MCP server's own
+credentials still need the generic secret store (only the GitHub token vault
+exists today). Both are tracked as `P1-AGT-004`.
+
+
+
 ## Deliberately out of scope
+<a id="scope"></a>
 
 | Not in this slice | Why | Owner |
 |---|---|---|
-| MCP wire transport (stdio/SSE handshake, schema negotiation) | The boundary must exist before any transport can be trusted with it | P7.3 follow-up |
+| MCP wire transport (stdio/SSE handshake, schema negotiation) | **stdio landed 2026-11-22** (`StdioTransport`, P1-AGT-003); SSE stays open | P1-AGT-004 (SSE) |
 | Persistent registry/policy/grant stores | Needs the tenancy model in the store, not in the caller | P7.6 + P0.9 follow-up |
-| Credential vault resolution | Secrets are refs here; resolution belongs to the vault | P0.6 follow-up |
-| HTTP routes / UI for granting | Needs auth + CSRF + tenant context from P0 | M0 wiring |
+| Credential vault resolution | Secrets are refs here; resolution belongs to the vault, and only the GitHub token vault exists today | P1-AGT-004 |
+| HTTP routes / UI for granting | Needs auth + CSRF + tenant context from P0 | P1-AGT-004 |
 | Multi-agent delegated MCP calls | Team semantics land with M1 | M1 |
 | MCP catalog / marketplace, publisher identity, security scanning | Distribution layer | M5 |
 | Memory/knowledge integration for MCP results | P7.6 | P7.6 |
@@ -175,15 +211,28 @@ side effects.
 | `TestTransportErrorIsAuditedAndNotAllowed` | transport failure is audited separately, never as allowed |
 | `TestPolicyAndRefValidationRejectsUnsafeShapes` | literal secrets, irreversible-without-approval, unpinned versions, non-semver refs, tenantless grants all rejected |
 
+`backend/pkg/mcp/stdio_test.go` — 5 tests against a **real spawned MCP server
+process** (`testdata/stub-mcp`, built by the test):
+
+| Test | Proves |
+|---|---|
+| `TestStdioTransportLiveRoundTrip` | discover → 2 tools; granted call → the server's text content, with the authorizing grant echoed |
+| `TestStdioTransportGrantlessCallNeverSpawns` | a grantless call is denied by the gate and the server process is never started (the command is a non-existent binary, so any spawn would surface differently) |
+| `TestStdioTransportRejectsNonJSONStdout` | anything but JSON-RPC on stdout is a protocol error |
+| `TestStdioTransportTimesOut` | a hanging server is killed and reported within the deadline |
+| `TestStdioTransportPropagatesToolError` | `isError: true` becomes an error, never an empty success |
+
 <a id="open-items"></a>
 ## Open items
 
 | Item | Owner |
 |---|---|
-| Wire a real transport behind `Transport` and prove one live server round-trip | P7.3 follow-up |
+| ~~Wire a real transport behind `Transport` and prove one live server round-trip~~ — **DONE 2026-11-22** (`StdioTransport` + 5 tests against a spawned stub process) | P1-AGT-003 |
+| SSE binding behind the same `Transport` (`P7-SCH` search stays transport-agnostic) | P1-AGT-004 |
 | Persist registry/policy/grants with tenant isolation enforced in the store | P7.6 + P0 |
-| Expose grant/revoke/discover through authenticated routes | M0 wiring |
+| Expose grant/revoke/discover/execute through authenticated routes (unified: tools, skills and imports conduct through the same routes per proposal 7) | P1-AGT-004 |
+| Generic credential store so an MCP server's own secrets are `vault:` refs (only the GitHub token vault exists today) | P1-AGT-004 |
 | Map MCP tool results into the run trace (tool-call span) | P7.7 |
-| Promotion from `implemented_unverified` to `verified` | after a live transport round-trip plus a route-level test |
+| Promotion from `verified` to production-ready | after a route-level test plus the stores above |
 
 execution trust.

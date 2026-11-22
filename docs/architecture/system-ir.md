@@ -32,6 +32,7 @@
 | Four cases (the expressiveness test) | [`#four-cases`](#four-cases) |
 | Rejected for v1 | [`#rejected`](#rejected) |
 | Validation gate | [`#gate`](#gate) |
+| Consumer (`backend/pkg/ir`) | [`#consumer`](#consumer) |
 | Open items | [`#open-items`](#open-items) |
 
 <a id="one-representation"></a>
@@ -231,6 +232,35 @@ guard against building the universal IR prematurely.
 A negative probe that passes is a failure: v1's value is what it refuses.
 
 <a id="open-items"></a>
+## Consumer — `backend/pkg/ir` (P1-AGT-002, 2026-11-22)
+<a id="consumer"></a>
+
+The IR was previously only *stored*: `scripts/validate-system-ir.mjs` proved the
+four fixtures and rejected six negative probes, but no Go code could read a
+System document. `backend/pkg/ir` is that reader, and it implements the same
+invariants so the platform has one answer to "is this IR valid?".
+
+| Surface | Contract |
+|---|---|
+| `Load(data)` | Decodes into typed structs and returns the system plus every violation (nil = valid). Unknown fields are rejected, which is how the schema's `additionalProperties: false` reaches the compiler. |
+| `Canonicalize(data)` | Re-serializes with sorted keys, 2-space indent, exactly one trailing newline, and **HTML escaping disabled** (the IR carries conditions like `score >= 80`). |
+| `System` / `Spec` | Typed view the compiler consumes: pinned `agent/name@X.Y.Z` refs, delegation, topology, workflow nodes with the seven live kinds, approvals, desired deployment state. |
+
+Invariants enforced in Go: I1 one execution shape, I2 no runtime state (walked,
+not just field-checked), I3 pinned agent refs + known delegation targets, I4
+topology references declared agents once, I5 workflow graph integrity (unique ids,
+known kinds, no dangling `next`/`entry`), I6 typed approvers.
+
+**Evidence (executed):** `go test ./pkg/ir/` — 4/4 fixtures load, 4/4 canonical
+round-trips are byte-identical to the stored files, and 6/6 negative probes are
+rejected **for the stated reason** (the test asserts the message, not just that
+something failed); plus "neither shape", a pinned-closure walk over the M1 team,
+and a broken-JSON guard. `go vet ./...` clean.
+
+**Not built here:** compilation itself — capability resolution against a live
+registry, policy validation, deployment planning (P7.3/P7.4). This is the reader
+they will call, not the compiler.
+
 ## Open items
 
 | Item | Owner |

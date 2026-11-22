@@ -1,3 +1,9 @@
+> **Ecosystem consolidation (2026-11-21):** this file is preserved as the VibeSDK
+> dual-plane layer history. Canonical ecosystem target: `04-system-architecture.md`.
+> Product boundaries: `02-product-boundaries.md`. New protocol surfaces (UCP/AP2
+> commerce, WASM execution, distributed network) are DESIGNED/PLANNED there, not here.
+
+
 # System Architecture — Agentic Platform Layers & Candidates (PROPOSED)
 
 > **Scope:** target system architecture for the VibeSDK Agentic Platform: the

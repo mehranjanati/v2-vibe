@@ -1,3 +1,10 @@
+> **Ecosystem consolidation (2026-11-21):** preserved as the capability-model
+> history (Tool/Function/Skill/MCP concepts, manifest-first rule). Canonical
+> contracts: `05-agent-platform-architecture.md` (agent/tool/skill/memory),
+> `06-runtime-and-execution-architecture.md` (execution providers),
+> `15-community-extension-development.md` (extension lifecycle).
+
+
 # Capabilities — Tools, Functions, Skills & MCP (PROPOSED)
 
 > **Scope:** the capability layer — reusable tools, functions, skills, and MCP
@@ -13,10 +20,10 @@
 > yet; the manifest specs below are targets.
 > Live tools today are the App Builder's VFS/REST toolset in the Go control
 > plane ([`MULTI_AGENT.md`](MULTI_AGENT.md)) and the 7 workflow node types
-> ([`DEV_CHECKLIST.md`](DEV_CHECKLIST.md) P2 registry content). MCP support is
-> PROPOSED and gated on the trust/security slice of M0 — no MCP client
-> exists in the tree today. Last
-> reviewed: 2026-11-15.
+> ([`DEV_CHECKLIST.md`](DEV_CHECKLIST.md) P2 registry content). MCP support beyond
+> the boundary and the stdio PoC (see `ecosystem/19-integration-research.md`
+> proposals 1–7 and decision D18) stays out of the MVP. Last
+> reviewed: 2026-11-15; integration mapping updated 2026-11-23.
 
 ## Concepts (Tool vs Function vs Skill vs MCP)
 

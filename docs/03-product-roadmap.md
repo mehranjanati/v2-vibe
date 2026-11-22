@@ -1,3 +1,10 @@
+> **Ecosystem consolidation (2026-11-21):** the eight Vibe products are defined in
+> `01-product-ecosystem.md`. The M0–M6 platform journey in this file is preserved
+> below as history; the dependency-driven P0–P9 roadmap is now canonical in
+> `03-product-roadmap.md`. Status labels: IMPLEMENTED / PARTIAL / DESIGNED /
+> PLANNED / RESEARCH (see `18-glossary-and-architecture-terms.md`).
+
+
 # Product Roadmap — Agentic Platform M0–M6 (PROPOSED)
 
 > **Scope:** dependency-ordered product phases M0–M6, mapped onto the

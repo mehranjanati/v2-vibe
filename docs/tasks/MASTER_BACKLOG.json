@@ -1,0 +1,534 @@
+{
+ "generated": "2026-11-22",
+ "source": "docs/DEV_CHECKLIST.md preserved; new ecosystem tasks only",
+ "tasks": [
+  {
+   "acceptance_criteria": [
+    "Boundary enforced on staging with 403 proof",
+    "No advisory-mode bypass"
+   ],
+   "dependencies": [],
+   "description": "DONE 2026-11-22. Boundary proven on a deployed plane (real control-plane binary + real Edge KV namespace id, CONTROL_PLANE_REQUIRE_SESSION=true): /health 200; anonymous projects/:id/files, agent/:id/connect, generations/:id -> 401 authentication required; GET /ws/:id without a ticket -> 401; unknown token with the store unreachable -> 503 session store unavailable (fail-closed, never an allow). The rollout blocker was fixed in the same change: the Worker's fetchProjectFiles now forwards the Edge session token (X-Session-Token) from all four GitHub export call sites, otherwise every export answered 404 under enforcement. Production already carried the live 403/404 matrix (DEV_STATUS.md, 2026-11-21).",
+   "documentation": [
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P0-SEC-001",
+   "priority": "P0",
+   "repository_paths": [
+    "backend/pkg/api/auth.go",
+    "backend/pkg/api/routes.go"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "Go auth plus boundary tests",
+    "backend e2e P03",
+    "worker/light/lightApp.test.ts token forwarding",
+    "deployed-plane probe 2026-11-22"
+   ],
+   "title": "Enforce control-plane session boundary rollout",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "Cross-tenant reads denied",
+    "Isolation tests green"
+   ],
+   "dependencies": [
+    "P0-SEC-001"
+   ],
+   "description": "DONE 2026-11-22. Audit of every guarded control-plane family (projects files/deploy/github-export, agent connect, generations list/diff/rollback, workflows trigger/get, /ws/:id, Worker VibeWorkflow tenant stamp): the isolation itself held — no cross-tenant read or write was found. The real gap was automated coverage: the History API (generations) had only a manual production run as evidence. Added backend/pkg/api/isolation_test.go which pins the whole matrix in one table (cross-tenant 403, unknown 404, anonymous 401, owner not denied) plus a case proving a denied rollback mutates nothing and leaves the owner's history reachable, and a case proving the one deliberately unguarded route (POST /api/agent, which never touches a room) mints no WebSocket ticket. go vet ./... and go test ./... green; go test -tags e2e ./e2e/ -run 'P03|P05|P17' green.",
+   "documentation": [
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P0-SEC-002",
+   "priority": "P0",
+   "repository_paths": [
+    "backend/pkg/api/isolation_test.go",
+    "backend/pkg/api/auth_test.go",
+    "backend/pkg/api/workflows_auth_test.go"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "isolation_test.go: 7-family matrix (403/404/401/owner) + rollback-no-mutation + legacy endpoint ticket check",
+    "existing: auth_test.go (projects/agent), workflows_auth_test.go (workflows + audit), ws_auth_test.go + e2e P05 (socket)",
+    "go vet ./... + go test ./... + e2e P03|P05|P17 green"
+   ],
+   "title": "Verify tenant isolation across planes",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "Unauthenticated sockets rejected",
+    "Owned sockets connect"
+   ],
+   "dependencies": [
+    "P0-SEC-001"
+   ],
+   "description": "DONE 2026-11-22. Audit found that authentication did not imply authorization: handleWebSocket never read the Identity and called GetOrCreateRoom (which never refuses), so any valid session could attach to any chat id. Fixed by mounting ownerGuardFor(hub, 'id') between wsGuard and the upgrader, so the socket contract now equals the HTTP project routes (401 / 404 unowned / 403 cross-tenant / 503 store outage). Tests executed: ws_auth_test.go (owner 426, cross-tenant 403, unowned 404) and e2e P05 (real listener + real dial: owner 101 + agent_connected, no/unknown ticket 401, boundary off upgrade). go vet ./... and go test ./... green; go test -tags e2e ./e2e/ -run 'P03|P05|P17' green. Two pre-existing tests were updated because they asserted the old unclaimed-room behaviour. Remaining findings: W2 origin validation and W3 short-lived ticket (P0-SEC-008), W4 cookie name (P0-SEC-009).",
+   "documentation": [
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P0-SEC-003",
+   "priority": "P0",
+   "repository_paths": [
+    "backend/pkg/api/ws_auth_test.go",
+    "backend/pkg/api/routes.go",
+    "backend/e2e/p05_ws_auth_test.go"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "status": "DONE",
+   "tests": [
+    "backend/pkg/api/ws_auth_test.go: 11 cases incl. cross-tenant 403 and unowned 404",
+    "backend/e2e/p05_ws_auth_test.go: real dial 101/401 + handshake",
+    "go vet ./... + go test ./... green"
+   ],
+   "title": "Verify WebSocket authorization",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "No plaintext secrets in manifests/logs",
+    "Revocation effective"
+   ],
+   "dependencies": [
+    "P0-SEC-001"
+   ],
+   "description": "DONE 2026-11-22. Audit: two stores exist — the live GitHub OAuth vault (AES-256-GCM envelopes in D1, AAD-bound to the user, migration 0012 purges legacy plaintext, lazy re-seal on read) and a 923-line generic user-secrets store that is NOT wired (/api/vault/* answers 503 and nothing imports it). No plaintext reaches manifests (tool schema accepts only ^vault: refs) or logs (no control-plane log carries a token). Revocation was the real gap: the provider call lived in the route, untested, with no timeout, swallowing failures and always answering revoked:true. It now lives in the vault (revokeGitHubToken): DELETE /applications/{client_id}/token with Basic auth, 5s AbortSignal timeout, 2xx/401/404 count as revoked, warns without the token, always performs the authoritative local delete, and returns {localRevoked, providerRevoked} so the route can answer honestly. Opened O24 for JWT_SECRET rotation (mass re-authorisation) and recorded that the generic vault is what still blocks P1-AGT-003.",
+   "documentation": [
+    "docs/07-multitenancy-security.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "id": "P0-SEC-004",
+   "priority": "P0",
+   "repository_paths": [
+    "worker/light/tokenVault.ts",
+    "worker/light/lightApp.ts",
+    "worker/light/tokenVault.test.ts",
+    "worker/services/secrets/"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "worker/light/tokenVault.test.ts: 5 new revocation cases (call shape, 204/404, 500, no creds, network failure) + existing ciphertext/fail-closed cases",
+    "worker/light/lightApp.test.ts: revoke route returns {revoked, providerRevoked}",
+    "bun run typecheck green; Workers-pool suites run in CI"
+   ],
+   "title": "Harden credential vault and revocation",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "Tenant-mismatched runs refused",
+    "Unknown tenants 404"
+   ],
+   "dependencies": [
+    "P0-SEC-002"
+   ],
+   "description": "DONE 2026-11-22. Route-level isolation was already covered (403 + workflow.access_denied audit, 404 unknown/unowned, 503 outages, room-ownership fallback, denied trigger records no run). The real hole was on the stamp side: the guard resolved the tenant as 'D1 column first, then the P0.4 room claim', but the trigger handler stamped dag.UserID straight from D1, so a legacy row (workflow_dags.user_id NULL) authorized via the room fallback recorded a NULL tenant — and the runtime's mismatch check is skipped when either side is empty, making the second layer of defence vacuous for exactly those runs. Fix: workflowGuard records the tenant it authorized (workflowOwnerLocals) and the trigger stamps that value, falling back to dag.UserID only when the guard is not installed. Pinned by TestWorkflowTriggerStampsAuthorizedTenantForLegacyDag (NULL-owner DAG claimed by room owner A: A triggers -> 200 and the run carries user-a; B -> 403 and no new row) and TestWorkflowTriggerDeniedInvokesNoRuntime (a refused trigger starts no Cloudflare instance). Resulting invariant: with the boundary on every run that reaches the runtime carries a non-empty tenant, and a mismatch fails the run with NonRetryableError before any step executes.",
+   "documentation": [
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P0-SEC-005",
+   "priority": "P0",
+   "repository_paths": [
+    "backend/pkg/api/routes.go",
+    "backend/pkg/api/workflows.go",
+    "backend/pkg/api/workflows_auth_test.go",
+    "worker/workflow/VibeWorkflow.ts"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "status": "DONE",
+   "tests": [
+    "go test ./pkg/api/ -run Workflow: 14 cases (2 new)",
+    "TestWorkflowTriggerDeniedInvokesNoRuntime: no runtime instance on denial",
+    "worker/workflow/VibeWorkflow.test.ts tenant cases run in CI",
+    "go vet ./... + package suites + e2e P03|P05|P17 green"
+   ],
+   "title": "Verify workflow tenant isolation",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "Cross-site WebSocket hijacking blocked by an Origin allow-list",
+    "Ticket is short-lived and single-use",
+    "Expired/reused ticket rejected with 401"
+   ],
+   "dependencies": [
+    "P0-SEC-003"
+   ],
+   "description": "DONE 2026-11-22. W2 (Origin): wsOriginGuard runs before the session guard and refuses a foreign Origin with 403 — middleware rather than an upgrader option because the Fiber websocket config only does exact Origins matching while the allow-list ships an https://*. wildcard; no Origin is allowed (SDK/CLI/e2e, and a browser cannot omit it). W3 (ticket): the URL no longer carries the session token. POST /api/ws-ticket mints a 32-byte random ticket bound to (user, room) with a 15s TTL (engine.WSTicketTTL, the lifetime the SDK already documents); redemption deletes it (GETDEL in Redis, so it is single-use across instances); replay, cross-room use, or a session token in the URL all answer 401, and the ?token= alias was removed. buildWebSocketURL mints a ticket, the SPA fetches one per connect (getWsTicket), and the SDK contract {ticket, expiresIn, expiresAt} is now implemented. Tests: 22 WS cases in backend/pkg/api/ws_auth_test.go (single-use, room binding, TTL, Origin allow-list incl. suffix trick, endpoint 200/403/401) + e2e P05 fetching the ticket over HTTP and upgrading 101. Postman contract + collection + README §7 updated for the new route.",
+   "documentation": [
+    "docs/07-multitenancy-security.md",
+    "docs/POSTMAN_COLLECTION_README.md"
+   ],
+   "id": "P0-SEC-008",
+   "priority": "P1",
+   "repository_paths": [
+    "backend/pkg/engine/ws_tickets.go",
+    "backend/pkg/api/auth.go",
+    "backend/pkg/api/routes.go",
+    "backend/e2e/p05_ws_auth_test.go",
+    "src/services/controlPlaneClient.ts"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "backend/pkg/api/ws_auth_test.go: 22 cases (single-use, room binding, TTL, Origin, endpoint)",
+    "backend/e2e/p05_ws_auth_test.go: ticket over HTTP then 101 upgrade",
+    "go vet ./... + go test ./... green; e2e P03|P05|P17 green; bun run typecheck/lint/docs:check green"
+   ],
+   "title": "WebSocket Origin validation and short-lived ticket",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "Cookie name matches the Edge cookie or the mirror claim is removed",
+    "Transport test asserts the real cookie name"
+   ],
+   "dependencies": [
+    "P0-SEC-003"
+   ],
+   "description": "DONE 2026-11-22. W4: sessionCookieName was 'session' while the Edge Worker sets 'access_token', so the documented cookie transport was dead and the comment claiming it mirrored the Worker was wrong. Now it reads the real Edge cookie, the comment states the actual caveat (the cookie is scoped to the Worker origin, so it only works when both planes share one origin), and a test pins the old name as dead. Because a real cookie transport is exactly the CSRF precondition, a cookie-authenticated request must now present a trusted Origin (same allow-list CORS and the WebSocket guard use) or none, applied in RequireSession and the WebSocket session guard; header transports are unaffected since a cross-site page cannot set them.",
+   "documentation": [
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P0-SEC-009",
+   "priority": "P3",
+   "repository_paths": [
+    "backend/pkg/api/auth.go",
+    "backend/pkg/api/ws_auth_test.go",
+    "backend/e2e/p03_session_boundary_test.go"
+   ],
+   "risk": "Low",
+   "solo_developer_estimate": "S",
+   "status": "DONE",
+   "tests": [
+    "TestSessionCookieNameMatchesEdge: access_token accepted, session dead",
+    "TestCookieAuthRequiresTrustedOrigin: cookie+foreign Origin 403, cookie+allowed Origin passes, header not origin-gated",
+    "P0.3/P0.5 transport tests + P03 e2e updated to the real cookie name"
+   ],
+   "title": "Align the session cookie name with the Edge Worker",
+   "type": "SECURITY"
+  },
+  {
+   "acceptance_criteria": [
+    "A dedicated staging control plane exists with the boundary on",
+    "Deployed-plane proof repeated against it",
+    "Production stays untouched by staging sessions"
+   ],
+   "dependencies": [
+    "P0-SEC-001"
+   ],
+   "description": "OBSOLETE by D17 (2026-11-22) — no staging environment will be provisioned. Owner decision: Vibe runs one control plane (production) plus a locally-deployed plane for security proofs. Rationale recorded in D17: a second Render environment needs a paid Key Value, and the security value is in the proof matrix (200/401/403/404/503), which already runs against production (2026-11-21) and locally (P0-SEC-001, docker-compose with the boundary on and the real Edge KV id). A draft render.staging.yaml was written during O21 and then removed with this decision; render.yaml stays the only blueprint and deploy-staging.yml keeps pointing at the production control plane as a Worker preview. Replacement: none needed — the acceptance criteria are met by the production matrix plus the local deployed-plane proof. Explicitly unproven and not to be claimed: behaviour that only a separate host could show (proxy chains, a second Key Value, cross-origin cookies).",
+   "documentation": [
+    "docs/DEPLOY_RENDER_CLOUDFLARE.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "id": "P0-SEC-006",
+   "priority": "P2",
+   "repository_paths": [
+    "render.yaml",
+    ".github/workflows/deploy-staging.yml",
+    "docker-compose.yml"
+   ],
+   "risk": "Low",
+   "solo_developer_estimate": "S",
+   "status": "OBSOLETE",
+   "tests": [
+    "No test: environment not created by decision D17",
+    "Coverage retained by the production matrix (2026-11-21) and the local deployed-plane proof (2026-11-22)"
+   ],
+   "title": "Provision a dedicated staging control plane (cost-gated)",
+   "type": "DEPLOYMENT"
+  },
+  {
+   "acceptance_criteria": [
+    "Agent lifecycle states documented",
+    "Manifest identity rules fixed"
+   ],
+   "dependencies": [
+    "P0-SEC-002"
+   ],
+   "description": "DONE 2026-11-22 (contract + ADR, no runtime consumer). Defined three distinct identities (definition = publisher+name, version = exact semver, instance = tenant deployment) with kind/name as the uniqueness key; name immutable once published; publisher transfer = new publisher; exact pins only. Lifecycle: six states (draft, published, active, paused, retired, obsolete) held in the data layer with an audited transition record, never in the manifest (envelope forbids status; IR invariant I2). Retirement is a tombstone: resolvable for read/audit and existing pins, closed to new pins and new runs, explicit successor, and explicit finish-vs-cancel (retired finishes, obsolete cancels). No registry or deployment store exists yet, so enforcement is DESIGNED.",
+   "documentation": [
+    "docs/ecosystem/05-agent-platform-architecture.md",
+    "docs/architecture/adr-agent-identity-lifecycle.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "id": "P1-AGT-001",
+   "priority": "P1",
+   "repository_paths": [
+    "docs/architecture/manifest-schemas/",
+    "docs/ecosystem/05-agent-platform-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "Identity rules cross-checked against the four schemas and bun run docs:check (green)",
+    "Lifecycle/retirement recorded in the ADR; enforcement tests belong to the registry task"
+   ],
+   "title": "Agent identity and lifecycle contract",
+   "type": "ARCHITECTURE"
+  },
+  {
+   "acceptance_criteria": [
+    "Compiler loads IR fixtures in tests",
+    "Invalid IR rejected"
+   ],
+   "dependencies": [
+    "P1-AGT-001"
+   ],
+   "description": "DONE 2026-11-22. The IR was stored and gated but no Go code could read it. Added backend/pkg/ir: Load(data) decodes a kind:System document into typed structs with DisallowUnknownFields (the schema's additionalProperties:false reaching the compiler) and returns every violation; Canonicalize(data) re-serializes with sorted keys, 2-space indent, one trailing newline and HTML escaping DISABLED (the IR carries conditions like 'score >= 80', which would otherwise become \\u003e and never round-trip). Invariants enforced in Go and kept in parity with scripts/validate-system-ir.mjs: I1 one execution shape, I2 no runtime state (walked, not just field-checked), I3 pinned agent refs + known delegation targets, I4 topology references declared agents once, I5 workflow graph integrity, I6 typed approvers. Tests executed: 4/4 fixtures load, 4/4 canonical round-trips byte-identical to the stored files, 6/6 negative probes rejected for the stated reason, plus neither-shape, a pinned-closure walk over the M1 team, and a broken-JSON guard. Not built here: compilation (capability resolution, policy validation, deployment planning = P7.3/P7.4).",
+   "documentation": [
+    "docs/architecture/system-ir.md",
+    "docs/architecture/manifest-schemas.md"
+   ],
+   "id": "P1-AGT-002",
+   "priority": "P1",
+   "repository_paths": [
+    "backend/pkg/ir/system.go",
+    "backend/pkg/ir/system_test.go"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "L",
+   "status": "DONE",
+   "tests": [
+    "go test ./pkg/ir/: 16 subtests (4 fixtures, 4 round-trips, 6 probes, neither-shape, pinned closure, broken JSON)",
+    "parity with scripts/validate-system-ir.mjs (same fixtures, same probes)",
+    "go vet ./... clean; pkg/api + pkg/engine suites still green"
+   ],
+   "title": "Consume Canonical System IR in compiler",
+   "type": "IMPLEMENTATION"
+  },
+  {
+   "acceptance_criteria": [
+    "Live MCP round-trip against one server",
+    "Grantless calls denied"
+   ],
+   "dependencies": [
+    "P0-SEC-004"
+   ],
+   "description": "DONE 2026-11-22 for the two stated acceptance criteria, with a real spawned process. Added backend/pkg/mcp/stdio.go: StdioTransport implements the existing Transport seam (newline-delimited JSON-RPC 2.0 over a child process, initialize + notifications/initialized handshake before tools/list and tools/call). Rules enforced, each with a test: stdout is the protocol channel only (non-JSON is a protocol error, never trusted), one deadline covers the exchange and kills the process, isError:true becomes an error, no grant means the process is NEVER spawned, and a granted call really round-trips. backend/pkg/mcp/stdio_test.go builds and spawns testdata/stub-mcp (a real separate server) for the live case. Deliberate PoC limits documented in docs/architecture/mcp-trust-slice.md: one process per call (no persistent session/reconnect), no SSE, child env is exactly what the caller passes. Remaining before a route or agent run may use it (now P1-AGT-004): authenticated routes for grant/revoke/discover/execute, an SSE binding, persistent registry/grants, and the generic credential store so an MCP server's own secrets are vault: refs.",
+   "documentation": [
+    "docs/architecture/mcp-trust-slice.md",
+    "docs/07-multitenancy-security.md"
+   ],
+   "id": "P1-AGT-003",
+   "priority": "P1",
+   "repository_paths": [
+    "backend/pkg/mcp/stdio.go",
+    "backend/pkg/mcp/stdio_test.go",
+    "backend/pkg/mcp/testdata/stub-mcp/main.go"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "L",
+   "status": "DONE",
+   "tests": [
+    "backend/pkg/mcp/stdio_test.go: 5 tests incl. live round-trip against a spawned stub MCP server + grantless-call-never-spawns",
+    "backend/pkg/mcp/execution_test.go: 12 gate tests unchanged and green",
+    "go vet ./... clean; go test ./pkg/mcp ./pkg/api ./pkg/engine ./pkg/ir green"
+   ],
+   "title": "MCP runtime transport proof of concept",
+   "type": "IMPLEMENTATION"
+  },
+  {
+   "acceptance_criteria": [
+    "Provider interface documented",
+    "Fake plus Cloudflare impls pass conformance"
+   ],
+   "dependencies": [
+    "P1-AGT-002"
+   ],
+   "description": "Contract DONE 2026-11-22 (P7-RUN-001a, DESIGNED): nine operations (start/status/cancel/pause/resume/step/sleep/history/capabilities), step as the only durability primitive, at-least-once delivery with mandatory idempotency keys, six run states plus a separate 'rejected' for admission refusals, capability advertisement that refuses instead of silently downgrading, fixed error taxonomy, and the durable-state vs best-effort-events split (metering reads durable results only). Grounded in the live interpreter which is officially PARTIAL: no cancel, no pause/resume, no declared capabilities(), no unified error taxonomy. P7-RUN-001b DONE 2026-11-23 (adapter + suite): backend/pkg/execution implements the contract types (State incl. rejected, six-class error taxonomy with Classify defaulting unknown errors to permanent, Capabilities with Missing(), ValidatePlan/Admit enforcing tenant + unique names + dependency existence + cycle detection + capability refusal before any step, orderedSteps giving every provider one dependency order). The reference Fake provider is deterministic and synchronous with a durable step log, a separate best-effort event log, retry budgets, step timeouts, crash injection before the durable write, recovery, cancel/pause/resume at safe boundaries and error queues; the conformance suite (C1-C18) runs against a Harness seam and passes 18/18, while a provider advertising nothing runs 14 and reports the 4 capability-gated skips with reasons. The Cloudflare adapter maps the nine operations onto the documented Workflows instance endpoints (create/status/terminate/pause/resume), refuses Sleep and History because sleeps are declared inside the workflow and step events live in D1 logs, advertises exactly cancel+pause, and maps HTTP 401/403 to policy-denied, 429/5xx to transient, everything else to permanent; admission runs locally so a refused plan never reaches the API. NOT DONE / REMAINING for full closure: the Cloudflare adapter is implemented but NOT verified against a live account (C1-C7/C10 for it need a deployed workflow + credentials, i.e. an execution environment), the Worker interpreter itself still has no cancel/pause/capabilities() (the adapter wraps the REST API, the workflow code is unchanged), and the suite is not yet wired into the worker runtime as a gate.",
+   "documentation": [
+    "docs/ecosystem/06-runtime-and-execution-architecture.md",
+    "docs/architecture/adr-execution-provider-contract.md"
+   ],
+   "id": "P7-RUN-001",
+   "priority": "P2",
+   "repository_paths": [
+    "backend/pkg/execution/",
+    "worker/workflow/",
+    "docs/ecosystem/06-runtime-and-execution-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "L",
+   "status": "DONE",
+   "tests": [
+    "C1-C18 matrix executed by Conformance(t, harness): the Fake passes 18/18 (TestFakePassesTheFullMatrix); a provider with no advertised capabilities runs 14 and reports C13/C14/C15/C17 as skipped with reasons (TestPartialProviderSkipsWithReason)",
+    "Admission rules: 9 negative ValidatePlan cases (no tenant, no steps, no name, duplicate name, unknown dep, self dep, cycle, negative retry, negative timeout) + Admit capability refusal (TestValidatePlanIsTheAdmissionGate)",
+    "Cloudflare mapping: 6 stub tests (admission never reaches the API, endpoint mapping for all ops, unadvertised Sleep/History refused, HTTP status taxonomy, idempotent start via 409, unknown status fails closed + path-escape refused)"
+   ],
+   "title": "Execution provider contract plus conformance",
+   "type": "ARCHITECTURE"
+  },
+  {
+   "acceptance_criteria": [
+    "UCP spec version pinned",
+    "No compliance claimed without tests"
+   ],
+   "dependencies": [],
+   "description": "DONE 2026-11-22 (research only, no code). Verified against the official repos: UCP (Apache-2.0) uses DATE-BASED protocol versions (spec error example: '2026-01-12 is not supported, this business supports 2026-01-11 and 2026-01-23'), separates protocol-version selection from capability negotiation, serves a profile at /.well-known/ucp, names capabilities reverse-domain (dev.ucp.shopping.checkout) with a schema URL bound to the namespace authority (provenance, not trust), and binds REST + MCP + a JSON-RPC 2.0 Embedded Protocol (A2A as an integration path). AP2 is v0.2 and explicitly a security feature INSIDE a commerce protocol (catalog/checkout APIs out of scope): five roles (Shopping Agent, Credential Provider, Merchant, Merchant Payment Processor, non-agentic Trusted Surface), Checkout + Payment Mandates with receipts as SD-JWT, Human Present vs Not Present flows, hash-chain dispute evidence. Recorded adapter boundary, the 'must not claim' list, five ordered gates, and O22/O23. No compliance claimed.",
+   "documentation": [
+    "docs/ecosystem/13-agentic-commerce.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "id": "P6-COM-001",
+   "priority": "P3",
+   "repository_paths": [
+    "docs/ecosystem/13-agentic-commerce.md"
+   ],
+   "risk": "Low",
+   "solo_developer_estimate": "S",
+   "status": "DONE",
+   "tests": [
+    "Spec review checklist recorded in the research log (no runtime tests: no adapter exists)"
+   ],
+   "title": "Validate commerce protocol specifications",
+   "type": "RESEARCH"
+  },
+  {
+   "id": "P1-AGT-004",
+   "title": "MCP routes, SSE binding, and the generic credential store",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "TODO",
+   "description": "Follow-up to P1-AGT-003 (stdio transport done). Three pieces before an agent run may call an MCP tool: (1) authenticated routes for discover/grant/revoke/execute that call backend/pkg/mcp.Gate with the session identity and the P0.4/P0.7 ownership discipline, plus a route-level test; (2) an SSE Transport binding behind the same interface; (3) the generic credential store: D1 table + AES-256-GCM envelopes in worker/light/tokenVault.ts (the documented vault merge point) and real /api/vault/* endpoints (today they answer 503) so a server own secrets are vault: references, never literals. Persistent registry/policy/grant stores stay with P7.6.",
+   "dependencies": [
+    "P1-AGT-003",
+    "P0-SEC-004"
+   ],
+   "acceptance_criteria": [
+    "An authenticated route discovers and (with a grant) executes against a real server",
+    "Grantless route call is 403 and spawns nothing",
+    "A server secret is stored as a vault: ref and resolved only at call time",
+    "SSE binding passes the same 5 transport tests"
+   ],
+   "repository_paths": [
+    "backend/pkg/mcp/",
+    "backend/pkg/api/routes.go",
+    "worker/light/tokenVault.ts",
+    "worker/light/lightApp.ts",
+    "migrations/"
+   ],
+   "tests": [
+    "Route-level gate tests (403 without grant, audit row)",
+    "SSE round-trip against a stub server",
+    "Vault store/resolve/revoke tests in worker/light/tokenVault.test.ts"
+   ],
+   "documentation": [
+    "docs/architecture/mcp-trust-slice.md",
+    "docs/07-multitenancy-security.md"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "L"
+  },
+  {
+   "id": "P7-SKL-001",
+   "title": "Skill Loader: agentskills.io SKILL.md onto the shared Gate",
+   "type": "IMPLEMENTATION",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 for all four acceptance criteria, as a pure loader (D8-compatible: no runner, no route, no agent caller). backend/pkg/agentskills parses and validates SKILL.md frontmatter (name 1-64 lowercase slug with folder agreement, description 1-1024, SPDX-shaped license <=80, compatibility/metadata passthrough, allowed-tools), preserves unknown keys in Extensions instead of dropping them, and keeps only mcp/<server>/<tool>@x.y.z entries as pinned refs while bare upstream tool names stay advisory-only (never authority) and a malformed mcp/ entry is rejected instead of silently downgraded. Progressive loading is structural: Card() is name+description with an estimated token cost and a ResolveTokenBudget=100 check, Activate() is the only way to get the body and refuses anything over BodyTokenBudget=5000, and references//assets/ load on demand through Resource() with single-path-element validation plus a filepath.Rel containment check. Trust is caller-supplied (marketplace decision, never a document field): Community scripts are refused until a Verified review, Private/Verified can read them. Bind(grants, now) is a pure intersection against the tenant's live grants (revoked and expired dropped, exact version required) so a skill can only narrow authority; the Gate remains the only execution path, proven by a grantless call that refuses before the transport is touched. Package is backend/pkg/agentskills, not backend/pkg/skills (that name is the existing role-prompt registry) and not backend/pkg/agent/tools (those are LLM tools). NOT done by design: no SSE/persistent sessions, no skill activation in an agent run, no manifest-schema cross-check at load (the docs gate covers the Skill manifest; the loader parses the upstream SKILL.md), and P7-SCH-001 still owns ranking/bounds over these cards.",
+   "dependencies": [
+    "P1-AGT-002"
+   ],
+   "acceptance_criteria": [
+    "Invalid frontmatter (bad name, empty/missing description) is rejected",
+    "Resolve returns only name+description; body is loaded only on activation",
+    "A Community script with side effects is denied without Verified review",
+    "P7-SCH search and the manifest gate cover every surfaced skill"
+   ],
+   "repository_paths": [
+    "backend/pkg/agentskills/",
+    "backend/pkg/mcp/",
+    "docs/architecture/manifest-schemas/"
+   ],
+   "tests": [
+    "12 test functions in backend/pkg/agentskills/agentskills_test.go (15 cases in the invalid-frontmatter table, 5 in the grant-intersection table) — all green",
+    "Gate integration: a grantless skill script is denied before spawn (transport call count stays 0) and a granted one executes only through mcp.Gate, cross-tenant grant refused"
+   ],
+   "documentation": [
+    "docs/ecosystem/19-integration-research.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "P7-OPI-001",
+   "title": "OpenAPI Importer: one operation maps to one Tool Manifest",
+   "type": "IMPLEMENTATION",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 for all four acceptance criteria, as a loader (no runner, no route, no agent caller). backend/pkg/openapiimport reads OpenAPI 3.0/3.1 JSON or YAML (YAML is converted to JSON so one struct serves both), and Import maps one allowed operation to one pinned Tool Manifest: identity from operationId (slugified) or a stable method+path slug, permissions derived as resource:action, sideEffect/approvals from the method (GET safe, POST/PUT/PATCH external+external-write, DELETE irreversible+human-review), idempotency key from the addressed path parameter (or an explicit idempotencyKey body field for POST), input schema from path/query/non-credential headers with object bodies inlined, output schema from the first 2xx JSON response, tenant required with a configurable contextKey, and provenance from owner/commit. Credentials never reach a manifest: security schemes (apiKey/http/oauth2/openIdConnect/mutualTLS) and credential-shaped headers/cookies (Authorization, X-Api-Key, Cookie, ...) become vault:<publisher>/<slug> references and are removed from the input schema, and an undefined or unsupported scheme is an error instead of a silently unauthenticated tool. The audited surface is mandatory: no allow-list means refusal (AllowAll is the explicit reviewed escape hatch), a typo'd entry fails loudly, deprecated operations are refused, and two operations that collapse to one tool name are an error. Determinism is contractual: output is sorted and canonically serialized (sorted keys, 2-space indent, trailing newline) so bytes are stable, and Merge makes a repeat import idempotent while refusing same-ref/different-content (bump the version instead). Every manifest self-validates against the Tool Manifest contract and maps onto mcp.ToolPolicy, so an ungranted call is denied before any HTTP. NOT done by design: no HTTP transport (the Gate owns execution), no registry persistence, no Code Mode. Package lives in backend/pkg/openapiimport rather than sdk/ because the Gate and the policy vocabulary it maps onto are Go.",
+   "dependencies": [
+    "P1-AGT-002"
+   ],
+   "acceptance_criteria": [
+    "A sample OpenAPI (3+ ops incl. one auth header) imports to valid manifests",
+    "Credential-shaped fields always become vault: refs",
+    "Importing the same spec twice is idempotent (no duplicate manifests)",
+    "Every imported tool conducts: ungranted call denied before any HTTP"
+   ],
+   "repository_paths": [
+    "backend/pkg/openapiimport/",
+    "backend/pkg/mcp/",
+    "docs/architecture/manifest-schemas/"
+   ],
+   "tests": [
+    "11 test functions in backend/pkg/openapiimport/openapiimport_test.go (the 5-operation leads fixture incl. a bearer scheme and an Authorization header) — all green",
+    "Independent cross-check: generated manifests validated against docs/architecture/manifest-schemas/tool.schema.json with scripts/lib/schema-subset.mjs, byte-identical to its canonical serialize()",
+    "Conducted call: grantless Gate.Call denied with zero transport invocations; granted call executes once; DELETE policy requires live human approval"
+   ],
+   "documentation": [
+    "docs/ecosystem/19-integration-research.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "P7-SCH-001",
+   "title": "Dynamic tool search (search_tools) beside static manifests",
+   "type": "IMPLEMENTATION",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 for all four acceptance criteria, as search beside the gate (no execution, no agent wiring). backend/pkg/toolsearch builds a Catalog from the loaders' own output: AddImported indexes the OpenAPI importer's manifests (pinned ref + description + sideEffect) and AddSkill indexes an agentskills skill's allowed-tools, so search covers exactly what already has a manifest and nothing else. Search(query, limit) ranks with fixed documented weights (name word/substring beats description word/substring, with a phrase bonus), drops one-character and stop-word tokens so common words cannot flatten the ranking, normalises - and _ in names, and breaks ties by score then name then pinned ref, so the same catalog and query always give the same order (golden-tested). Bounds are structural: limit is clamped to MaxCandidates=8, the slice is dropped when it would exceed ContextTokenBudget=600 estimated tokens, and Truncated plus a note say so; the default answer is DefaultLimit=5. A miss is information: the result is empty with Missed=true and a note telling the model to state the missing capability, never a return-everything fallback. Authority stays with the gate: Verify/GrantID resolve a live non-revoked non-expired grant for the tenant, CallRequest refuses an ungranted match with mcp.DeniedError instead of building a request that can only fail, and a test drives a surfaced tool through a real mcp.Gate (no grant = zero transport calls, foreign grant refused, live grant executes once). Code Mode is a gated spike, not a runtime: NewCodeMode needs both an explicit enabled flag and a Sandbox, the zero value and nil receiver refuse, Program/empty input refuse, and a static test asserts the package links no os/exec, plugin or syscall execution facility — so no code path runs agent-authored code unsandboxed. NOT done by design: no server.json/event-log ranking source yet, no real WASM/container Sandbox (sequenced with P7-RUN), no agent or route caller (D8).",
+   "dependencies": [
+    "P7-SKL-001",
+    "P7-OPI-001"
+   ],
+   "acceptance_criteria": [
+    "Suite asserts an upper bound on the context slice",
+    "Every surfaced tool is grant-verified before call (reuse gate fixtures)",
+    "A missed-capability negative case exists",
+    "No Code Mode code path executes unsandboxed"
+   ],
+   "repository_paths": [
+    "backend/pkg/toolsearch/",
+    "backend/pkg/mcp/",
+    "backend/pkg/agent/"
+   ],
+   "tests": [
+    "8 test functions in backend/pkg/toolsearch/toolsearch_test.go (5 golden ranking cases over a 7-candidate catalog built from the real leads-api fixture + pdf-report skill) — all green",
+    "Bound assertion over limits -5..1000: never more than MaxCandidates or the requested limit, token budget enforced, truncation reported",
+    "Missed-capability negative cases: 'reconcile supplier invoices', 'transcribe audio' and the empty query return nothing with a note",
+    "Gate reuse: surfaced-but-ungranted denied with zero transport invocations, cross-tenant grant refused, live grant executes exactly once",
+    "Code Mode: disabled/flag-only/sandbox-only/zero-value/nil all refuse; a static scan proves no os/exec, plugin or syscall path"
+   ],
+   "documentation": [
+    "docs/ecosystem/19-integration-research.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  }
+ ]
+}
