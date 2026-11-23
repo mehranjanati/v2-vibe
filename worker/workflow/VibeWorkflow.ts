@@ -42,6 +42,13 @@ import {
 } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
 
+import {
+  WORKFLOW_CAPABILITIES,
+  dagRequires,
+  isCancelled,
+  missingCapabilities,
+} from './workflowCapabilities';
+
 export const WORKFLOW_SCHEMA_VERSION = 2;
 export const WORKFLOW_NODE_TYPES = [
   'trigger',
@@ -566,6 +573,12 @@ function bindValue(value: unknown): string | number | null {
  * handed to the trigger node.
  */
 export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
+  /**
+   * P7-RUN-001c: the runtime's own advertisement (see workflowCapabilities.ts).
+   * A caller that needs a guarantee reads this instead of assuming it.
+   */
+  static readonly advertisedCapabilities = WORKFLOW_CAPABILITIES;
+
   override async run(
     event: Readonly<WorkflowEvent<WorkflowInput>>,
     step: WorkflowStep,
@@ -577,6 +590,14 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
       const instance = await this.loadInstance(instanceId);
       if (!instance) {
         throw new NonRetryableError(`vibe-workflow: workflow instance "${instanceId}" not found`);
+      }
+
+      // P7-RUN-001c: a cancelled run is final. If the instance is re-entered
+      // after an operator terminated it, write nothing — marking it failed (or
+      // succeeded) here is exactly the "partial success claim" the contract
+      // forbids, and it would also resurrect a final state.
+      if (isCancelled(instance.status)) {
+        return { payload, steps: {} };
       }
 
       const dagRow = await this.loadDag(instance.workflow_id);
@@ -612,6 +633,16 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
       const problems = validateWorkflowV2(dag);
       if (problems.length > 0) {
         const message = `vibe-workflow: invalid workflow DAG: ${problems.join('; ')}`;
+        await this.markFailed(instanceId, message);
+        throw new NonRetryableError(message);
+      }
+
+      // P7-RUN-001c admission rule: a plan may not rely on a guarantee this
+      // runtime does not advertise. Refusing here is the contract's answer; the
+      // alternative (running it degraded) is what the ADR rejects.
+      const missing = missingCapabilities(dagRequires(dag));
+      if (missing.length > 0) {
+        const message = `vibe-workflow: workflow "${instance.workflow_id}" requires ${missing.join(', ')}, which this runtime does not advertise`;
         await this.markFailed(instanceId, message);
         throw new NonRetryableError(message);
       }
@@ -953,24 +984,30 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
   }
 
   private async markRunning(instanceId: string, payload: WorkflowInput): Promise<void> {
+    // P7-RUN-001c: never resurrect a cancelled run.
     await this.env.DB.prepare(
-      'UPDATE workflow_instances SET status = ?, started_at = ?, input = COALESCE(input, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      "UPDATE workflow_instances SET status = ?, started_at = ?, input = COALESCE(input, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status <> 'cancelled'",
     )
       .bind('running', Date.now(), JSON.stringify(payload ?? {}), instanceId)
       .run();
   }
 
   private async markSucceeded(instanceId: string, result: WorkflowRunResult): Promise<void> {
+    // P7-RUN-001c: a cancel that lands mid-run wins — no success claim after it.
     await this.env.DB.prepare(
-      'UPDATE workflow_instances SET status = ?, output = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      "UPDATE workflow_instances SET status = ?, output = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status <> 'cancelled'",
     )
       .bind('succeeded', JSON.stringify(result), Date.now(), instanceId)
       .run();
   }
 
   private async markFailed(instanceId: string, error: string): Promise<void> {
+    // P7-RUN-001c: terminating an instance makes `run()` throw, so without this
+    // guard the cancellation would be rewritten as `failed` — losing the
+    // operator's decision and the distinction the contract draws between a
+    // refusal and a failure.
     await this.env.DB.prepare(
-      'UPDATE workflow_instances SET status = ?, error = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      "UPDATE workflow_instances SET status = ?, error = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status <> 'cancelled'",
     )
       .bind('failed', error, Date.now(), instanceId)
       .run();

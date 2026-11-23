@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"backend/pkg/cloudflare"
+	"backend/pkg/execution"
 )
 
 // ---------- Workflow run persistence (workflow_* D1 tables) ----------
@@ -348,4 +349,74 @@ func MapCloudflareStatus(status string) string {
 		return "cancelled"
 	}
 	return status
+}
+
+// ---------- Run control (P7-RUN-001c) ----------
+//
+// The contract's cancel/pause/resume operations land here: the control plane
+// asks the runtime to stop or hold a run and records the resulting state so the
+// durable row is the source of truth. The runtime worker never overwrites a
+// terminal state (its UPDATEs are guarded), so a cancelled run cannot come back
+// as `failed` or `succeeded` afterwards.
+
+// WorkflowCapabilities advertises what the deployed workflow runtime keeps.
+//
+// This is deliberately *not* the same advertisement as
+// execution.CloudflareCapabilities: that one describes the REST adapter from
+// outside (no injected sleeps, no history over the API), while this one
+// describes the deployed workflow itself, whose DAG has `sleep` nodes
+// (step.sleep), whose step logs land in workflow_step_logs, and whose runs can
+// now be terminated, paused and resumed. Two layers, two honest answers; a
+// caller reads the one for the surface it actually talks to.
+func WorkflowCapabilities() execution.Capabilities {
+	return execution.Capabilities{Cancel: true, Pause: true, LongSleep: true, History: true}
+}
+
+// WorkflowInstanceTerminal reports whether a run has reached a final state. A
+// terminal state never transitions again (contract rule 5).
+func WorkflowInstanceTerminal(status string) bool {
+	switch status {
+	case "succeeded", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+// MarkWorkflowInstanceCancelled records a cancellation. The WHERE clause keeps it
+// a final-state write: an already terminal row is left untouched, so a cancel
+// that races the runtime cannot rewrite a finished run.
+func MarkWorkflowInstanceCancelled(ctx context.Context, d1 *cloudflare.D1Client, instanceID, reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		reason = "cancelled by operator"
+	}
+	ok, err := d1.Exec(ctx,
+		"UPDATE workflow_instances SET status = 'cancelled', error = ?, completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('pending', 'running', 'paused')",
+		reason, instanceID)
+	if err != nil || !ok {
+		return fmt.Errorf("d1: cancel workflow_instances: %v", err)
+	}
+	return nil
+}
+
+// MarkWorkflowInstancePaused records a pause at the runtime's next safe boundary.
+func MarkWorkflowInstancePaused(ctx context.Context, d1 *cloudflare.D1Client, instanceID string) error {
+	ok, err := d1.Exec(ctx,
+		"UPDATE workflow_instances SET status = 'paused', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
+		instanceID)
+	if err != nil || !ok {
+		return fmt.Errorf("d1: pause workflow_instances: %v", err)
+	}
+	return nil
+}
+
+// MarkWorkflowInstanceResumed records that a paused run continues.
+func MarkWorkflowInstanceResumed(ctx context.Context, d1 *cloudflare.D1Client, instanceID string) error {
+	ok, err := d1.Exec(ctx,
+		"UPDATE workflow_instances SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'paused'",
+		instanceID)
+	if err != nil || !ok {
+		return fmt.Errorf("d1: resume workflow_instances: %v", err)
+	}
+	return nil
 }

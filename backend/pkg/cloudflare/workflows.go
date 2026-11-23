@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -147,6 +148,78 @@ func (c *Client) GetWorkflowInstance(ctx context.Context, workflowName, instance
 		return nil, fmt.Errorf("cloudflare: workflow get rejected: %s", msg)
 	}
 	return env.Result, nil
+}
+
+// workflowInstanceAction posts one control operation (terminate/pause/resume)
+// against an instance. It is the shared body of the three cancellable
+// operations so their request shape, auth header and error text cannot drift.
+func (c *Client) workflowInstanceAction(ctx context.Context, workflowName, instanceID, action string, body map[string]interface{}) error {
+	if err := c.requireWorkflowCreds(workflowName); err != nil {
+		return err
+	}
+	if strings.TrimSpace(instanceID) == "" {
+		return fmt.Errorf("cloudflare: instanceID is required")
+	}
+	endpoint := workflowInstancesURL(c.apiBaseURL(), c.accountID, workflowName) + "/" + url.PathEscape(instanceID) + "/" + action
+	var payload io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("cloudflare: encode workflow %s: %w", action, err)
+		}
+		payload = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, payload)
+	if err != nil {
+		return fmt.Errorf("cloudflare: build workflow %s: %w", action, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiToken)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("cloudflare: workflow %s: %w", action, err)
+	}
+	defer resp.Body.Close()
+	raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if rerr != nil {
+		return fmt.Errorf("cloudflare: read workflow %s response: %w", action, rerr)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("cloudflare: workflow %s failed (status %d): %s", action, resp.StatusCode, string(raw))
+	}
+	var env workflowAPIEnvelope
+	if err := json.Unmarshal(raw, &env); err == nil && !env.Success {
+		msg := "unknown error"
+		if len(env.Errors) > 0 {
+			msg = env.Errors[0].Message
+		}
+		return fmt.Errorf("cloudflare: workflow %s rejected: %s", action, msg)
+	}
+	return nil
+}
+
+// TerminateWorkflowInstance cancels a run: the runtime stops at its next safe
+// boundary and the instance reports `terminated` (P7-RUN-001c).
+func (c *Client) TerminateWorkflowInstance(ctx context.Context, workflowName, instanceID, reason string) error {
+	body := map[string]interface{}{}
+	if strings.TrimSpace(reason) != "" {
+		body["reason"] = strings.TrimSpace(reason)
+	}
+	return c.workflowInstanceAction(ctx, workflowName, instanceID, "terminate", body)
+}
+
+// PauseWorkflowInstance holds a run at its next step boundary.
+func (c *Client) PauseWorkflowInstance(ctx context.Context, workflowName, instanceID string) error {
+	return c.workflowInstanceAction(ctx, workflowName, instanceID, "pause", nil)
+}
+
+// ResumeWorkflowInstance continues a paused run without re-executing completed
+// steps (the runtime owns that guarantee).
+func (c *Client) ResumeWorkflowInstance(ctx context.Context, workflowName, instanceID string) error {
+	return c.workflowInstanceAction(ctx, workflowName, instanceID, "resume", nil)
 }
 
 // TrimWorkflowName normalizes a Workflows name (defensive against env

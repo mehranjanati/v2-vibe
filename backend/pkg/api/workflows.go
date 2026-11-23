@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -222,6 +223,144 @@ func handleWorkflowGetInstance(c *fiber.Ctx, hub *engine.EngineHub, d1 *cloudfla
 			"steps":    steps,
 		},
 	})
+}
+
+// ---------- Run control endpoints (P7-RUN-001c) ----------
+//
+// POST /api/workflows/cancel   — terminate a run (capability: cancel)
+// POST /api/workflows/pause    — hold a run at its next safe boundary
+// POST /api/workflows/resume   — continue a paused run
+// GET  /api/workflows/capabilities — what the deployed runtime advertises
+//
+// All three control routes carry the same guard chain as trigger: the session
+// boundary first, then workflowGuard, which resolves the addressed workflow's
+// tenant from the JSON body's workflowId. The instance is then loaded *scoped to
+// that workflow*, so a run id from another workflow (or tenant) is a 404 and
+// never a cross-tenant control channel.
+
+// workflowControlRequest is the POST /api/workflows/{cancel,pause,resume} body.
+type workflowControlRequest struct {
+	WorkflowID string `json:"workflowId"`
+	InstanceID string `json:"instanceId"`
+	Reason     string `json:"reason"`
+}
+
+// handleWorkflowControl implements the three control actions with one handler, so
+// their guards, scoping and finality rules cannot drift.
+func handleWorkflowControl(hub *engine.EngineHub, action string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		d1 := hub.D1Client()
+		if d1 == nil {
+			return c.Status(503).JSON(fiber.Map{"success": false, "error": "workflow persistence (D1) is not configured"})
+		}
+		cf := hub.CloudflareClient()
+		workflowName := hub.WorkflowName()
+		if cf == nil || workflowName == "" {
+			return c.Status(503).JSON(fiber.Map{"success": false, "error": "workflow execution (Cloudflare) is not configured"})
+		}
+
+		var req workflowControlRequest
+		if err := c.BodyParser(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"success": false, "error": "invalid JSON body"})
+		}
+		workflowID := strings.TrimSpace(req.WorkflowID)
+		instanceID := strings.TrimSpace(req.InstanceID)
+		if workflowID == "" || instanceID == "" {
+			return c.Status(400).JSON(fiber.Map{"success": false, "error": "workflowId and instanceId are required"})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Scoped load: a run belonging to another workflow is indistinguishable
+		// from a missing one (no enumeration across tenants).
+		instance, err := engine.LoadWorkflowInstance(ctx, d1, workflowID, instanceID)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"success": false, "error": "database error"})
+		}
+		if instance == nil {
+			return c.Status(404).JSON(fiber.Map{"success": false, "error": "workflow instance not found"})
+		}
+
+		// Terminal states are final (contract rule 5): a finished run is never
+		// cancelled, paused or resumed after the fact.
+		if engine.WorkflowInstanceTerminal(instance.Status) {
+			return c.Status(409).JSON(fiber.Map{
+				"success": false,
+				"error":   "run is already " + instance.Status + "; terminal states are final",
+			})
+		}
+
+		var actionErr error
+		switch action {
+		case "cancel":
+			actionErr = cf.TerminateWorkflowInstance(ctx, workflowName, instanceID, req.Reason)
+		case "pause":
+			if instance.Status != "running" {
+				return c.Status(409).JSON(fiber.Map{"success": false, "error": "only a running run can be paused (status: " + instance.Status + ")"})
+			}
+			actionErr = cf.PauseWorkflowInstance(ctx, workflowName, instanceID)
+		case "resume":
+			if instance.Status != "paused" {
+				return c.Status(409).JSON(fiber.Map{"success": false, "error": "only a paused run can be resumed (status: " + instance.Status + ")"})
+			}
+			actionErr = cf.ResumeWorkflowInstance(ctx, workflowName, instanceID)
+		default:
+			return c.Status(500).JSON(fiber.Map{"success": false, "error": "unknown workflow control action"})
+		}
+		if actionErr != nil {
+			// The runtime refused or the API failed: nothing was recorded, so the
+			// durable row still describes reality.
+			log.Printf("[api] workflow %s failed for %s: %v", action, instanceID, actionErr)
+			return c.Status(502).JSON(fiber.Map{"success": false, "error": "workflow runtime refused the " + action})
+		}
+
+		status := instance.Status
+		switch action {
+		case "cancel":
+			status = "cancelled"
+			if err := engine.MarkWorkflowInstanceCancelled(ctx, d1, instanceID, req.Reason); err != nil {
+				log.Printf("[api] record cancel for %s: %v", instanceID, err)
+			}
+		case "pause":
+			status = "paused"
+			if err := engine.MarkWorkflowInstancePaused(ctx, d1, instanceID); err != nil {
+				log.Printf("[api] record pause for %s: %v", instanceID, err)
+			}
+		case "resume":
+			status = "running"
+			if err := engine.MarkWorkflowInstanceResumed(ctx, d1, instanceID); err != nil {
+				log.Printf("[api] record resume for %s: %v", instanceID, err)
+			}
+		}
+
+		return c.JSON(fiber.Map{
+			"success": true,
+			"data": fiber.Map{
+				"action":     action,
+				"workflowId": workflowID,
+				"instanceId": instanceID,
+				"status":     status,
+			},
+		})
+	}
+}
+
+// handleWorkflowCapabilities serves GET /api/workflows/capabilities: the
+// advertisement a caller must read before relying on cancel, pause or history.
+func handleWorkflowCapabilities(hub *engine.EngineHub) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		caps := engine.WorkflowCapabilities()
+		return c.JSON(fiber.Map{
+			"success": true,
+			"data": fiber.Map{
+				"cancel":    caps.Cancel,
+				"pause":     caps.Pause,
+				"longSleep": caps.LongSleep,
+				"history":   caps.History,
+			},
+		})
+	}
 }
 
 // buildInstanceMap renders one workflow_instances row as the API object.

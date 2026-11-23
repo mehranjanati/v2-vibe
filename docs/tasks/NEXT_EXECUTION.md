@@ -36,11 +36,14 @@ P1-AGT-003 (MCP stdio transport: a real spawned server round-trip through the
 trust gate, with the grantless call refusing to spawn at all).
 
 Next unblocked work: **`P1-AGT-004`** is still gated by D8 (authenticated MCP
-routes + credential store need O1 evidence). The open, unblocked options are:
+routes + credential store need O1 evidence). Everything else in the backlog is
+DONE or OBSOLETE; the live options are:
 (a) run the Cloudflare adapter against a deployed workflow (needs an account +
-credentials) to close P7.11's live half, (b) teach `worker/workflow/VibeWorkflow.ts`
-the missing contract surfaces (cancel / pause / `capabilities()`), or (c) a real
-WASM/container `Sandbox` behind `toolsearch.CodeMode`.
+credentials) to close P7.11's live half,
+(b) add the cancel-finality and capability-refusal cases to
+`worker/workflow/VibeWorkflow.test.ts` and the route-auth tests for the three new
+control endpoints — this is the CI proof P7.12 still owes, or
+(c) a real WASM/container `Sandbox` behind `toolsearch.CodeMode`.
 
 Done 2026-11-23 (loaders + search): **`P7-SKL-001`** — `backend/pkg/agentskills`, the
 agentskills.io loader on the D18 contract: frontmatter validation with
@@ -68,3 +71,11 @@ without an injected sandbox (no `os/exec` path exists in the package).
 
 P7-RUN-001b (fake + Cloudflare adapters and the conformance suite) needs an
 execution environment; it is not blocked on design.
+
+Done 2026-11-23 (run control): **`P7-RUN-001c`** — `capabilities`/`cancel`/`pause`/
+`resume` on both planes (`backend/pkg/api`, `backend/pkg/engine`,
+`backend/pkg/cloudflare`, `worker/workflow/`), terminal states made final in the
+runtime's own UPDATEs so a terminated run cannot come back as `failed`, and a DAG
+that needs an unadvertised guarantee refused before the first step. The Go half
+builds and vets clean and `docs:check` passes with the four new routes; the worker
+half is CI-verified only (workerd cannot start on this host).

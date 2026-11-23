@@ -529,6 +529,40 @@
    ],
    "risk": "Medium",
    "solo_developer_estimate": "M"
+  },
+  {
+   "acceptance_criteria": [
+    "Contract surfaces reachable on the live path: capabilities, cancel, pause, resume",
+    "A cancelled run is final: the runtime never rewrites it as failed or succeeded",
+    "A plan needing an unadvertised guarantee is refused by the runtime, not degraded"
+   ],
+   "dependencies": [
+    "P7-RUN-001"
+   ],
+   "description": "DONE 2026-11-23. Closes the residual gap recorded under P7-RUN-001 (\"the Worker interpreter still lacks cancel/pause/capabilities()\"). Control plane: backend/pkg/cloudflare gains TerminateWorkflowInstance/PauseWorkflowInstance/ResumeWorkflowInstance over one shared workflowInstanceAction (POST /instances/{id}/{action}, path-escaped id, envelope + status handling); backend/pkg/engine gains WorkflowCapabilities() (the deployed runtime's advertisement: all four true, with a doc comment explaining why it differs from execution.CloudflareCapabilities — that one describes the REST adapter from outside), WorkflowInstanceTerminal(), and three guarded state writers (cancelled only from pending/running/paused, paused only from running, running only from paused) so a terminal row is never overwritten; backend/pkg/api gains POST /api/workflows/{cancel,pause,resume} plus GET /api/workflows/capabilities, all behind the session guard and workflowGuard, loading the instance scoped to the addressed workflow (404 on a foreign run, never a cross-tenant control channel), refusing terminal runs with 409 and recording the new state only after the runtime accepted the call (502 otherwise, so the row still describes reality). Worker: worker/workflow/workflowCapabilities.ts declares the advertisement and derives DAG requirements; VibeWorkflow exposes static advertisedCapabilities, returns early without writing when the instance is already cancelled, refuses a DAG that needs an unadvertised guarantee (NonRetryableError before any step), and guards markRunning/markSucceeded/markFailed with status <> 'cancelled' — without that guard Cloudflare's terminate makes run() throw and the catch block rewrote a cancelled run as failed. Route contract updated (34 control routes). NOT done: no test suite was executed locally for this slice (workerd cannot start on macOS 12.6); the Go half builds and vets clean and docs:check passes, but the worker half is CI-verified only until it runs there.",
+   "documentation": [
+    "docs/architecture/adr-execution-provider-contract.md",
+    "docs/ecosystem/06-runtime-and-execution-architecture.md",
+    "docs/DEV_CHECKLIST.md"
+   ],
+   "id": "P7-RUN-001c",
+   "priority": "P2",
+   "repository_paths": [
+    "backend/pkg/api/workflows.go",
+    "backend/pkg/engine/workflows.go",
+    "backend/pkg/cloudflare/workflows.go",
+    "worker/workflow/"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "status": "DONE",
+   "tests": [
+    "NOT RUN LOCALLY (owner instruction + workerd unavailable on this host): the worker half needs the Workers pool in CI",
+    "Build evidence: go build ./... and go vet ./pkg/api ./pkg/engine ./pkg/cloudflare clean",
+    "Contract evidence: bun run docs:check green with 34 control routes (postman-route-contract.json updated)"
+   ],
+   "title": "Contract surfaces on the live workflow path (capabilities, cancel, pause, resume)",
+   "type": "IMPLEMENTATION"
   }
  ]
 }

@@ -377,6 +377,14 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	// runs + per-step logs. See workflows.go. P0.7: both routes are scoped
 	// to the workflow's tenant (workflow_dags.user_id) by workflowGuard.
 	app.Post("/api/workflows/trigger", guard, workflowGuard(hub), handleWorkflowTrigger(hub))
+	// P7-RUN-001c: run control. Registered before the :workflowId route so
+	// "capabilities" is never parsed as a workflow id. The three control
+	// routes carry the same guard chain as trigger: the JSON body's
+	// workflowId is what workflowGuard authorizes.
+	app.Get("/api/workflows/capabilities", guard, handleWorkflowCapabilities(hub))
+	app.Post("/api/workflows/cancel", guard, workflowGuard(hub), handleWorkflowControl(hub, "cancel"))
+	app.Post("/api/workflows/pause", guard, workflowGuard(hub), handleWorkflowControl(hub, "pause"))
+	app.Post("/api/workflows/resume", guard, workflowGuard(hub), handleWorkflowControl(hub, "resume"))
 	app.Get("/api/workflows/:workflowId", guard, workflowGuard(hub), handleWorkflowGet(hub))
 
 	// WebSocket: real-time agent channel. P0.5: the upgrade runs the session
