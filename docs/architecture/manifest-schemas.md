@@ -201,7 +201,13 @@ YAML with the same shape when the registry lands) with:
 1. keys sorted recursively,
 2. 2-space indent,
 3. exactly one trailing newline,
-4. no comments, no `status`, no derived fields.
+4. no comments, no `status`, no derived fields;
+5. exactly one JSON document — trailing content is a defect (`Load` and
+   `Canonicalize` both refuse it);
+6. no duplicate object keys — `encoding/json` would silently keep the last one
+   and let a hand-edited file shadow `kind`, `apiVersion` or a `ref`. Go rejects
+   them on both paths; the docs gate cannot (`JSON.parse` offers no hook), which
+   is recorded in [`ir-parity-audit.md`](ir-parity-audit.md) §8.
 
 Round-trip is normative: `parse → validate → canonical-serialize` must be
 byte-identical to the stored file, so diffs stay reviewable and exports stay
@@ -241,6 +247,10 @@ the same change that uses it.
   it does not extend it.
 
 <a id="open-items"></a>
+## ADI position (2026-11-23, PROPOSED)
+
+Four kinds stay exhaustive in v1. Knowledge, model-policy, eval remain reserved reference namespaces; the Intelligence Bundle is distribution grouping only (`composition-lock.md` §9), never a fifth kind. No schema change in this mission.
+
 ## Open items
 
 | Item | Owner |

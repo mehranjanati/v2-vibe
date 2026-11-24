@@ -221,13 +221,18 @@ guard against building the universal IR prematurely.
 `node scripts/validate-system-ir.mjs` (wired into `bun run docs:check`) checks:
 
 1. the fixture is `kind: System` and validates against the P7.1 schema;
-2. invariants I1–I6 hold;
+2. invariants I1–I6 hold — including **no cycles** and **every node reachable**
+   from the entry set (both are errors since ADI-FOUND-001a, matching Go);
 3. the declared shape matches the case, and the workflow case exercises all
    seven node kinds;
-4. canonical serialization round-trips byte-identically;
-5. six negative probes are **rejected** — runtime `status`, a `telemetry`
+4. canonical serialization round-trips byte-identically, and a positive control
+   (`../system-ir/positive-control.system.json`, every optional field populated)
+   loads cleanly so a tightened rule cannot over-reject;
+5. seventeen negative probes are **rejected** — runtime `status`, a `telemetry`
    block, an unpinned `@latest` ref, an unknown delegation target, both shapes
-   at once, and a dangling workflow edge.
+   at once, a dangling workflow edge, plus the eleven parity probes N1–N11
+   (length, semver, outcome, topology, approval class, evaluation dataset,
+   duplicate edge, cycle, unreachable node).
 
 A negative probe that passes is a failure: v1's value is what it refuses.
 
@@ -257,16 +262,24 @@ rejected **for the stated reason** (the test asserts the message, not just that
 something failed); plus "neither shape", a pinned-closure walk over the M1 team,
 and a broken-JSON guard. `go vet ./...` clean.
 
+**Parity status (2026-11-23):** the "same answer" claim is now **enforced**, not aspirational. ADI-FOUND-001 found the gaps by executed probe; ADI-FOUND-001a closed them. Both readers reject the same thirteen probes, the gate refuses cycles and unreachable nodes, and a shared positive control guards against over-rejection ([`ir-parity-audit.md`](ir-parity-audit.md) §8). Two documented asymmetries remain: JSON Schema cannot express acyclicity/reachability (the invariants carry them), and `JSON.parse` cannot see duplicate keys (Go rejects them on both paths; the gate does not).
+
+**Historical audit (2026-11-23, ADI-FOUND-001):** the claim was aspirational before the fix. An executed two-sided probe found that Go accepts documents the P7.1 schema rejects — 63-char caps on `metadata.name`/node ids, semver leading zeros, a missing `spec.outcome`, `agents` without `topology`, `approvals[].on` outside the vocabulary, `evaluation` without `dataset`, and duplicate `next`/`delegatesTo` items — plus cycles and reachability that neither implementation checks at the IR boundary, a `Canonicalize` that accepts trailing content although `Load` rejects it, and last-wins duplicate JSON keys. Matrix, severities and the 13-case negative test contract: [`ir-parity-audit.md`](ir-parity-audit.md). The fix is ADI-FOUND-001a; until it lands, treat the schema (not the reader) as the stricter contract.
+
 **Not built here:** compilation itself — capability resolution against a live
 registry, policy validation, deployment planning (P7.3/P7.4). This is the reader
 they will call, not the compiler.
+
+## ADI position (2026-11-23, PROPOSED)
+
+The IR stays the single authoring/runtime representation (D7). The Composition Lock (`composition-lock.md`) derives immutable snapshots from it; the resolver is its first compiler consumer (backlog ADI-FOUNDATION). No IR change in this mission.
 
 ## Open items
 
 | Item | Owner |
 |---|---|
-| Capability-closure resolution against a live registry (existence, not only grammar) | P7.3 / P7.4 |
-| Cycle detection inside capability graphs (skill → tool → skill) | compiler |
+| Capability-closure resolution against a live registry (existence, not only grammar) — contract written in [`composition-lock.md`](composition-lock.md) §6–§8; implementation is ADI-FOUND-003a, designed in [`composition-resolver.md`](composition-resolver.md) | P7.3 / P7.4 + ADI-FOUND-003a |
+| Cycle detection inside **capability** graphs (skill → tool → skill) — distinct from workflow cycles, which I5 now refuses | compiler |
 | Deterministic `MAJOR` migration transformers | first `MAJOR` bump |
 | Compiler-side policy validation (e.g. `irreversible` requires approval + idempotency) | P7.2 follow-up / P7.3 |
 | Promotion from `implemented_unverified` to `verified` | after the compiler loads the IR in its own tests |

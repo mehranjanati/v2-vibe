@@ -245,3 +245,141 @@ func TestCanonicalizeRejectsBrokenJSON(t *testing.T) {
 		t.Fatal("expected an error for unparseable input")
 	}
 }
+
+// hasProblem reports whether any finding mentions want. The parity probes assert
+// the *stated reason*, not merely that something failed (ADI-FOUND-001a).
+func hasProblem(problems []string, want string) bool {
+	for _, problem := range problems {
+		if strings.Contains(problem, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func metadataOf(m map[string]any) map[string]any {
+	return m["metadata"].(map[string]any)
+}
+
+// workflowOnly replaces the agentic shape with a procedural one so a graph probe
+// can be expressed without tripping the I1 checks first.
+func workflowOnly(m map[string]any, nodes []any, entry []any) {
+	delete(spec(m), "agents")
+	delete(spec(m), "topology")
+	workflow := map[string]any{"nodes": nodes}
+	if len(entry) > 0 {
+		workflow["entry"] = entry
+	}
+	spec(m)["workflow"] = workflow
+}
+
+// TestPositiveControlLoads is the over-rejection guard: every optional IR v1
+// field populated must still load with no findings and round-trip canonically.
+func TestPositiveControlLoads(t *testing.T) {
+	const name = "../positive-control.system.json"
+	raw, err := os.ReadFile(fixtureDir + "/" + name)
+	if err != nil {
+		t.Fatalf("read positive control: %v", err)
+	}
+	sys, problems := Load(raw)
+	if len(problems) > 0 {
+		t.Fatalf("positive control must load cleanly, got: %s", strings.Join(problems, "; "))
+	}
+	if sys.Spec.Outcome == "" || len(sys.Spec.Topology) != 2 || len(sys.Spec.Approvals) != 4 {
+		t.Fatalf("positive control did not decode as expected: %+v", sys.Spec)
+	}
+	canonical, err := Canonicalize(raw)
+	if err != nil {
+		t.Fatalf("canonicalize positive control: %v", err)
+	}
+	if string(canonical) != string(raw) {
+		t.Fatal("positive control is not canonically serialized")
+	}
+}
+
+// TestRejectsParityProbes pins N1-N11 from docs/architecture/ir-parity-audit.md §5.
+func TestRejectsParityProbes(t *testing.T) {
+	cases := []struct {
+		id     string
+		want   string
+		mutate func(m map[string]any)
+	}{
+		{"N1 metadata.name length", "maximum is 63", func(m map[string]any) {
+			metadataOf(m)["name"] = strings.Repeat("a", 64)
+		}},
+		{"N2 workflow node id length", "maximum is 63", func(m map[string]any) {
+			workflowOnly(m, []any{map[string]any{"id": strings.Repeat("a", 64), "kind": "http"}}, nil)
+		}},
+		{"N3 version leading zero", "must be exact semver", func(m map[string]any) {
+			metadataOf(m)["version"] = "01.0.0"
+		}},
+		{"N4 agent ref leading zero", "must be agent/name@MAJOR.MINOR.PATCH", func(m map[string]any) {
+			agentsOf(m)["coordinator"].(map[string]any)["ref"] = "agent/lead-qualifier@01.2.0"
+		}},
+		{"N5 missing outcome", "spec.outcome is required", func(m map[string]any) {
+			delete(spec(m), "outcome")
+		}},
+		{"N6 agents without topology", "without spec.topology", func(m map[string]any) {
+			delete(spec(m), "topology")
+		}},
+		{"N7 approval class vocabulary", "approvals[0].on", func(m map[string]any) {
+			spec(m)["approvals"] = []any{map[string]any{"on": "not-a-class", "approver": "role:ops"}}
+		}},
+		{"N8 evaluation dataset required", "evaluation.dataset", func(m map[string]any) {
+			spec(m)["evaluation"] = map[string]any{"thresholds": map[string]any{"score": 0.9}}
+		}},
+		{"N9 duplicate next edge", "more than once in next", func(m map[string]any) {
+			workflowOnly(m, []any{
+				map[string]any{"id": "a", "kind": "http", "next": []any{"b", "b"}},
+				map[string]any{"id": "b", "kind": "sleep"},
+			}, []any{"a"})
+		}},
+		{"N10 cycle", "contains a cycle", func(m map[string]any) {
+			workflowOnly(m, []any{
+				map[string]any{"id": "a", "kind": "http", "next": []any{"b"}},
+				map[string]any{"id": "b", "kind": "http", "next": []any{"a"}},
+			}, []any{"a"})
+		}},
+		{"N11 unreachable node", "unreachable from the entry set", func(m map[string]any) {
+			workflowOnly(m, []any{
+				map[string]any{"id": "a", "kind": "http"},
+				map[string]any{"id": "orphan", "kind": "sleep"},
+			}, []any{"a"})
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			data := mutate(t, "m1-team.system.json", tc.mutate)
+			_, problems := Load(data)
+			if !hasProblem(problems, tc.want) {
+				t.Fatalf("expected a finding containing %q, got %v", tc.want, problems)
+			}
+		})
+	}
+}
+
+// TestRejectsTrailingAndDuplicateKeys pins N12 and N13. Both must be refused by
+// Load and by Canonicalize: a digest over canonical bytes has to be total.
+func TestRejectsTrailingAndDuplicateKeys(t *testing.T) {
+	raw := readFixture(t, "m1-team.system.json")
+
+	trailing := append(append([]byte{}, raw...), []byte("{\"extra\":true}\n")...)
+	if _, problems := Load(trailing); !hasProblem(problems, "trailing content") {
+		t.Fatalf("Load must reject trailing content, got %v", problems)
+	}
+	if _, err := Canonicalize(trailing); err == nil {
+		t.Fatal("Canonicalize must reject trailing content")
+	}
+
+	duplicated := strings.Replace(string(raw), "\"kind\": \"System\",", "\"kind\": \"NotSystem\",\n  \"kind\": \"System\",", 1)
+	if !strings.Contains(duplicated, "NotSystem") {
+		t.Fatal("duplicate-key fixture was not constructed")
+	}
+	if _, problems := Load([]byte(duplicated)); !hasProblem(problems, "duplicate JSON key") {
+		t.Fatalf("Load must reject a duplicate key, got %v", problems)
+	}
+	if _, err := Canonicalize([]byte(duplicated)); err == nil {
+		t.Fatal("Canonicalize must reject a duplicate key")
+	}
+}

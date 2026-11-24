@@ -56,10 +56,48 @@ if (!schema) {
 }
 
 // --- IR invariants (beyond JSON Schema) ---------------------------------------
-const AGENT_REF = /^agent\/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(\d+)\.(\d+)\.(\d+)$/;
-const ANY_REF = /^(agent|skill|tool|model-policy|knowledge|eval)\/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(\d+)\.(\d+)\.(\d+)$/;
+const AGENT_REF = /^agent\/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const ANY_REF = /^(agent|skill|tool|model-policy|knowledge|eval)\/[a-z0-9]([-a-z0-9]*[a-z0-9])?@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SLUG = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const MAX_SLUG = 63;
 const RUNTIME_ONLY_KEYS = ['status', 'state', 'health', 'lastRun', 'runId', 'metrics', 'telemetry', 'logs'];
+
+// Returns a readable cycle path ("a -> b -> a") or '' when the graph is acyclic.
+// Mirrors ir.findCycle in backend/pkg/ir so both readers refuse the same graphs.
+function findCycle(nodes, edges) {
+  const WHITE = 0;
+  const GREY = 1;
+  const BLACK = 2;
+  const color = new Map(nodes.map((n) => [n.id, WHITE]));
+  const stack = [];
+
+  const visit = (id) => {
+    color.set(id, GREY);
+    stack.push(id);
+    for (const next of edges.get(id) ?? []) {
+      if (!color.has(next)) continue;
+      if (color.get(next) === GREY) {
+        const at = stack.indexOf(next);
+        return [...stack.slice(at === -1 ? 0 : at), next].join(' -> ');
+      }
+      if (color.get(next) === WHITE) {
+        const found = visit(next);
+        if (found) return found;
+      }
+    }
+    stack.pop();
+    color.set(id, BLACK);
+    return '';
+  };
+
+  for (const node of nodes) {
+    if (color.get(node.id) === WHITE) {
+      const found = visit(node.id);
+      if (found) return found;
+    }
+  }
+  return '';
+}
 
 function walkKeys(node, visit, at = '$') {
   if (Array.isArray(node)) {
@@ -118,7 +156,8 @@ function checkInvariants(label, manifest, fail = failDefault) {
     }
   }
 
-  // I5 — workflow graph integrity: unique ids, known kinds, resolvable edges.
+  // I5 — workflow graph integrity: unique ids, known kinds, resolvable edges,
+  // no duplicate edges, no cycles, every node reachable from the entry set.
   if (spec.workflow) {
     const nodes = spec.workflow.nodes || [];
     const ids = new Set();
@@ -132,27 +171,40 @@ function checkInvariants(label, manifest, fail = failDefault) {
         fail(`${label}: workflow node '${node.id}' capability '${node.capability}' must be a pinned ref`);
       }
     }
+    const edges = new Map(nodes.map((n) => [n.id, []]));
     for (const node of nodes) {
+      const seen = new Set();
       for (const next of node.next || []) {
+        if (seen.has(next)) fail(`${label}: workflow node '${node.id}' lists '${next}' more than once in next`);
+        seen.add(next);
+        edges.get(node.id).push(next);
         if (!ids.has(next)) fail(`${label}: workflow node '${node.id}' points to unknown node '${next}'`);
       }
     }
     for (const entry of spec.workflow.entry || []) {
       if (!ids.has(entry)) fail(`${label}: workflow entry '${entry}' does not exist`);
     }
-    const reachable = new Set();
-    const queue = [...(spec.workflow.entry || (nodes[0] ? [nodes[0].id] : []))];
-    while (queue.length) {
-      const id = queue.shift();
-      if (reachable.has(id)) continue;
-      reachable.add(id);
-      const node = nodes.find((n) => n.id === id);
-      for (const next of node?.next || []) queue.push(next);
-    }
-    for (const node of nodes) {
-      if (!reachable.has(node.id)) {
-        notes.push(`${label}: workflow node '${node.id}' is unreachable from the entry set`);
+    if (nodes.length > 0) {
+      const roots = spec.workflow.entry?.length ? spec.workflow.entry : [nodes[0].id];
+      const reachable = new Set();
+      const queue = [...roots];
+      while (queue.length) {
+        const id = queue.shift();
+        if (reachable.has(id)) continue;
+        reachable.add(id);
+        for (const next of edges.get(id) ?? []) queue.push(next);
       }
+      for (const node of nodes) {
+        // A declared step that can never run is a modelling bug, and Go refuses it
+        // too: reachability is an error here since ADI-FOUND-001a.
+        if (!reachable.has(node.id)) {
+          fail(`${label}: workflow node '${node.id}' is unreachable from the entry set`);
+        }
+      }
+    }
+    const cyclePath = findCycle(nodes, edges);
+    if (cyclePath) {
+      fail(`${label}: workflow contains a cycle; edges must form a DAG (via ${cyclePath})`);
     }
   }
 
@@ -167,6 +219,8 @@ function checkInvariants(label, manifest, fail = failDefault) {
 
 // --- the four cases -----------------------------------------------------------
 const cases = [];
+let positiveControl = false;
+let probeCount = 0;
 for (const { file, label, shape } of REQUIRED_CASES) {
   const rel = `${FIXTURE_DIR}/${file}`;
   const abs = path.join(root, rel);
@@ -205,12 +259,32 @@ for (const { file, label, shape } of REQUIRED_CASES) {
   cases.push({ file, label, shape });
 }
 
+// --- positive control: the tightened rules must not over-reject ----------------
+// Every optional IR v1 field populated (routing, deployment, evaluation with a
+// pinned dataset, all four approval classes, labels). The Go reader loads the
+// same file in TestPositiveControlLoads.
+const CONTROL = 'docs/architecture/system-ir/positive-control.system.json';
+{
+  const controlRaw = fs.readFileSync(path.join(root, CONTROL), 'utf8');
+  const control = readJson(CONTROL);
+  if (control) {
+    const before = errors.length;
+    validate(control, schema, schema, '$', CONTROL);
+    checkInvariants(CONTROL, control);
+    if (controlRaw !== serialize(control)) {
+      fail(`${CONTROL}: not canonically serialized (sorted keys, 2-space indent, single trailing newline)`);
+    }
+    if (errors.length === before) positiveControl = true;
+  }
+}
+
 // --- negative probes: v1 must reject over-general and runtime fields -----------
 const probeErrors = [];
 const probeFail = (msg) => probeErrors.push(msg);
 const { validate: probeValidate } = createSubsetValidator(probeErrors);
 
 function probeMustFail(rel, label, mutate) {
+  probeCount += 1;
   const base = readJson(rel);
   if (!base) return;
   const clone = JSON.parse(JSON.stringify(base));
@@ -247,7 +321,73 @@ probeMustFail(`${FIXTURE_DIR}/visual-workflow.system.json`, 'dangling workflow e
   m.spec.workflow.nodes[0].next = ['does-not-exist'];
 });
 
+// ADI-FOUND-001a: the parity gaps the audit found, pinned as probes so neither
+// reader can drift back into accepting them.
+probeMustFail(PROBE_BASE, 'metadata.name over 63 chars (N1)', (m) => {
+  m.metadata.name = 'a'.repeat(64);
+});
+probeMustFail(PROBE_BASE, 'workflow node id over 63 chars (N2)', (m) => {
+  delete m.spec.agents;
+  delete m.spec.topology;
+  m.spec.workflow = { nodes: [{ id: 'a'.repeat(64), kind: 'http' }] };
+});
+probeMustFail(PROBE_BASE, 'semver with a leading zero (N3)', (m) => {
+  m.metadata.version = '01.0.0';
+});
+probeMustFail(PROBE_BASE, 'agent ref with a leading zero (N4)', (m) => {
+  m.spec.agents.coordinator.ref = 'agent/lead-qualifier@01.2.0';
+});
+probeMustFail(PROBE_BASE, 'missing outcome (N5)', (m) => {
+  delete m.spec.outcome;
+});
+probeMustFail(PROBE_BASE, 'agents without topology (N6)', (m) => {
+  delete m.spec.topology;
+});
+probeMustFail(PROBE_BASE, 'approval class outside the vocabulary (N7)', (m) => {
+  m.spec.approvals = [{ on: 'not-a-class', approver: 'role:ops' }];
+});
+probeMustFail(PROBE_BASE, 'evaluation without a dataset (N8)', (m) => {
+  m.spec.evaluation = { thresholds: { score: 0.9 } };
+});
+probeMustFail(PROBE_BASE, 'duplicate next edge (N9)', (m) => {
+  delete m.spec.agents;
+  delete m.spec.topology;
+  m.spec.workflow = {
+    entry: ['a'],
+    nodes: [
+      { id: 'a', kind: 'http', next: ['b', 'b'] },
+      { id: 'b', kind: 'sleep' },
+    ],
+  };
+});
+probeMustFail(PROBE_BASE, 'workflow cycle (N10)', (m) => {
+  delete m.spec.agents;
+  delete m.spec.topology;
+  m.spec.workflow = {
+    entry: ['a'],
+    nodes: [
+      { id: 'a', kind: 'http', next: ['b'] },
+      { id: 'b', kind: 'http', next: ['a'] },
+    ],
+  };
+});
+probeMustFail(PROBE_BASE, 'unreachable node (N11)', (m) => {
+  delete m.spec.agents;
+  delete m.spec.topology;
+  m.spec.workflow = {
+    entry: ['a'],
+    nodes: [
+      { id: 'a', kind: 'http' },
+      { id: 'orphan', kind: 'sleep' },
+    ],
+  };
+});
+
 // --- report -------------------------------------------------------------------
+if (!positiveControl) {
+  fail(`${CONTROL}: the positive control was not validated cleanly (over-rejection guard)`);
+}
+
 if (process.argv.includes('--verbose')) for (const note of notes) console.log(`note: ${note}`);
 
 if (errors.length) {
@@ -258,6 +398,7 @@ if (errors.length) {
 
 console.log(
   `system-ir: OK (IR v1 = System Manifest spec; ${cases.length}/${REQUIRED_CASES.length} cases ` +
-    `[${cases.map((c) => c.shape).join(', ')}], 6 negative probes rejected, canonical round-trip, ` +
+    `[${cases.map((c) => c.shape).join(', ')}], positive control ${positiveControl ? 'clean' : 'MISSING'}, ` +
+    `${probeCount} negative probes rejected, cycle + reachability enforced, canonical round-trip, ` +
     `${notes.length} note(s))`,
 );
