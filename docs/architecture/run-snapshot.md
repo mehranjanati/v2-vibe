@@ -189,8 +189,18 @@ No migration, no table, no column, no Drizzle change, no route, no admission cod
 | Rollout switch | `CONTROL_PLANE_REQUIRE_SNAPSHOT` read in `backend/cmd/main.go`; documented in `DEPLOY_RENDER_CLOUDFLARE.md` |
 | Tests | 7 route-level cases in `backend/pkg/api/workflows_snapshot_test.go`: unbound refusal, soft-mode regression, unknown id, tampered document, cross-tenant, valid binding, required-without-store |
 
+### Done — ADI-FOUND-004c (2026-11-24, the producer)
+
+| Piece | Evidence |
+|---|---|
+| The producer on the live trigger path | `backend/pkg/api/workflows.go` — `POST /api/workflows/trigger` accepts an optional inline `system` document; `produceRunSnapshot` runs resolve → persist → compile, and the existing `AdmitRunSnapshot` guard admits the fresh snapshot before the instance row exists. Response carries `snapshotId`, `planKind`, `planDigest`, `compilerVersion` |
+| The bundled source | `backend/pkg/composition/bundle` — the repository's vetted example manifests embedded with `go:embed`, so the control plane never depends on repo layout at runtime; a parity test keeps the embedded copy byte-identical to `docs/architecture/manifest-schemas/examples` |
+| The plan columns | `migration 0019_cynical_madame_web.sql` — `plan_kind`, `plan_digest`, `compiler_version` on `workflow_instances`, additive, written only when a plan was compiled; the plan is recomputed per `ir-to-run-binding.md`, never stored as a blob |
+| Rollout switch usable | `CONTROL_PLANE_REQUIRE_SNAPSHOT` is satisfied by an inline document (route test), so the switch no longer refuses every run |
+| Tests | 12 route-level cases in `backend/pkg/api/workflows_produce_test.go` (happy path with row assertions, content addressing, `E_BIND_SHAPE` keeps the snapshot, `E_IR` 400, `E_MISSING` 409, 503 without source or store, require-snapshot satisfied, unknown tenant, cross-tenant `E_TENANT`, snapshotId-only keeps plan NULL, both-fields 400) + 2 bundle tests (byte parity, resolve/refuse honesty), `-race` clean |
+
 ### Remaining, deliberately not done here
 
-1. **Nothing writes snapshots yet.** The resolver is not wired into the run path, so there is no producer for a `snapshotId`. Enabling `CONTROL_PLANE_REQUIRE_SNAPSHOT` today refuses every run; the switch is a rollout decision, and a producer task must land first.
+1. **The bundled catalog is the example set.** A System that references anything outside the four embedded example manifests refuses with `E_MISSING` until a registry exists (ADI-ECO-002, O27). The producer flow itself is proven end to end on the zero-ref procedural example System (`visual-workflow.system.json`).
 2. **The M1 outcome route has the same need.** `src/lib/api-client.ts` calls `/api/outcomes/trigger`, which is not registered yet; when it lands it must admit exactly like the workflow trigger, or the two entry points will disagree about what a bound run is.
 3. **No UI sends the field.** The SPA has no trigger form today, so `src/api-types.ts` was deliberately left untouched: adding an unused type would be dead code, and the honesty rule is to add it with its consumer.

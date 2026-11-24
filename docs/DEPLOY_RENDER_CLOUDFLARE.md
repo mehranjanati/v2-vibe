@@ -52,7 +52,7 @@ detail — see step 2.
 | `D1_DATABASE_ID` | yes | `d1_databases[0].database_id` from `wrangler.v2.jsonc` |
 | `CORS_ALLOWED_ORIGINS` | only for a custom dashboard domain | comma-separated origins, e.g. `https://vibe.example.com` |
 | `CONTROL_PLANE_REQUIRE_SESSION` | no | preset to `false` (see “Cross-origin auth”) |
-| `CONTROL_PLANE_REQUIRE_SNAPSHOT` | no | default unset (`false`). When true, every new workflow run must reference a stored composition snapshot; an unbound run is refused **before** the instance row exists. Turning it on requires D1 and at least one snapshot already persisted — nothing writes snapshots yet, so enabling it today refuses every run (`architecture/run-snapshot.md`) |
+| `CONTROL_PLANE_REQUIRE_SNAPSHOT` | no | default unset (`false`). When true, every new workflow run must reference a stored composition snapshot; an unbound run is refused **before** the instance row exists. Since the snapshot producer landed (ADI-FOUND-004c) a run can satisfy this by carrying an inline `system` document, which the control plane resolves against the bundled example catalog, persists and compiles before starting; a run that names neither `snapshotId` nor `system` is refused (`architecture/run-snapshot.md`) |
 
 `PORT=10000`, `WORKFLOWS_NAME` and `SKILLS_DIR=/app/skills` are preset in the
 blueprint. `REDIS_URL` is injected from the Key Value service over Render's

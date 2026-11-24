@@ -1,0 +1,75 @@
+{
+  "apiVersion": "vibesdk/v1",
+  "kind": "Tool",
+  "metadata": {
+    "description": "Score a lead 0-100 from enriched fields.",
+    "license": "Apache-2.0",
+    "name": "score-lead",
+    "publisher": "acme",
+    "version": "1.0.0"
+  },
+  "spec": {
+    "adapter": {
+      "type": "function"
+    },
+    "approvals": [],
+    "description": "Score a lead 0-100 from enriched fields",
+    "idempotency": {
+      "key": "lead.id",
+      "ttlSeconds": 86400
+    },
+    "inputSchema": {
+      "properties": {
+        "lead": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "lead"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "score": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "score",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "permissions": [
+      "leads:read",
+      "leads:score"
+    ],
+    "provenance": {
+      "commit": "sha:abc1234",
+      "repo": "acme/agent-tools"
+    },
+    "rateLimits": {
+      "perTenantPerMinute": 120
+    },
+    "retry": {
+      "backoff": "exponential",
+      "maxAttempts": 3
+    },
+    "secrets": [],
+    "sideEffect": "safe",
+    "tenant": {
+      "contextKey": "tenant_id",
+      "isolation": "required"
+    },
+    "timeoutSeconds": 30
+  }
+}

@@ -47,6 +47,16 @@ type WorkflowInstanceRow struct {
 	StartedAt   interface{} // epoch ms (runtime worker Date.now())
 	CompletedAt interface{} // epoch ms (runtime worker Date.now())
 	CreatedAt   interface{} // epoch seconds (D1 CURRENT_TIMESTAMP)
+	// SnapshotID is the composition snapshot the run is bound to
+	// (ADI-FOUND-004a); "" when the run is unbound.
+	SnapshotID string
+	// PlanKind/PlanDigest/CompilerVersion are the plan identity a producer
+	// compiled at trigger time (ADI-FOUND-004c, docs/architecture/
+	// ir-to-run-binding.md). Empty for a run produced without an inline
+	// System document: the plan is recomputed, never stored as a blob.
+	PlanKind        string
+	PlanDigest      string
+	CompilerVersion string
 }
 
 // WorkflowStepRow is one workflow_step_logs row read back from D1.
@@ -231,10 +241,14 @@ func RecordWorkflowAccessDenial(ctx context.Context, d1 *cloudflare.D1Client, de
 // snapshotID is the composition snapshot the run is bound to (ADI-FOUND-004b);
 // an empty value is stored as SQL NULL, which is the honest record of an
 // unbound run rather than a fabricated closure.
-func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, ownerID, inputJSON, snapshotID string) error {
+// planKind/planDigest/compilerVersion are the plan identity a producer
+// compiled at trigger time (ADI-FOUND-004c); empty values stay NULL because
+// a run bound without an inline System document has no plan identity — the
+// plan is recomputed per binding contract, never stored as a blob.
+func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, ownerID, inputJSON, snapshotID, planKind, planDigest, compilerVersion string) error {
 	ok, err := d1.Exec(ctx,
-		"INSERT INTO workflow_instances (id, workflow_id, status, user_id, input, snapshot_id, created_at) VALUES (?, ?, 'pending', NULLIF(?, ''), ?, NULLIF(?, ''), CURRENT_TIMESTAMP)",
-		instanceID, workflowID, ownerID, inputJSON, snapshotID)
+		"INSERT INTO workflow_instances (id, workflow_id, status, user_id, input, snapshot_id, plan_kind, plan_digest, compiler_version, created_at) VALUES (?, ?, 'pending', NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), CURRENT_TIMESTAMP)",
+		instanceID, workflowID, ownerID, inputJSON, snapshotID, planKind, planDigest, compilerVersion)
 	if err != nil || !ok {
 		return fmt.Errorf("d1: insert workflow_instances: %v", err)
 	}
@@ -257,7 +271,7 @@ func MarkWorkflowInstanceFailed(ctx context.Context, d1 *cloudflare.D1Client, in
 // nil when the run does not exist.
 func LoadWorkflowInstance(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID string) (*WorkflowInstanceRow, error) {
 	rows, err := d1.Query(ctx,
-		"SELECT id, workflow_id, status, input, output, error, started_at, completed_at, created_at FROM workflow_instances WHERE workflow_id = ? AND id = ? LIMIT 1",
+		"SELECT id, workflow_id, status, input, output, error, started_at, completed_at, created_at, snapshot_id, plan_kind, plan_digest, compiler_version FROM workflow_instances WHERE workflow_id = ? AND id = ? LIMIT 1",
 		workflowID, instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("d1: load workflow_instances: %w", err)
@@ -278,7 +292,7 @@ func ListWorkflowInstances(ctx context.Context, d1 *cloudflare.D1Client, workflo
 		limit = 100
 	}
 	rows, err := d1.Query(ctx,
-		"SELECT id, workflow_id, status, input, output, error, started_at, completed_at, created_at FROM workflow_instances WHERE workflow_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+		"SELECT id, workflow_id, status, input, output, error, started_at, completed_at, created_at, snapshot_id, plan_kind, plan_digest, compiler_version FROM workflow_instances WHERE workflow_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
 		workflowID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("d1: list workflow_instances: %w", err)
@@ -293,15 +307,19 @@ func ListWorkflowInstances(ctx context.Context, d1 *cloudflare.D1Client, workflo
 // instanceRowFrom normalizes one workflow_instances D1 row.
 func instanceRowFrom(row map[string]interface{}) *WorkflowInstanceRow {
 	return &WorkflowInstanceRow{
-		ID:          wfStr(row, "id"),
-		WorkflowID:  wfStr(row, "workflow_id"),
-		Status:      wfStr(row, "status"),
-		Input:       wfStr(row, "input"),
-		Output:      wfStr(row, "output"),
-		Error:       wfStr(row, "error"),
-		StartedAt:   wfAny(row, "started_at"),
-		CompletedAt: wfAny(row, "completed_at"),
-		CreatedAt:   wfAny(row, "created_at"),
+		ID:              wfStr(row, "id"),
+		WorkflowID:      wfStr(row, "workflow_id"),
+		Status:          wfStr(row, "status"),
+		Input:           wfStr(row, "input"),
+		Output:          wfStr(row, "output"),
+		Error:           wfStr(row, "error"),
+		StartedAt:       wfAny(row, "started_at"),
+		CompletedAt:     wfAny(row, "completed_at"),
+		CreatedAt:       wfAny(row, "created_at"),
+		SnapshotID:      wfStr(row, "snapshot_id"),
+		PlanKind:        wfStr(row, "plan_kind"),
+		PlanDigest:      wfStr(row, "plan_digest"),
+		CompilerVersion: wfStr(row, "compiler_version"),
 	}
 }
 

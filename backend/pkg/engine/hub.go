@@ -93,6 +93,10 @@ type EngineHub struct {
 	// requireSnapshot makes binding mandatory: with it on, a run without a
 	// stored snapshot is refused before any instance row exists.
 	requireSnapshot bool
+	// compositionSource is the AssetSource the snapshot producer resolves an
+	// inline System document against (ADI-FOUND-004c). nil means the produce
+	// path answers 503 instead of resolving against nothing.
+	compositionSource composition.AssetSource
 
 	// wsTickets holds pending short-lived WebSocket tickets (P0-SEC-008).
 	// Guarded by wsTicketsMu (its own lock: socket opens must not contend
@@ -204,6 +208,18 @@ func (h *EngineHub) SnapshotStore() composition.SnapshotStore {
 // RequireSnapshot reports whether a run must reference a stored snapshot.
 func (h *EngineHub) RequireSnapshot() bool {
 	return h.requireSnapshot
+}
+
+// SetCompositionSource installs the AssetSource the snapshot producer
+// resolves an inline System document against (ADI-FOUND-004c). Leaving it
+// unset keeps the produce path at 503 instead of resolving against nothing.
+func (h *EngineHub) SetCompositionSource(source composition.AssetSource) {
+	h.compositionSource = source
+}
+
+// CompositionSource returns the installed composition source (nil when unset).
+func (h *EngineHub) CompositionSource() composition.AssetSource {
+	return h.compositionSource
 }
 
 // AdmitRunSnapshot is the guard the workflow trigger runs before it records a

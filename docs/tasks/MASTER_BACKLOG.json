@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-23",
+ "generated": "2026-11-24",
  "source": "docs/DEV_CHECKLIST.md preserved; new ecosystem tasks only",
  "tasks": [
   {
@@ -1429,6 +1429,51 @@
     "docs/DEPLOY_RENDER_CLOUDFLARE.md"
    ],
    "risk": "High",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-004c",
+   "title": "The snapshot producer: resolve, persist, compile, start",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-24. The producer closes the gap ADI-FOUND-004b documented (nothing wrote snapshots, so CONTROL_PLANE_REQUIRE_SNAPSHOT refused every run). It rides the existing POST /api/workflows/trigger route: the body accepts an optional inline System document (system), and when present the handler resolves it with composition.Resolve against the bundled source, persists the snapshot with composition.NewSnapshot + the D1 store, compiles the plan with plan.Compile and admits the fresh snapshot through the same AdmitRunSnapshot guard as a caller-supplied id - resolve, persist, compile, start in one flow on the live path. The bundled source (backend/pkg/composition/bundle) embeds the repository's vetted example manifests via go:embed so the control plane never depends on repo layout at runtime; a parity test keeps the embedded copy byte-identical to docs/architecture/manifest-schemas/examples, and the honest limit is pinned by test: the zero-ref procedural example System (visual-workflow.system.json) resolves and compiles end to end, while an agentic System that needs assets outside the bundle refuses with E_MISSING until a registry exists (ADI-ECO-002, O27). Refusal mapping: E_IR 400, E_SOURCE 503, otherwise 409 with the stable code; binding and producing are different intents, so sending snapshotId and system together is refused with 400 instead of silently picking one; a compile refusal (E_BIND_SHAPE) leaves no run but keeps the snapshot, which is valid tenant-attributed content a future runtime may run; first-writer-wins surfaces ErrSnapshotTenant at write time as 409 E_TENANT (the route test fake now mirrors the real d1store semantics). Migration 0019 adds the three plan columns of ir-to-run-binding.md (plan_kind, plan_digest, compiler_version on workflow_instances), written only when a plan was compiled and NULL otherwise - the plan is recomputed per binding contract, never stored as a blob. GET /api/workflows/:workflowId exposes snapshotId and the plan fields. Deliberate non-changes: no new route (the producer rides the guarded trigger, so the Postman route contract is unchanged), no src/api-types.ts change (no SPA caller sends the field yet), no agentic execution (still needs its ADR).",
+   "dependencies": [
+    "ADI-FOUND-004b",
+    "ADI-FOUND-005a"
+   ],
+   "acceptance_criteria": [
+    "A run carrying an inline System document starts bound to a stored snapshot with its plan identity recorded",
+    "CONTROL_PLANE_REQUIRE_SNAPSHOT is satisfiable with an inline document",
+    "Every refusal leaves zero instance rows and zero runtime instances",
+    "The embedded bundled catalog stays byte-identical to the docs examples",
+    "An unbound run and a run bound by snapshotId alone keep plan columns NULL",
+    "Cross-tenant reuse of identical content is refused at write time"
+   ],
+   "repository_paths": [
+    "backend/pkg/composition/bundle/",
+    "backend/pkg/api/workflows.go",
+    "backend/pkg/engine/hub.go",
+    "backend/pkg/engine/workflows.go",
+    "backend/cmd/main.go",
+    "worker/database/schema.ts",
+    "migrations/0019_cynical_madame_web.sql"
+   ],
+   "tests": [
+    "go test ./pkg/api/ -run 'TestProduce|TestSnapshotIdRunKeepsPlanIdentityEmpty' -> 12/12 PASS (happy path with row assertions, content addressing, E_BIND_SHAPE keeps the snapshot, E_IR 400, E_MISSING 409, 503 without source or store, requireSnapshot satisfied, unknown tenant, cross-tenant E_TENANT, snapshotId-only keeps plan NULL, both-fields 400)",
+    "go test ./pkg/composition/bundle/ -> 2/2 PASS (byte parity with docs examples, resolve/refuse honesty)",
+    "go test -race ./pkg/api/ ./pkg/composition/bundle/ green",
+    "go vet ./... clean and the full backend suite green",
+    "bun run db:generate produced migrations/0019_cynical_madame_web.sql (three additive ALTER TABLE ADD, zero DROP)",
+    "bun run typecheck, lint and docs:check green"
+   ],
+   "documentation": [
+    "docs/architecture/run-snapshot.md",
+    "docs/architecture/ir-to-run-binding.md",
+    "docs/DEPLOY_RENDER_CLOUDFLARE.md",
+    "docs/tasks/NEXT_EXECUTION.md"
+   ],
+   "risk": "Medium",
    "solo_developer_estimate": "M"
   },
   {

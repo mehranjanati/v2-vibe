@@ -104,8 +104,12 @@ func (f *fakeWorkflowD1) apply(sql string, params []any) ([]map[string]any, bool
 			"user_id":     paramAt(params, 2),
 			"input":       paramAt(params, 3),
 			// ADI-FOUND-004b: the binding is positional after input so the
-			// existing assertions above keep their meaning.
-			"snapshot_id": paramAt(params, 4),
+			// existing assertions above keep their meaning. ADI-FOUND-004c
+			// appends the plan identity after the binding.
+			"snapshot_id":      paramAt(params, 4),
+			"plan_kind":        paramAt(params, 5),
+			"plan_digest":      paramAt(params, 6),
+			"compiler_version": paramAt(params, 7),
 		})
 
 	case strings.HasPrefix(sql, "INSERT INTO audit_logs"):

@@ -15,6 +15,12 @@ const LockVersion = "1.0.0"
 
 // DigestPrefix names the algorithm inside every digest string, so an algorithm
 // change is a visible prefix change instead of a silent reinterpretation (O26).
+// CompilerVersion identifies the resolver that produced a lock. A behaviour
+// change must move it, so a snapshot can say which resolver closed its
+// closure — the same idiom plan.CompilerVersion uses for the plan compiler.
+const CompilerVersion = "vibesdk-compiler/0.1.0"
+
+// DigestPrefix names the algorithm inside every digest string, so an algorithm
 const DigestPrefix = "sha256:"
 
 // ClosureEntry is one resolved dependency.

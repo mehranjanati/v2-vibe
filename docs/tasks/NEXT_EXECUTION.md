@@ -140,11 +140,32 @@ Done 2026-11-23 (ADI-FOUND-005, design only): `docs/architecture/ir-to-run-bindi
 
 Done 2026-11-23 (ADI-FOUND-005a, code): `backend/pkg/plan` compiles a verified snapshot plus its System document into a plan — Steps/DependsOn for the provider and Edges/When for the interpreter from one mapping, deterministic Kahn ordering, five refusal codes, and agentic Systems refused by design. 10 tests green; vet and the full backend suite clean. The tests forced one real correction: the IR's `when` belongs to the **target** node, so the condition had been read from the wrong side.
 
+Done 2026-11-24 (the snapshot producer, `ADI-FOUND-004c`): the flow the
+binding design named — resolve → persist → compile → start — is wired on the
+live trigger path. `POST /api/workflows/trigger` accepts an optional inline
+`system` document; the handler resolves it against the bundled catalog
+(`backend/pkg/composition/bundle`, the vetted example manifests embedded with
+`go:embed`, parity-tested against the docs originals), persists the snapshot
+and compiles the plan before anything durable is written, then admits the
+fresh snapshot through the same `AdmitRunSnapshot` guard as a caller-supplied
+id. Migration `0019` adds the three plan columns of `ir-to-run-binding.md`
+(`plan_kind`, `plan_digest`, `compiler_version` on `workflow_instances`),
+written only when a plan was compiled. 12 route tests + 2 bundle tests green
+(`-race` clean); vet, the full backend suite, `typecheck`, `lint` and
+`docs:check` clean. Honest limits: the bundled catalog is the example set, so
+a System referencing anything outside it refuses with `E_MISSING` until a
+registry exists (ADI-ECO-002, O27); the zero-ref procedural example System is
+the end-to-end proof; binding and producing are different intents and are
+refused together; `CONTROL_PLANE_REQUIRE_SNAPSHOT` is now satisfiable and
+stays off by default.
+
 Next steps, in dependency order:
-1. **A snapshot producer** — resolve → persist → compile → start. `backend/pkg/composition` and `backend/pkg/plan` both exist now, so this is wiring plus one column set, and it is what makes `CONTROL_PLANE_REQUIRE_SNAPSHOT` usable.
-2. **`ADI-CTX-003`** (activation engine) — needs a run that exists, which the producer provides.
-3. **Agentic execution** — needs an ADR (a new `agent` node kind, or a topology-aware executor); deliberately not presumed.
-4. **`ADI-ECO-001..004`** — blocked on O24/O25/O27 decisions.
+1. **`ADI-CTX-003`** (activation engine) — a run that exists and a plan whose
+   steps name capabilities are both real now.
+2. **Agentic execution** — needs an ADR (a new `agent` node kind, or a
+   topology-aware executor); deliberately not presumed.
+3. **`ADI-ECO-001..004`** — blocked on O24/O25/O27 decisions; the bundled
+   catalog is the honest stand-in until the registry lands.
 
 History (superseded): ADI-FOUND-001a was originally scoped as validation tightening under the existing contracts — no new capability, so D8 was unaffected, and ADI-FOUND-002 was made to depend on it because a lock cannot be deterministic over two different validity answers. That reasoning held; the work is now DONE.
 

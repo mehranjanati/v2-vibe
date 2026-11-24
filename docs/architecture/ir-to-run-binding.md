@@ -131,6 +131,10 @@ A plan is **not** stored as a blob: it is a deterministic function of (snapshot,
 
 **One correction the tests forced:** the IR's `when` belongs to the **target** node (the step that runs conditionally), so reading it from the source produced empty conditions. Code and the §4 mapping row were both fixed — the kind of mistake that only surfaces when a test asserts the actual bytes rather than the intent.
 
+## 9b. The producer — ADI-FOUND-004c (2026-11-24)
+
+The flow §7 named is wired on the live trigger path: `POST /api/workflows/trigger` accepts an inline `system` document, and the handler resolves it against the embedded bundled catalog (`backend/pkg/composition/bundle`), persists the snapshot and compiles the plan before anything durable is written. The three additive run fields of §6 exist (`migration 0019`: `plan_kind`, `plan_digest`, `compiler_version` on `workflow_instances`) and are written only when a plan was compiled — a run bound by `snapshotId` alone keeps them NULL, honestly recording that no plan was compiled on that path. Evidence: 12 route tests in `backend/pkg/api/workflows_produce_test.go` + the bundle parity tests in `backend/pkg/composition/bundle`; status table in `run-snapshot.md` §13.
+
 ## 10. Open items
 
 | Item | Why it is open |

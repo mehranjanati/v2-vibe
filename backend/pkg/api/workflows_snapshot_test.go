@@ -26,9 +26,16 @@ func newSnapshotStoreFake() *snapshotStoreFake {
 }
 
 func (s *snapshotStoreFake) Persist(_ context.Context, snapshot composition.Snapshot) error {
-	if _, exists := s.rows[snapshot.SnapshotID]; !exists {
-		s.rows[snapshot.SnapshotID] = snapshot
+	if existing, ok := s.rows[snapshot.SnapshotID]; ok {
+		// Append-only, mirroring composition/d1store: identical content is a
+		// no-op, and the same content under another tenant is the
+		// first-writer-wins conflict the real adapter reports at write time.
+		if existing.TenantKey != snapshot.TenantKey {
+			return composition.ErrSnapshotTenant
+		}
+		return nil
 	}
+	s.rows[snapshot.SnapshotID] = snapshot
 	return nil
 }
 

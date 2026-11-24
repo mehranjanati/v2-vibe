@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"backend/pkg/cloudflare"
 	"backend/pkg/composition"
 	"backend/pkg/engine"
+	"backend/pkg/plan"
 )
 
 // ---------- Workflow run endpoints ----------
@@ -32,6 +34,15 @@ type workflowTriggerRequest struct {
 	// (ADI-FOUND-004b). Empty means unbound, which is allowed until
 	// CONTROL_PLANE_REQUIRE_SNAPSHOT makes binding mandatory.
 	SnapshotID string `json:"snapshotId,omitempty"`
+	// System optionally carries the declarative System manifest the run is
+	// produced from (ADI-FOUND-004c). When present the handler resolves it
+	// against the bundled source, persists the resulting snapshot and
+	// compiles the plan before anything durable is written; the response
+	// names the snapshot the run is bound to. Sending it together with
+	// snapshotId is refused: binding to a stored snapshot and producing a
+	// new one from a document are different intents, and silently picking
+	// one would hide which composition the run actually carries.
+	System json.RawMessage `json:"system,omitempty"`
 }
 
 // workflowInstanceLimit caps the run list of GET /api/workflows/:workflowId.
@@ -102,6 +113,28 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 		// soft mode (store installed, binding not required) an unbound run is still
 		// allowed, so this changes nothing until the rollout switch is flipped.
 		snapshotID := strings.TrimSpace(req.SnapshotID)
+		if len(req.System) > 0 && snapshotID != "" {
+			// ADI-FOUND-004c: binding and producing are different intents.
+			// Silently picking one would hide which composition the run
+			// actually carries, so the ambiguity is refused instead.
+			return c.Status(400).JSON(fiber.Map{
+				"success": false,
+				"error":   "pass either snapshotId or system, not both: binding to a stored snapshot and producing one from a document are different intents",
+			})
+		}
+		// ADI-FOUND-004c: the snapshot producer. An inline System document is
+		// resolved → persisted → compiled before anything durable is written,
+		// so CONTROL_PLANE_REQUIRE_SNAPSHOT is usable without a separate
+		// producer service: the run starts bound to the snapshot it names, and
+		// the plan identity below is recomputed, never stored as a blob.
+		planKind, planDigest, planCompiler := "", "", ""
+		if len(req.System) > 0 {
+			id, kind, digest, compiler, fail := produceRunSnapshot(ctx, hub, runTenant, req.System)
+			if fail != nil {
+				return renderTriggerRefusal(c, *fail)
+			}
+			snapshotID, planKind, planDigest, planCompiler = id, kind, digest, compiler
+		}
 		if _, findings := hub.AdmitRunSnapshot(ctx, snapshotID, runTenant); len(findings) > 0 {
 			status := fiber.StatusConflict
 			switch findings[0].Code {
@@ -117,7 +150,7 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 			})
 		}
 
-		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, runTenant, string(inputJSON), snapshotID); err != nil {
+		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, runTenant, string(inputJSON), snapshotID, planKind, planDigest, planCompiler); err != nil {
 			return c.Status(500).JSON(fiber.Map{"success": false, "error": "failed to record the workflow run"})
 		}
 
@@ -134,11 +167,127 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 		if snapshotID != "" {
 			run["snapshotId"] = snapshotID
 		}
+		if planKind != "" {
+			run["planKind"] = planKind
+			run["planDigest"] = planDigest
+			run["compilerVersion"] = planCompiler
+		}
 		return c.JSON(fiber.Map{
 			"success": true,
 			"data":    run,
 		})
 	}
+}
+
+// triggerRefusal is one shaped trigger failure: the HTTP status, the stable
+// machine code and the human message. code may be empty for infrastructure
+// failures that have no composition vocabulary.
+type triggerRefusal struct {
+	status int
+	code   string
+	err    string
+}
+
+// renderTriggerRefusal writes a refusal in the exact shape every snapshot
+// refusal has used since ADI-FOUND-004b: {"success":false,"error":…,"code":…}.
+func renderTriggerRefusal(c *fiber.Ctx, refusal triggerRefusal) error {
+	body := fiber.Map{"success": false, "error": refusal.err}
+	if refusal.code != "" {
+		body["code"] = refusal.code
+	}
+	return c.Status(refusal.status).JSON(body)
+}
+
+// produceRunSnapshot is the snapshot producer (ADI-FOUND-004c): resolve an
+// inline System document against the bundled source, persist the resulting
+// snapshot and compile its plan — the first three steps of the resolve →
+// persist → compile → start flow; "start" is the trigger that follows.
+//
+// Ordering rules this implements (docs/architecture/run-snapshot.md §2, §6):
+//
+//   - the snapshot row exists before the run is admitted (the caller admits
+//     right after this returns, against the id produced here);
+//   - identity is the lock digest, so an unchanged closure re-persists as a
+//     no-op and two tenants cannot share a snapshot (first-writer-wins);
+//   - a compile refusal leaves no run behind. The snapshot itself stays when
+//     resolution succeeded: it is valid, tenant-attributed content that a
+//     future runtime (the agentic ADR) may run, and nothing references it.
+//
+// An empty tenant is refused: a snapshot nobody can attribute cannot be
+// admitted later, so producing it would create unreadable content.
+func produceRunSnapshot(ctx context.Context, hub *engine.EngineHub, tenant string, systemDoc []byte) (snapshotID, planKind, planDigest, compilerVersion string, refused *triggerRefusal) {
+	store := hub.SnapshotStore()
+	if store == nil {
+		return "", "", "", "", &triggerRefusal{
+			status: fiber.StatusServiceUnavailable,
+			err:    "snapshot persistence (D1) is not configured; a System document cannot be produced into a snapshot",
+		}
+	}
+	source := hub.CompositionSource()
+	if source == nil {
+		return "", "", "", "", &triggerRefusal{
+			status: fiber.StatusServiceUnavailable,
+			err:    "composition source is not configured; a System document cannot be resolved",
+		}
+	}
+	if strings.TrimSpace(tenant) == "" {
+		return "", "", "", "", &triggerRefusal{
+			status: fiber.StatusBadRequest,
+			err:    "the run's tenant is unknown; a composition snapshot must be attributable to a tenant",
+		}
+	}
+
+	result := composition.Resolve(ctx, composition.Request{
+		Manifest:        systemDoc,
+		Mode:            composition.ModeBundled,
+		Source:          source,
+		CompilerVersion: composition.CompilerVersion,
+		Now:             time.Now().UTC(),
+	})
+	if len(result.Findings) > 0 {
+		status := fiber.StatusConflict
+		switch result.Findings[0].Code {
+		case composition.CodeIR:
+			// The document is not a valid System manifest: the caller's fault.
+			status = fiber.StatusBadRequest
+		case composition.CodeSource:
+			status = fiber.StatusServiceUnavailable
+		}
+		return "", "", "", "", &triggerRefusal{
+			status: status,
+			code:   string(result.Findings[0].Code),
+			err:    result.Findings[0].Message,
+		}
+	}
+
+	snapshot, err := composition.NewSnapshot(result.Lock, tenant, "")
+	if err != nil {
+		return "", "", "", "", &triggerRefusal{status: fiber.StatusInternalServerError, err: err.Error()}
+	}
+	if err := store.Persist(ctx, *snapshot); err != nil {
+		if errors.Is(err, composition.ErrSnapshotTenant) {
+			return "", "", "", "", &triggerRefusal{
+				status: fiber.StatusConflict,
+				code:   string(composition.CodeTenant),
+				err:    "an identical composition is already recorded for another tenant (first-writer-wins)",
+			}
+		}
+		return "", "", "", "", &triggerRefusal{
+			status: fiber.StatusServiceUnavailable,
+			code:   string(composition.CodeSource),
+			err:    "failed to record the composition snapshot",
+		}
+	}
+
+	compiled, findings := plan.Compile(snapshot, systemDoc)
+	if len(findings) > 0 {
+		return "", "", "", "", &triggerRefusal{
+			status: fiber.StatusConflict,
+			code:   string(findings[0].Code),
+			err:    findings[0].Message,
+		}
+	}
+	return snapshot.SnapshotID, string(compiled.Kind), compiled.PlanDigest, compiled.CompilerVersion, nil
 }
 
 // handleWorkflowGet implements GET /api/workflows/:workflowId. Without a

@@ -16,6 +16,7 @@ import (
 	"backend/pkg/agent/tools"
 	"backend/pkg/api"
 	"backend/pkg/cloudflare"
+	"backend/pkg/composition/bundle"
 	"backend/pkg/composition/d1store"
 	"backend/pkg/engine"
 	agenthandler "backend/pkg/handler"
@@ -127,6 +128,16 @@ func main() {
 	if d1Client != nil {
 		requireSnapshot := isTruthy(os.Getenv("CONTROL_PLANE_REQUIRE_SNAPSHOT"))
 		hub.SetSnapshotBinding(d1store.New(d1Client), requireSnapshot)
+		// ADI-FOUND-004c: the bundled composition source, so a run can carry
+		// its own System document and start bound to the snapshot it produced.
+		// A load failure is a build defect: log it and leave the source unset,
+		// which makes the produce path answer 503 instead of resolving
+		// against nothing.
+		if source, err := bundle.New(); err != nil {
+			log.Printf("WARNING: bundled composition source failed to load: %v", err)
+		} else {
+			hub.SetCompositionSource(source)
+		}
 		if requireSnapshot {
 			log.Println("composition snapshot binding enabled: every new run must reference a stored snapshot")
 		}

@@ -755,6 +755,13 @@ export const workflowInstances = sqliteTable('workflow_instances', {
     snapshotId: text('snapshot_id').references(() => compositionSnapshots.snapshotId, {
         onDelete: 'restrict',
     }),
+    // ADI-FOUND-004c: the plan identity the snapshot producer compiled at
+    // trigger time (docs/architecture/ir-to-run-binding.md). Nullable on
+    // purpose: an unbound run, and a run bound by snapshotId alone, has no
+    // plan identity to record - the plan is recomputed, never stored as a blob.
+    planKind: text('plan_kind'),
+    planDigest: text('plan_digest'),
+    compilerVersion: text('compiler_version'),
     error: text('error'),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     completedAt: integer('completed_at', { mode: 'timestamp' }),
