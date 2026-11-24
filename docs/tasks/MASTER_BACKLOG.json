@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-22",
+ "generated": "2026-11-23",
  "source": "docs/DEV_CHECKLIST.md preserved; new ecosystem tasks only",
  "tasks": [
   {
@@ -563,6 +563,1022 @@
    ],
    "title": "Contract surfaces on the live workflow path (capabilities, cancel, pause, resume)",
    "type": "IMPLEMENTATION"
+  },
+  {
+   "id": "ADI-FOUND-001",
+   "title": "System IR and schema parity audit",
+   "type": "RESEARCH",
+   "priority": "P0",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (audit only, no application code changed). Executed a two-sided probe: ten mutated System documents through backend/pkg/ir.Load and through the P7.1 schema via scripts/lib/schema-subset.mjs. Result: Go is the LENIENT side in 8 of 10 cases — name/node-id length (schema maxLength 63, Go slug only), semver leading zeros (Go \\d+ vs schema (0|[1-9][0-9]*)), missing spec.outcome (required by both oneOf branches), agents without topology, approvals[].on enum, evaluation.dataset, duplicate next/delegatesTo. Cycles and reachability are unenforced at the IR boundary on BOTH sides (cycle refusal exists only at runtime: VibeWorkflow.ts:462, backend/pkg/engine/workflowschema.go:375; reachability is a non-failing note in the gate and silent in Go). Load rejects trailing JSON (dec.More) but Canonicalize does not; duplicate JSON keys are last-wins in both. Full matrix, severities and the 13-case negative test contract: docs/architecture/ir-parity-audit.md.",
+   "dependencies": [],
+   "acceptance_criteria": [
+    "Go Reader versus JSON Schema required-field consistency",
+    "Name length constraints",
+    "Strict JSON EOF and trailing-document rejection",
+    "Workflow cycle and reachability validation",
+    "Canonical serialization parity",
+    "Positive/negative test requirements documented; no app code changed in this audit"
+   ],
+   "documentation": [
+    "docs/architecture/ir-parity-audit.md",
+    "docs/architecture/system-ir.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "backend/pkg/ir/",
+    "docs/architecture/manifest-schemas/",
+    "docs/architecture/system-ir/examples/"
+   ],
+   "tests": [
+    "docs/architecture/ir-parity-audit.md §3 executed parity matrix (Go vs schema, 10 probes + trailing + duplicate key)",
+    "go test ./pkg/ir/ green and go vet ./pkg/ir/ clean before and after",
+    "node scripts/validate-system-ir.mjs green before and after",
+    "git status backend/ clean: probe test files removed, documentation only"
+   ]
+  },
+  {
+   "id": "ADI-FOUND-002",
+   "title": "Composition Lock contract",
+   "type": "DESIGN",
+   "priority": "P0",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only, no code). docs/architecture/composition-lock.md rewritten from a thin proposal into a normative contract: definitions (composition/resolution/lock/snapshot/compiler/lockVersion), the full artifact field table with required/forbidden fields, a worked example derived from the M1 fixture, canonical-bytes and digest rules that reuse the ADI-FOUND-001a hardening (sorted keys, 2-space, one trailing newline, no duplicate keys, no trailing document; sha256:<hex> proposed as O26), three resolution modes (registry/bundled/offline-cache) with what each one actually proves, an eight-step deterministic resolution algorithm, an eight-code fail-closed failure taxonomy, runtime snapshot semantics (run binds to one immutable snapshot; publishing never edits history; rollback re-points), admission-time digest verification, security boundaries (no secrets/grants/tenant ids; provenance is not trust is not authorization), a lockVersion/compatibility/migration table, the systemRef-vs-capability-namespace distinction, an honest status matrix, and nine acceptance tests plus five positive cases handed to ADI-FOUND-003. D7 preserved: one IR, no second version counter.",
+   "dependencies": [
+    "ADI-FOUND-001",
+    "ADI-FOUND-001a"
+   ],
+   "acceptance_criteria": [
+    "Lock format documented",
+    "Relationship to System IR explicit",
+    "Exact dependency closure specified",
+    "Secrets and tenant grants excluded",
+    "Conflict and cycle behavior defined",
+    "Version and migration rules documented"
+   ],
+   "documentation": [
+    "docs/architecture/composition-lock.md",
+    "docs/architecture/adaptive-intelligence-architecture.md",
+    "docs/architecture/system-ir.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "docs review: contract sections 1-17 complete against the ADI-FOUND-002 acceptance criteria",
+    "cross-check: every digest/serialization rule names the implemented precedent (backend/pkg/ir.Canonicalize, scripts/lib/schema-subset.mjs)",
+    "cross-check: failure codes and tests are not claimed as executed (design-only task)",
+    "bun run docs:check green with the new cross-references"
+   ]
+  },
+  {
+   "id": "ADI-FOUND-003",
+   "title": "Composition Resolver design",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only, no code). docs/architecture/composition-resolver.md specifies the resolver as a pure function over (validated System bytes, AssetSource, mode, compilerVersion, injected clock): the Request/Asset/AssetSource interface with six normative source obligations (exact versions only, immutable content per ref, reported publisher, ref echo, classified errors, no secrets in bytes), three mode adapters and what each honestly proves (bundled covers agent/skill/tool only), an eight-step algorithm with a sorted worklist, diamond-vs-cycle distinction, the E_INCOMPATIBLE_VERSION rule (one version per kind/name in a closure, with reasons and a revisit trigger), determinism obligations plus the six traps that break them, an eleven-code failure precedence order, a 21-case test specification (P1-P6, N1-N12, D1-D3, G1), explicit non-goals, and the ADI-FOUND-003a package plan (backend/pkg/composition). The lock contract grew six failure codes and now points at this document for its test list.",
+   "dependencies": [
+    "ADI-FOUND-002"
+   ],
+   "acceptance_criteria": [
+    "Registry input contract exists",
+    "Exact versions mandatory (no ranges/latest)",
+    "Missing/incompatible refs fail closed",
+    "Cycles rejected or classified",
+    "Resolver output deterministic",
+    "Resolver tests specified"
+   ],
+   "documentation": [
+    "docs/architecture/composition-resolver.md",
+    "docs/architecture/composition-lock.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-resolver.md",
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "docs review: sections 1-10 answer the six acceptance criteria (source contract, exact versions, fail-closed, cycles, determinism, tests)",
+    "consistency check: failure codes in composition-resolver.md match composition-lock.md §8 after the patch",
+    "no code, no package, no route added by this task",
+    "bun run docs:check green with the new cross-references"
+   ]
+  },
+  {
+   "id": "ADI-FOUND-004",
+   "title": "Immutable run composition snapshot",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only, no migration/table/column/code). docs/architecture/run-snapshot.md specifies the run-to-snapshot relation: exactly one snapshot per run, written before admission, identified by the lock digest, append-only, never a read-time \"current composition\", deduplicated by content (generatedAt excluded so a re-resolution at another minute is the same snapshot). It fixes the stored record (10 fields, no tenant grants/secrets/status), measures the storage question on real data (the M1 golden lock is 2,930 bytes for 9 entries), states honestly that workflow_instances/generations have no snapshot column today, defines the six-step lifecycle, the six immutability prohibitions, the five-step admission verification with codes (E_SNAPSHOT_MISSING/E_DIGEST/E_CAPABILITY/E_TENANT/E_RETIRED), attribution joins, retention and GDPR position, migration/rollback rules (a transformer by snapshotId, never an in-place re-resolution), and the ADI-FOUND-004a plan (one additive migration, one store interface, one Verify function, five tests).",
+   "dependencies": [
+    "ADI-FOUND-002",
+    "ADI-FOUND-003",
+    "ADI-FOUND-003a"
+   ],
+   "acceptance_criteria": [
+    "Run-to-snapshot relation specified",
+    "Existing runs unaffected by later package updates",
+    "Completed runs remain attributable",
+    "Snapshot migration and rollback rules exist"
+   ],
+   "documentation": [
+    "docs/architecture/run-snapshot.md",
+    "docs/architecture/composition-lock.md",
+    "docs/ecosystem/06-runtime-and-execution-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/run-snapshot.md",
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "docs review: the four acceptance criteria (relation specified, later updates cannot affect existing runs, completed runs attributable, migration+rollback rules) are each answered by a numbered section",
+    "evidence check: storage sizing measured from backend/pkg/composition/testdata/m1-team.lock.json (2,930 bytes, 9 entries)",
+    "evidence check: the live schema really lacks a snapshot column (worker/database/schema.ts workflow_instances/generations)",
+    "no migration, no schema, no route, no code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-CTX-001",
+   "title": "Context Assembly contract",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/context-assembly.md defines assembly as a pure function from a normalized task/event plus the composition snapshot to one envelope: the two input shapes and their fields (source/correlation/receivedAt, with events explicitly input-not-authority), the envelope fields (contextId, snapshot identity, tenantKey, segments, budget, omitted, degraded), the canonical form that makes contextId stable, the segment contract with a closed kind vocabulary (task/event/composition/candidate/policy/knowledge/memory/profile) and a closed scope vocabulary, the structural distinguishability rule that knowledge and memory can never be merged or relabelled, precedence-preserved-not-resolved for explicit vs inferred preferences, the three bounds (8 candidates, 600-token slice, policy run budget) with a deterministic drop order in which mandatory segments are never truncated and are refused via E_CONTEXT_BUDGET instead, determinism obligations that are honest about provider-side ranking (explainable replay, not bit-identical across a changing index), six failure codes, explicit exclusions (no new store, no vector DB, no tokenizer dependency), eight tests for the future implementation, and four open items. The umbrella document section 3 is now a summary plus pointer so the two cannot drift.",
+   "dependencies": [
+    "ADI-FOUND-002",
+    "ADI-FOUND-003"
+   ],
+   "acceptance_criteria": [
+    "Normalized task/event context with source and scope defined",
+    "Knowledge vs memory vs profile segments distinguishable",
+    "Token/candidate bounds specified"
+   ],
+   "documentation": [
+    "docs/architecture/context-assembly.md",
+    "docs/architecture/context-activation-and-memory.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/context-assembly.md",
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "tests": [
+    "docs review: the three acceptance criteria (normalized task/event with source+scope, knowledge vs memory vs profile distinguishable, token/candidate bounds) are each answered by a numbered section",
+    "cross-check: the 8-candidate and 600-token bounds cite backend/pkg/toolsearch as the existing precedent rather than inventing new limits",
+    "cross-check: composition snapshot is the input, so assembly cannot resolve against a live registry",
+    "no code, no provider, no store added by this task",
+    "bun run docs:check green with the new cross-references"
+   ]
+  },
+  {
+   "id": "ADI-CTX-002",
+   "title": "Activation policy contract",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/activation-policy.md splits activation into three layers with one authority: eligibility (deterministic, narrowing only - policy rules, grants, scope, budget), ranking (probabilistic, ordering/trimming only, may never revive or introduce), and call-time enforcement (mcp.Gate). States the acceptance criterion as an invariant chain (activated subset ranked subset eligible subset candidates subset closure) and pairs each violated link with a code, including E_ACTIVATION_ESCALATION as an audited security event. Reuses the existing vocabulary instead of inventing one: SideEffect safe/external/irreversible, the four ApprovalClass values, resource:action permissions and RequiresHuman from backend/pkg/mcp. Defines a closed rule shape with deny-overrides and default-deny (no matching allow means skipped), lists what a selector may NOT reference (run-time state), a per-candidate decision record with stage/ruleId/reason and the rule that every decision must be attributable, the rule that activation may require an approval but can never record one, determinism and tie-break rules, five failure codes, explicit non-goals, ten tests for the future engine, and four open items. Umbrella sections 4 and 5 became summaries plus pointers.",
+   "dependencies": [
+    "ADI-CTX-001"
+   ],
+   "acceptance_criteria": [
+    "Deterministic constraints vs probabilistic recommendation boundary defined",
+    "Final authority is deterministic policy plus trusted gate"
+   ],
+   "documentation": [
+    "docs/architecture/activation-policy.md",
+    "docs/architecture/context-activation-and-memory.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/activation-policy.md"
+   ],
+   "tests": [
+    "docs review: both acceptance criteria (deterministic vs probabilistic boundary; final authority = deterministic policy plus trusted gate) are answered by numbered sections",
+    "cross-check: every selector and fact names the existing source (backend/pkg/mcp ToolPolicy, manifest approval vocabulary) rather than a new taxonomy",
+    "cross-check: activation is explicitly not a grant, and approvals stay with the existing path",
+    "JSON decision-record example parses",
+    "no code, no engine, no store added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-CTX-003",
+   "title": "Deterministic activation engine (design)",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-CTX-002",
+    "P1-AGT-004"
+   ],
+   "acceptance_criteria": [
+    "Engine selects only resolved/authorized refs",
+    "Activation cannot install packages, change pins, issue grants, or bypass Gate/policy"
+   ],
+   "documentation": [
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "tests": [
+    "Design tests specified; BLOCKED on P1-AGT-004 grants surface"
+   ]
+  },
+  {
+   "id": "ADI-CTX-004",
+   "title": "Activation decision trace",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-CTX-003"
+   ],
+   "acceptance_criteria": [
+    "Activated/skipped/denied persisted with explanations and version refs"
+   ],
+   "documentation": [
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "tests": [
+    "Contract review"
+   ]
+  },
+  {
+   "id": "ADI-MEM-001",
+   "title": "Memory provider interface",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/memory-provider.md defines the replaceable memory interface: exactly three operations (Remember, Recall, Forget - no Update, because a correction is forget-plus-remember so provenance stays honest), the record shape (tenant, scope, subject, kind, one payload form, provenance with source/producer/version, injected createdAt, optional expiry), the Capabilities advertisement that lets a lexical provider say SemanticRecall:false instead of implying semantic memory, the scope containment ladder (run subset conversation subset agent subset team subset tenant) with a read/write/forget authority matrix and three non-negotiables (tenant is a wall not a filter, scopes may only narrow, no cross-subject reads), the explicit-vs-inferred rule, the secret denylist applied on write, hard bounded recall with a total ordering rule, retention/deletion/erasure rules where Forget must return the real count, six failure codes, explicit non-goals, three adapter options with a recommendation and no decision, ten tests for the future adapter, and five open items. Records the evidence plainly: existing Redis retrieval is a RediSearch index over VFS FILES with a deterministic n-gram HashEmbedding, and there is no memory table in the schema - so this contract replaces nothing and introduces no new mandatory database. Fulfils the design half of historical task P7.6.",
+   "dependencies": [
+    "ADI-CTX-001"
+   ],
+   "acceptance_criteria": [
+    "Replaceable scoped-memory interfaces defined",
+    "No new mandatory database introduced"
+   ],
+   "documentation": [
+    "docs/architecture/memory-provider.md",
+    "docs/architecture/context-activation-and-memory.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/memory-provider.md"
+   ],
+   "tests": [
+    "docs review: both acceptance criteria (replaceable scoped interfaces; no new mandatory database) are answered by numbered sections",
+    "evidence check: backend/pkg/engine/vector.go is a VFS file index with HashEmbedding, and worker/database/schema.ts has no memory table - both stated in §1",
+    "cross-check: provenance and the inferred rule match context-assembly.md §4.3 rather than restating a different precedence",
+    "no table, no migration, no adapter, no code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-MEM-002",
+   "title": "Memory scope enforcement",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 - delivered inside docs/architecture/memory-provider.md rather than as a separate document, because a second document describing the same scope rules would have created two canonicals. Both acceptance criteria are covered there: (1) run/conversation/agent/team/tenant boundaries at retrieval are the containment ladder plus the read/write/forget authority matrix of §3, with three non-negotiables (tenant is a wall not a filter, a requested scope may only narrow the caller authority and is refused rather than clamped, no cross-subject reads inside a scope); (2) provenance/timestamp/retention/deletion semantics are §4 (source/producer/version, explicit-vs-inferred rule), §6 (bounded recall with a total ordering) and §7 (expiry, Forget returning the real count, erasure). Store-level enforcement belongs to the adapter task ADI-MEM-001a, not to a second design document.",
+   "dependencies": [
+    "ADI-MEM-001"
+   ],
+   "acceptance_criteria": [
+    "run/conversation/agent/team/tenant boundaries enforced at retrieval",
+    "Provenance/timestamp/retention/deletion semantics defined"
+   ],
+   "documentation": [
+    "docs/architecture/memory-provider.md"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/context-activation-and-memory.md"
+   ],
+   "tests": [
+    "docs review: each acceptance criterion mapped to a numbered section of memory-provider.md (recorded in the description)",
+    "no separate document created - the documentation rule is one canonical document per responsibility",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-MEM-003",
+   "title": "Personalization profile contract",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/personalization-profile.md defines the profile contract: it is explicitly NOT authorization (no widening of permissions, approvals or closure), three key namespaces with their own winner rules (constraint.* platform/tenant only, default.* beaten by explicit user, preference.* where explicit beats every inferred value), the entry shape with required evidence and confidence for inferred entries, the resolution rule that produces one deterministic winner per key plus a shadowed list kept in the trace rather than the prompt, the explicit-vs-inferred matrix where an inference over an explicit key is refused as a conflict and reported as a proposal, update/versioning/deletion/erasure rules, six failure codes, explicit non-goals (no store, no inference engine, no authorization), ten tests, and five open items - including the recommendation that inferred preferences do NOT ship in the first slice because proving they help needs an evaluation dataset. The umbrella document section 7 now points here and repeats the corrected namespace rule instead of the older single ladder.",
+   "dependencies": [
+    "ADI-MEM-001"
+   ],
+   "acceptance_criteria": [
+    "Explicit vs inferred preferences with provenance/precedence defined",
+    "Inferred never silently overrides explicit",
+    "Update/deletion rules defined"
+   ],
+   "documentation": [
+    "docs/architecture/personalization-profile.md",
+    "docs/architecture/context-activation-and-memory.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/personalization-profile.md"
+   ],
+   "tests": [
+    "docs review: the three acceptance criteria (explicit vs inferred with provenance and precedence, no silent override, update/deletion rules) are answered by numbered sections",
+    "cross-check: the namespace rule replaces the umbrella single ladder in both documents (no contradiction)",
+    "cross-check: the non-authorization boundary matches activation-policy.md invariant chain",
+    "no store, no inference engine, no code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-MEM-004",
+   "title": "Context retrieval integration",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/context-retrieval.md defines how the three retrieved sources are actually obtained and composed into the assembly envelope. States the evidence plainly: knowledge retrieval exists (SearchVFS over a per-room RediSearch index returning path/text/score) but its embedding is HashEmbedding, a deterministic n-gram hash, so it is LEXICAL and any semantic claim would be false; memory and profile have interfaces but no store. Retrieval order deliberately mirrors the reverse of assembly drop order (profile, then memory, then knowledge) so a cheap, least-droppable source cannot be crowded out by an expensive one, and knowledge is asked only for the remaining budget. One bounded query built once from the normalized input, with NO LLM query expansion in v1. Per-segment provenance adds providerKind so a lexical provider is recorded as lexical rather than assumed semantic, plus mandatory ref so every segment names its origin. Bounds are enforced twice (provider and envelope) as defence in depth. Scope authority stays with each provider and this layer adds no authorization of its own; an out-of-scope item is E_CONTEXT_SCOPE refused rather than filtered, because a filtered read still proves existence. Degradation rules for unavailable optional providers, freshness and determinism stated honestly (identical over a fixed index; across a changing index the provider kind and rank make it explainable), explicit non-goals (no embedding model, no new store, no query expansion, no caching), twelve tests and five open items.",
+   "dependencies": [
+    "ADI-MEM-002",
+    "ADI-MEM-003"
+   ],
+   "acceptance_criteria": [
+    "Relevant context composed from knowledge/memory/profile with source tags"
+   ],
+   "documentation": [
+    "docs/architecture/context-retrieval.md",
+    "docs/architecture/context-assembly.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/context-retrieval.md"
+   ],
+   "tests": [
+    "docs review: the acceptance criterion (relevant context composed from knowledge/memory/profile with source tags) is answered by sections 3-5",
+    "evidence check: SearchVFS and HashEmbedding are described from backend/pkg/engine/vector.go, including that the index is per-room and the embedding is lexical",
+    "cross-check: providerKind and ref extend context-assembly.md rather than redefining its segment fields",
+    "cross-check: scope refusals reuse the provider codes from memory-provider.md and personalization-profile.md",
+    "no provider, index, store or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVT-001",
+   "title": "Versioned event envelope",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/event-envelope.md defines the common internal event envelope: eventVersion (independent of the payload schema version), producer-assigned eventId stable across retries, a materialised dedupeKey (tenant|source|eventId), a closed category vocabulary (user/task/business/schedule/system/package) and a dotted type that never carries PII, required tenantKey, source (provenance) distinct from subject (what the event is about), and BOTH occurredAt and receivedAt so lateness is never erased. Payload is a pinned event-schema ref plus data (or a ref for large payloads) - the contract deliberately defines no business payload, which would be a second manifest system. Duplication semantics: at-least-once delivery, a duplicate is a success not an error, durable dedupe (inbox is EVT-002; until then side-effecting consumers use the execution contract idempotency key), ordering per-correlation and best-effort only, late events valid, eventId reuse is a producer bug. Versioning table separates envelope MAJOR/MINOR from payload semver. Tenancy, the run-path properties (the trigger node already consumes event.payload; an event never carries a composition so the snapshot rule still applies), a privacy table where retention follows the payload schema not the envelope, five failure codes, explicit non-goals (no broker/queue/table; Kafka/NATS/Temporal need measured need plus an ADR), ten tests and four open items.",
+   "dependencies": [
+    "ADI-CTX-001"
+   ],
+   "acceptance_criteria": [
+    "Common event identity/tenant/source/timestamps/correlation defined",
+    "Delivery/duplication semantics defined"
+   ],
+   "documentation": [
+    "docs/architecture/event-envelope.md",
+    "docs/architecture/context-assembly.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/event-envelope.md"
+   ],
+   "tests": [
+    "docs review: both acceptance criteria (identity/tenant/source/timestamps/correlation; delivery and duplication semantics) are answered by numbered sections",
+    "evidence check: the workflow trigger node already treats event.payload as its execution input (worker/workflow/VibeWorkflow.ts), and there is no event table in worker/database/schema.ts - both stated",
+    "cross-check: the category/source vocabularies match context-assembly.md §2 exactly",
+    "JSON envelope example parses",
+    "no broker, table, transport or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVT-002",
+   "title": "Durable event delivery (design)",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/durable-event-delivery.md specifies durable delivery as a transactional OUTBOX plus a durable INBOX on D1, with no broker. Grounded in the repository own limits (CF_LIMITS.md section 8, source S7): D1 is single-threaded per database (which makes a conditional UPDATE a safe claim primitive), rows cap at 2 MB, statements at 100 KB and 100 bind params, queries at 30 s, and the current Free plan gives 500 MB shared with auth/app/workflow tables - so the design includes the capacity arithmetic (~1 KB envelopes at 10k events/day exhaust the shared budget in about seven weeks) and makes sweeping a CORRECTNESS rule rather than housekeeping. Producer side: the outbox row is written in the same transaction as the state change so neither lost nor phantom events exist, and nothing is dispatched inside that transaction. Consumer side: a unique (tenant, dedupeKey) inbox insert IS the dedupe, written before the effect, with the rule that inbox retention must exceed the maximum redelivery window or a duplicate becomes a second execution. Dispatcher: conditional-UPDATE claim with a lease for crash recovery, small batches, exponential backoff with jitter, max attempts then a dead row kept as evidence, per-tenant fairness, and the rule that a consumer needing durability starts a snapshot-bound Workflow because step remains the only durability primitive. Loop protection via causationId with a depth bound and per-correlation backpressure. Six failure codes, explicit non-goals, twelve tests and five open items including the honest threshold that would justify adopting Cloudflare Queues (which is a broker decision needing an ADR).",
+   "dependencies": [
+    "ADI-EVT-001",
+    "P7-RUN-001"
+   ],
+   "acceptance_criteria": [
+    "Inbox/outbox, duplicate handling, retry/dead-letter specified against execution contract"
+   ],
+   "documentation": [
+    "docs/architecture/durable-event-delivery.md",
+    "docs/architecture/event-envelope.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/durable-event-delivery.md"
+   ],
+   "tests": [
+    "docs review: the acceptance criterion (inbox/outbox, duplicate handling, retry/dead-letter, against the execution contract) is answered by sections 3-6",
+    "evidence check: every storage constraint is quoted from docs/CF_LIMITS.md section 8 rather than assumed",
+    "cross-check: duplicate-is-success and per-correlation ordering match event-envelope.md; step-as-only-durability matches the execution contract",
+    "no table, dispatcher, queue or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVT-003",
+   "title": "Event-to-activation integration",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/event-to-activation.md specifies the last mile from a delivered envelope to a run, with the rule that the event supplies context and a reason to run but NEVER authority. Subscriptions live in the data layer (bindingId, tenantKey, pointerRef, selector, triggerable, inputMode, enabled) rather than in the IR, because a spec.subscriptions block would be an IR change needing an ADR (D7) - and keeping the binding in data lets an event-triggered run resolve through the stable pointer, so it uses exactly what production uses. Explains why triggerable is a property of the binding and not of the event, defines the deterministic eligibility filter (no model, no ranking), and tabulates what the event may and may not influence - it can provide input and correlation, it cannot choose capabilities, set the tenant, satisfy an approval, bypass the gate or smuggle a composition. Run de-duplication is per binding: unique (binding_id, dedupe_key) enforced by the database, because the inbox marks received but cannot mark started and a crash between the two would otherwise start the run twice; fan-out across bindings is explicitly not duplication. Mapping into context assembly reuses the assembly contract, with the payload treated as a MANDATORY segment so an over-budget payload refuses (E_CONTEXT_BUDGET) rather than running without its input. Seven failure codes, explicit non-goals, twelve tests and five open items.",
+   "dependencies": [
+    "ADI-EVT-002",
+    "ADI-CTX-002"
+   ],
+   "acceptance_criteria": [
+    "Eligible events map into Context Assembly without granting authority"
+   ],
+   "documentation": [
+    "docs/architecture/event-to-activation.md",
+    "docs/architecture/event-envelope.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/event-to-activation.md"
+   ],
+   "tests": [
+    "docs review: the acceptance criterion (eligible events map into context assembly without granting authority) is answered by §3-§6 and stated as a table of what the event may and may not influence",
+    "cross-check: subscriptions are deliberately NOT added to the IR, so D7 is untouched and no ADR is implied",
+    "cross-check: pointer resolution and snapshot binding reference candidate-lifecycle.md and run-snapshot.md rather than redefining them",
+    "cross-check: duplicate-is-success matches event-envelope.md; mandatory-segment refusal matches context-assembly.md",
+    "no table, route or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVAL-001",
+   "title": "Evaluation contract",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/evaluation-contract.md fixes evaluation as evidence about a SNAPSHOT (never a manifest or a single run), so an asset update creates a new subject and old results do not carry over. Defines the five closed layers with an honest automation matrix: L1 structural and L2 capability are automated today (backend/pkg/ir, backend/pkg/composition), L4 operational is partly automated (18/18 on the reference Fake; the Cloudflare adapter is unverified live), and L3 behavioral plus the end-to-end half of L5 have no evidence pipeline. Verdicts are pass/fail/not_evaluated/blocked with the rule that not_evaluated is NEVER pass and blocks exactly like a failure (different operator action), and that a layer may only be waived by a named, expiring approver decision. Datasets are pinned eval/name@X.Y.Z artifacts with a recorded digest, assertion-based cases and a stated sample size. Metrics carry direction and threshold with an explicit ban on composite scores (a blended number lets a failing safety metric be averaged away). Gates name layers, datasets and thresholds and fail closed; blocked propagates. Results carry a reproducibility record (snapshotId, dataset digest, evaluatorVersion, declared judge with model/version/seed, sampleSize, cost). The judge rule: an LLM may inform L3 only, never L1/L2/L4 and never L5. Five failure codes, explicit non-goals (no training, no auto-promotion, no dataset invention), ten tests, five open items. Fold in: the umbrella document sections 1-2 are now summaries plus pointers so the two cannot drift.",
+   "dependencies": [
+    "ADI-FOUND-004"
+   ],
+   "acceptance_criteria": [
+    "Structural/capability/behavioral/operational/safety layers defined",
+    "Regression gates specified; failure blocks promotion"
+   ],
+   "documentation": [
+    "docs/architecture/evaluation-contract.md",
+    "docs/architecture/evaluation-and-evolution.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/evaluation-contract.md"
+   ],
+   "tests": [
+    "docs review: both acceptance criteria (five layers defined; regression gates specified with failure blocking promotion) are answered by numbered sections",
+    "evidence check: the automation matrix cites backend/pkg/ir, backend/pkg/composition and the execution suite rather than claiming coverage that does not exist",
+    "cross-check: no composite score, not_evaluated never pass, and the LLM-judge restriction are stated once and referenced from the umbrella",
+    "no runner, dataset, store or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVAL-002",
+   "title": "Composition benchmark runner (design)",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/benchmark-runner.md designs the batch job that turns a gate definition into a result artifact. Central finding, derived from the snapshot contract: a stored snapshot carries systemDigest and ref+digest per asset but NOT the System document and NOT asset bytes, so re-evaluation must be given the System document plus an AssetSource, and must verify (canonical digest == systemDigest; each fetched asset digest == closure entry). Explains why L2 VERIFIES the stored closure instead of re-resolving (no registry exists; verification still catches tampering, floating refs, incompatible versions and cycles) and why that is a different check rather than a weaker one. Defines the request (snapshot, system document, asset source, layers, datasets, thresholds, hard budget, optional declared judge, seed/clock, evaluatorVersion), the per-layer execution matrix with what genuinely runs today, the L3 case-execution contract (assemble, activate, execute, assert) with per-case status so could-not-run is never counted as pass, the canonical result artifact with an artifactDigest excluding the clock, four distinct exit codes (0 pass / 1 fail / 2 incomplete / 3 contract violation) so CI can tell worsening software from unmeasured software from a bad request, determinism rules, six failure codes, explicit non-goals, ten tests and five open items (including the recommendation that a snapshot should NOT carry the System document).",
+   "dependencies": [
+    "ADI-EVAL-001"
+   ],
+   "acceptance_criteria": [
+    "Candidate compositions evaluated against controlled datasets"
+   ],
+   "documentation": [
+    "docs/architecture/benchmark-runner.md",
+    "docs/architecture/evaluation-contract.md",
+    "docs/architecture/evaluation-and-evolution.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/benchmark-runner.md"
+   ],
+   "tests": [
+    "docs review: the acceptance criterion (candidate compositions evaluated against controlled datasets) is answered for L3 with an explicit case-execution contract, and the current not_evaluated paths are stated rather than hidden",
+    "evidence check: the snapshot-leanness finding is grounded in backend/pkg/composition/snapshot.go (SystemDigest + CanonicalLock, no bytes)",
+    "cross-check: verdict vocabulary, judge restriction, no-composite-score rule and gate semantics match evaluation-contract.md",
+    "no binary, dataset, store, route or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVAL-003",
+   "title": "Candidate composition lifecycle",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/candidate-lifecycle.md makes the acceptance criterion structural: a candidate IS a snapshot and a stable composition IS a pointer record (tenantKey, systemRef, environment -> snapshotId), so there is no candidate file format and no write path to a stable composition. Defines the closed state machine (proposed, evaluating, evaluated, approved, promoted, rejected, expired, superseded) with a guard per transition and the two non-negotiables (no promotion without a passing gate, none without a named approver), the candidate record with required actors, promotion as compare-and-set on expectedCurrentSnapshotId so concurrent promotions surface E_CAND_CONFLICT instead of silently losing one, rollback as the same operation pointed backwards (never a restore), evidence freshness for the (snapshotId, dataset digest, evaluatorVersion) triple plus expiry, the rule that promotion changes only the default for NEW runs, per-environment stable pointers on one control plane (D17), seven failure codes, explicit non-goals, twelve tests and five open items.",
+   "dependencies": [
+    "ADI-EVAL-002"
+   ],
+   "acceptance_criteria": [
+    "Candidate versions created without changing stable compositions"
+   ],
+   "documentation": [
+    "docs/architecture/candidate-lifecycle.md",
+    "docs/architecture/evaluation-and-evolution.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/candidate-lifecycle.md"
+   ],
+   "tests": [
+    "docs review: the acceptance criterion (candidate versions created without changing stable compositions) is answered structurally in §1 and again as E_CAND_MUTATE in §8",
+    "cross-check: state guards reference evaluation-contract.md verdicts rather than inventing a second pass/fail vocabulary",
+    "cross-check: promotions change defaults only - run binding semantics come from run-snapshot.md and are not restated differently",
+    "no table, state store or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-EVAL-004",
+   "title": "Controlled promotion and rollback",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/promotion-and-rollback.md defines the only operation in ADI that changes what production runs, and its undo. Promotion is a conjunction of four conditions (passing gate FOR THE TARGET ENVIRONMENT, approvals meeting that environment requirement, unexpired candidate, successful compare-and-set) with no partial credit - \"one of four\" is how production ends up running something nobody cleared. Approvals are session-identified, bound to the evaluation artifact digest, expiring, with a required reason and a separation-of-duties rule whose solo-operator exception is RECORDED (selfApproval: true) rather than pretended away. Controlled rollout is defined on environment pointers (development/staging/production), each step its own promotion with its own evidence and audit row, because no traffic-splitting layer exists; canaries need a router and an ADR. Rollback is deliberately split from emergency pin: rollback targets a snapshot that previously held this pointer (proved by promotion history, no new evaluation needed) and is refused if the target closure contains a retired asset (E_PROMO_RETIRED), while emergency pin targets any verified snapshot with a named decision and marks the pointer pinned-emergency until a normal promotion clears it. Audit reuses the existing audit_logs table (entity_type composition_pointer, entity_id tenant:system:environment, old/new values with snapshot ids plus evaluation artifact digest and approver) with the rule that no pointer movement happens without its audit row and that the row must be sufficient to reconstruct why production runs this version.",
+   "dependencies": [
+    "ADI-EVAL-003"
+   ],
+   "acceptance_criteria": [
+    "Evaluation plus approval required before rollout",
+    "Promotion/rollback auditable"
+   ],
+   "documentation": [
+    "docs/architecture/promotion-and-rollback.md",
+    "docs/architecture/evaluation-and-evolution.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/promotion-and-rollback.md"
+   ],
+   "tests": [
+    "docs review: both acceptance criteria (evaluation plus approval required before rollout; promotion/rollback auditable) are answered by §2 and §6",
+    "evidence check: the audit shape maps onto the existing audit_logs columns in worker/database/schema.ts - no new table proposed",
+    "cross-check: state names, pointer semantics and CAS come from candidate-lifecycle.md rather than being redefined",
+    "no route, table, UI or code added by this task",
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "ADI-ECO-001",
+   "title": "Intelligence bundle distribution contract",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-FOUND-002",
+    "P1-AGT-004"
+   ],
+   "acceptance_criteria": [
+    "Bundle distribution/install defined without new execution authority",
+    "No new manifest kind in v1; no secrets/grants in bundle"
+   ],
+   "documentation": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "Contract review"
+   ]
+  },
+  {
+   "id": "ADI-ECO-002",
+   "title": "Registry and package resolution (design)",
+   "type": "DESIGN",
+   "priority": "P4",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-ECO-001"
+   ],
+   "acceptance_criteria": [
+    "Publishing/version-lookup/pinned retrieval defined"
+   ],
+   "documentation": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "Design review; BLOCKED on registry storage-shape decision"
+   ]
+  },
+  {
+   "id": "ADI-ECO-003",
+   "title": "Package provenance and signing (design)",
+   "type": "DESIGN",
+   "priority": "P4",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-ECO-002"
+   ],
+   "acceptance_criteria": [
+    "Publisher identity, digest validation, trust lifecycle defined (Private/Community/Verified)"
+   ],
+   "documentation": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "Design review; BLOCKED on O24/O25"
+   ]
+  },
+  {
+   "id": "ADI-ECO-004",
+   "title": "Marketplace integration (design)",
+   "type": "DESIGN",
+   "priority": "P4",
+   "status": "TODO",
+   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "dependencies": [
+    "ADI-ECO-003"
+   ],
+   "acceptance_criteria": [
+    "Discoverable bundles through existing trust boundaries; Gate path mandatory"
+   ],
+   "documentation": [
+    "docs/architecture/composition-lock.md",
+    "docs/ecosystem/09-marketplace-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [
+    "docs/architecture/composition-lock.md"
+   ],
+   "tests": [
+    "Design review; BLOCKED on provenance/signing"
+   ]
+  },
+  {
+   "id": "ADI-FOUND-001a",
+   "title": "Close the System IR parity gaps found by ADI-FOUND-001",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23. Both readers now answer \"is this IR valid?\" identically. Go (backend/pkg/ir/system.go): 63-char caps on metadata.name/agent keys/node ids, schema-grade semver plus pinned-ref grammar (no leading zeros), required spec.outcome with the 1000 cap, agents imply topology, approvals[].on vocabulary, pinned evaluation.dataset with 0-1 thresholds, routing/deployment enums and replica bounds, metadata caps, duplicate delegatesTo/next, cycle detection using the runtime wording, reachability as an error, and Canonicalize now rejects trailing content and duplicate JSON keys (a token-level scanner). Gate (scripts/validate-system-ir.mjs): findCycle mirroring Go, duplicate-edge check, reachability promoted from note to error, tightened ref regexes, 11 new probes (17 total) and the shared positive control. Re-running the ADI-FOUND-001 matrix after the change: Go rejects all ten mutants; schema-plus-invariants rejects the same ten. Two documented asymmetries: JSON Schema cannot express acyclicity/reachability (the I5 invariants carry them) and JSON.parse cannot see duplicate keys (Go rejects them; the gate documents the gap). No manifest schema change, no apiVersion bump, no new kind, no runtime behaviour change.",
+   "dependencies": [
+    "ADI-FOUND-001"
+   ],
+   "acceptance_criteria": [
+    "Every divergent row in the parity matrix is closed: Go and schema agree on all 13 negative probes",
+    "Positive control document (routing, deployment, evaluation with dataset, all four approval classes, labels) still loads with zero findings",
+    "Cycle and reachability behaviour is identical in scripts/validate-system-ir.mjs and backend/pkg/ir",
+    "Canonicalize rejects trailing documents; duplicate-key policy is documented and enforced",
+    "bun run docs:check and cd backend && go test ./pkg/ir/ are both green in the same change",
+    "No manifest schema version bump and no new manifest kind"
+   ],
+   "repository_paths": [
+    "backend/pkg/ir/",
+    "scripts/validate-system-ir.mjs",
+    "scripts/lib/schema-subset.mjs",
+    "docs/architecture/ir-parity-audit.md",
+    "docs/architecture/system-ir.md"
+   ],
+   "tests": [
+    "cd backend && go test ./pkg/ir/ -v: TestPositiveControlLoads + TestRejectsParityProbes (N1-N11 subtests, each asserting the stated reason) + TestRejectsTrailingAndDuplicateKeys (N12/N13) all PASS",
+    "cd backend && go vet ./pkg/ir/ clean",
+    "node scripts/validate-system-ir.mjs: 4/4 cases, positive control clean, 17 negative probes rejected, cycle + reachability enforced",
+    "bun run docs:check: all five validators green",
+    "re-run of the original parity matrix: Go REJECTED 10/10, schema+invariants REJECTED 10/10"
+   ],
+   "documentation": [
+    "docs/architecture/ir-parity-audit.md",
+    "docs/architecture/system-ir.md",
+    "docs/architecture/manifest-schemas.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-003a",
+   "title": "Implement the composition resolver (bundled mode)",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23. backend/pkg/composition implements the resolver in bundled mode: ref.go (ParseRef over the IR semver grammar so resolver and IR cannot disagree), source.go (AssetSource + BundledSource + Assets() + ParseAsset with a narrow edge table + ScanForSecret with a documented denylist + three sentinel errors), lock.go (lock structs, Canonical() through ir.Canonicalize, Digest() excluding generatedAt, sha256 prefix), resolve.go (eight-step algorithm, sorted worklist, diamond-vs-cycle colouring, eleven-code precedence) and resolve_test.go (24 cases over the real fixtures/examples). Two design corrections came out of running it against real data: the bundled example set is NOT self-closing (P3 asserts E_MISSING instead of inventing placeholders) and topology array order is semantic content, so only object-key order may vary (D2). skill.spec.compatibility.agents is excluded as an edge - the M1 closure would otherwise show a false cycle, and P2 proves the exclusion on real bytes.",
+   "dependencies": [
+    "ADI-FOUND-003",
+    "ADI-FOUND-001a"
+   ],
+   "acceptance_criteria": [
+    "All 21 cases in composition-resolver.md §7 pass, negatives asserted on the code, not merely on failure",
+    "P1-P3 resolve the three agent-shaped fixtures offline with closure equal to the declared refs",
+    "N1 proves zero source calls when the manifest is invalid (E_IR before any fetch)",
+    "D1/D2 prove byte-identical locks across 100 resolutions and across reversed discovery order",
+    "G1 golden files exist for at least two fixtures, so a shape change is a deliberate diff",
+    "No network, database or runtime dependency in the package tests"
+   ],
+   "repository_paths": [
+    "backend/pkg/composition/",
+    "docs/architecture/composition-resolver.md"
+   ],
+   "tests": [
+    "go test ./pkg/composition/ -> 24/24 PASS (P1-P6, N1-N12, D1-D3, G1, plus generatedAt and System-is-not-an-asset cases)",
+    "go test ./pkg/composition/ -race -> PASS (16 concurrent resolutions agree)",
+    "go vet ./... clean; go test ./... across the backend green",
+    "golden testdata/m1-team.lock.json: 9 entries, sorted keys, real sha256 digests, generatedAt from the injected clock"
+   ],
+   "documentation": [
+    "docs/architecture/composition-resolver.md",
+    "docs/architecture/composition-lock.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-004a",
+   "title": "Snapshot storage, run binding and admission verification",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 for the storage and admission-logic half; the live request path is ADI-FOUND-004b. Delivered: (1) worker/database/schema.ts gains composition_snapshots (snapshot_id primary key = lock digest, the ten fields of run-snapshot.md §3.1, tenant/system indexes) plus a nullable snapshot_id on workflow_instances with a RESTRICT reference and an index; drizzle generated migrations/0017_nebulous_shatterstar.sql - purely additive, no DROP, no backfill (inventing a closure for an existing run would be a fabrication). (2) backend/pkg/composition/snapshot.go: Snapshot/NewSnapshot (id == lock digest, canonical document stored, generatedAt kept as closedAt), Lock() round-trip, SnapshotStore (Persist must be append-only, Load returns ErrSnapshotMissing), Verify (pure digest-chain check: id match, document parse, recomputed digest, lockVersion agreement, digest prefixes) and AdmitRun (existence + tenant + digest chain in one call), with E_DIGEST/E_SNAPSHOT_MISSING/E_TENANT added to the code vocabulary and precedence. (3) backend/pkg/composition/d1store: the D1 adapter over a two-method Querier (cloudflare.D1Client satisfies it structurally, so the package imports no Cloudflare code), INSERT ... ON CONFLICT(snapshot_id) DO NOTHING, no UPDATE path at all, and first-writer-wins tenant handling that surfaces ErrSnapshotTenant at write time instead of failing later at admission.",
+   "dependencies": [
+    "ADI-FOUND-004",
+    "ADI-FOUND-003a"
+   ],
+   "acceptance_criteria": [
+    "A second resolution of an unchanged closure reuses the snapshot row (dedupe by snapshotId)",
+    "No code path can UPDATE a snapshot closure; a correction writes a new snapshot",
+    "Admission refuses E_DIGEST when the recomputed digest differs, before any durable step",
+    "A run whose snapshot is missing is refused with E_SNAPSHOT_MISSING, never started",
+    "A cross-tenant snapshot read is refused with E_TENANT",
+    "A completed run still resolves its original closure after the underlying asset changes"
+   ],
+   "repository_paths": [
+    "worker/database/schema.ts",
+    "migrations/",
+    "backend/pkg/composition/",
+    "backend/pkg/engine/"
+   ],
+   "tests": [
+    "go test ./pkg/composition/... -> composition 31 cases + d1store 6 cases, all PASS (snapshot identity, dedupe, immutability, tamper detection, unbound refusal, cross-tenant, changed-asset attribution, append-only, round-trip, missing, second tenant, collision, unconfigured)",
+    "typecheck clean after the schema change (worker imports schema.ts)",
+    "eslint on worker/database/schema.ts clean",
+    "migration inspected: CREATE TABLE + ALTER TABLE ADD COLUMN + 3 indexes, zero DROP statements, no backfill"
+   ],
+   "documentation": [
+    "docs/architecture/run-snapshot.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-004b",
+   "title": "Wire snapshot binding into the live run path",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23. Snapshot binding is wired into the live workflow trigger, opt-in. EngineHub gains SetSnapshotBinding(store, required) plus AdmitRunSnapshot, which is a no-op when no store is installed and binding is not required (the SessionVerifier idiom), refuses with E_SNAPSHOT_MISSING when binding is required and no store exists, allows an unbound run in soft mode, and otherwise delegates to composition.AdmitRun. The trigger handler reads an optional snapshotId, admits BEFORE CreateWorkflowInstanceRow, maps codes to HTTP (E_TENANT 403, E_SOURCE 503, otherwise 409) and echoes the binding in the response. CreateWorkflowInstanceRow takes snapshotID and writes NULLIF(?, '') so an unbound run records NULL instead of a fabricated closure. cmd/main.go installs d1store whenever D1 is configured and reads CONTROL_PLANE_REQUIRE_SNAPSHOT (documented in DEPLOY_RENDER_CLOUDFLARE.md). Deliberate non-changes: no TS type was added because no SPA caller sends the field (adding an unused type would be dead code), and the switch stays off by default because nothing produces snapshots yet - enabling it today refuses every run, which is documented rather than softened.",
+   "dependencies": [
+    "ADI-FOUND-004a"
+   ],
+   "acceptance_criteria": [
+    "A start without a snapshot id is refused (E_SNAPSHOT_MISSING) when CONTROL_PLANE_REQUIRE_SNAPSHOT is on, and unchanged when it is off",
+    "A run bound to a stored snapshot records snapshot_id on workflow_instances",
+    "A tampered snapshot is refused with E_DIGEST before any durable step (asserted at the route level)",
+    "A cross-tenant snapshot id is refused with E_TENANT and writes no instance row",
+    "Hub without a store keeps the current behaviour exactly (no-op guard, existing tests unchanged)"
+   ],
+   "repository_paths": [
+    "backend/pkg/api/workflows.go",
+    "backend/pkg/engine/",
+    "backend/pkg/api/routes.go",
+    "src/api-types.ts",
+    "src/lib/api-client.ts"
+   ],
+   "tests": [
+    "go test ./pkg/api/ -run TestSnapshotGuard -> 7/7 PASS: unbound refusal (409 + zero instance rows + zero runtime instances), soft-mode regression (200, NULL binding), unknown id, tampered document (E_DIGEST), cross-tenant (403 E_TENANT), valid binding (200, snapshot recorded and echoed), required-without-store (409)",
+    "go test ./pkg/api/ ./pkg/engine/ -count=1 -> existing workflow tenant/auth suites still green with the guard installed",
+    "go vet ./... clean; go test ./... across the backend green",
+    "existing engine test call sites updated for the new CreateWorkflowInstanceRow signature"
+   ],
+   "documentation": [
+    "docs/architecture/run-snapshot.md",
+    "docs/DEPLOY_RENDER_CLOUDFLARE.md"
+   ],
+   "risk": "High",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-MEM-001a",
+   "title": "First memory adapter (D1) behind the provider interface",
+   "type": "IMPLEMENTATION",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (first memory code). backend/pkg/memory holds the contract in code: Record/Query/Item/Capabilities, the Provider interface (Remember/Recall/Forget), ValidateRecord and ValidateQuery, the scope ladder via AllowedScopes (a caller reads its own scope and broader, never narrower), the total order Compare/SortItems (score, then newest, then id), lexical Score, EstimateTokens, ContentID (so a retried write is idempotent), the secret denylist scan and the closed kind/source vocabularies. backend/pkg/memory/d1store is the D1 adapter over a two-method Querier: INSERT ... ON CONFLICT(id) DO NOTHING, a bounded candidate window with lexical scoring and the documented ordering, token-budget truncation that skips rather than exceeds, Forget returning the real count and treating a foreign id as 0 (no existence leak), and NewWithoutTTL so the retention refusal path is reachable. migrations/0018_adorable_luke_cage.sql adds memory_records additively (one CREATE TABLE, three indexes, no DROP, no backfill). 11 tests green. Storage decision recorded in memory-provider.md §10: D1 with expires_at, revisit only on a measured latency problem. Honest limits: lexical only (SemanticRecall false), no route, no agent caller, no embedding model, cross-tenant sharing still open.",
+   "dependencies": [
+    "ADI-MEM-001",
+    "ADI-CTX-001"
+   ],
+   "acceptance_criteria": [
+    "Write then read round-trips every field including provenance and ExpiresAt",
+    "A recall for another tenant is refused with E_MEMORY_TENANT, never an empty list",
+    "A requested scope outside the caller authority is refused with E_MEMORY_SCOPE",
+    "An inferred record over an existing explicit one for the same (scope, subject, key) is refused as a conflict",
+    "A record containing a literal credential is refused with E_MEMORY_SECRET",
+    "MaxItems above the advertised capability is refused with E_MEMORY_BOUNDS",
+    "Ordering is total: score desc, createdAt desc, id asc",
+    "Forget returns the real count and is idempotent",
+    "An expiring write against a provider without TTL support is refused with E_MEMORY_RETENTION",
+    "Capabilities reports SemanticRecall false for the lexical adapter"
+   ],
+   "repository_paths": [
+    "backend/pkg/memory/",
+    "worker/database/schema.ts",
+    "migrations/",
+    "docs/architecture/memory-provider.md"
+   ],
+   "tests": [
+    "go test ./pkg/memory/... -> 11/11 PASS (M1 round-trip incl. expiry, M2 tenant wall, M3 scope authority, M4 inferred-over-explicit, M5 secret, M6 bounds, M7 total ordering, M8 forget counts, M9 retention refusal, M10 honest capabilities, idempotent write)",
+    "go vet ./... clean",
+    "go test ./... across the backend green (0 FAIL lines)",
+    "bun run typecheck clean and eslint on worker/database/schema.ts clean after the schema change",
+    "migration inspected: CREATE TABLE + 3 indexes, zero DROP, no backfill"
+   ],
+   "documentation": [
+    "docs/architecture/memory-provider.md",
+    "docs/architecture/adaptive-intelligence-architecture.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-EVAL-002a",
+   "title": "Benchmark runner (L1 + L2 executable, L3-L5 honest not_evaluated)",
+   "type": "IMPLEMENTATION",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-23. backend/pkg/evaluation implements the runner: Layer/Verdict/Metric/LayerResult, Request/Result, Evaluate, ExitCode (0 pass / 1 fail / 2 incomplete / 3 contract violation), Canonical and Digest (clock excluded). L1 re-runs ir.Load on the supplied System document; the digest comparison against the snapshot is a SUBJECT check before any layer runs, so a foreign document refuses the run (exit 3) rather than reporting a layer failure. L2 verifies the stored closure: exact pins, one version per identity, cycle detection over requestedBy edges. L3/L4/L5 report not_evaluated with a precise reason, and a floating dataset ref blocks L3. 13 tests green. Two honest findings from implementation: the digest-prefix check in L2 is defence in depth because composition.Verify rejects an unprefixed digest first, and the injected absolute deadline (rather than a wall-clock read) is what makes budget exhaustion reproducible - the contract was amended accordingly.",
+   "dependencies": [
+    "ADI-EVAL-001",
+    "ADI-EVAL-002",
+    "ADI-FOUND-004a"
+   ],
+   "acceptance_criteria": [
+    "L1 and L2 produce real verdicts against a stored snapshot",
+    "A system document whose canonical digest differs from the snapshot is E_EVAL_SUBJECT (exit 3)",
+    "A tampered closure digest, an identity at two versions, or a closure cycle yields L2 fail (exit 1)",
+    "A requested layer with no evidence is not_evaluated and never pass (exit 2)",
+    "A judge requested for L5 is refused with E_EVAL_JUDGE (exit 3)",
+    "Two identical runs produce the same artifactDigest (clock excluded)",
+    "An expired injected deadline marks remaining layers not_evaluated/budget"
+   ],
+   "repository_paths": [
+    "backend/pkg/evaluation/",
+    "docs/architecture/benchmark-runner.md"
+   ],
+   "tests": [
+    "go test ./pkg/evaluation/ -v -> 13/13 PASS (E1 pass path, E2 foreign document, E3 missing snapshot, E4 floating ref, E4b unprefixed digest, E5 incompatible versions, E6 cycle with path, E7 no-dataset not_evaluated, E8 judge on L5, E9 digest excludes clock, E10 expired deadline, E11 missing document blocked, E12 unpinned dataset blocked)",
+    "go vet ./... clean; full backend suite green",
+    "bun run docs:check green"
+   ],
+   "documentation": [
+    "docs/architecture/benchmark-runner.md",
+    "docs/architecture/evaluation-contract.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-005",
+   "title": "System to Run binding (compile a snapshot into a plan)",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23 (design only). docs/architecture/ir-to-run-binding.md answers the open item the runtime architecture has carried since the provider contract: how a stored snapshot becomes something that runs. It states the asymmetry honestly - the PROCEDURAL shape compiles 1:1 today because the IR node kinds are the same seven the DAG interpreter already executes and IR next[] maps onto DAG edges, while the AGENTIC shape has no runtime node type that runs an agent and is therefore refused with E_BIND_SHAPE rather than lowered into a chain that would discard delegation and topology order. Defines Compile(snapshot, systemDocument) -> (Plan, findings) with five rules (snapshot is the only source of capability truth, the document must be the snapshot's document, determinism, no secrets/grants/runtime state, refuse-never-degrade), a field-by-field mapping table, deterministic Kahn ordering with node-id tie-breaks, three additive run fields (plan_kind, plan_digest, compiler_version) with the argument that a plan is recomputed rather than stored, five refusal codes, what it unblocks (the producer, the snapshot rollout switch, ADI-CTX-003), ten implementation tests and four open items including the agentic decision that needs an ADR.",
+   "dependencies": [
+    "ADI-FOUND-004",
+    "ADI-FOUND-003a"
+   ],
+   "acceptance_criteria": [
+    "The binding is specified with a compile contract and a mapping table",
+    "The procedural shape is shown to compile onto the existing runtime without a new node type",
+    "The agentic shape is refused with a named code and reason, not silently lowered",
+    "Determinism and the plan digest are defined",
+    "Refusals cover unknown kinds, unclosed capabilities, foreign documents and cycles",
+    "What the design unblocks is stated explicitly"
+   ],
+   "repository_paths": [
+    "docs/architecture/ir-to-run-binding.md"
+   ],
+   "tests": [
+    "docs review: every claim cites live code (node kinds, edge shape, RunPlan/Step fields, run columns)",
+    "cross-check: no new node kind or runtime change is proposed",
+    "no code, schema or column added",
+    "bun run docs:check green"
+   ],
+   "documentation": [
+    "docs/architecture/ir-to-run-binding.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ADI-FOUND-005a",
+   "title": "Implement the procedural System-to-plan compiler",
+   "type": "IMPLEMENTATION",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-23. backend/pkg/plan implements the procedural compiler: Compile(snapshot, systemDocument) returns a Plan carrying both views of one mapping (Steps/DependsOn for the provider, Edges/When for the interpreter), plus Entry, Gates, Requirements (long-sleep when a sleep node exists), OnError and PlanDigest. Refusals: E_BIND_SNAPSHOT (missing/unverifiable snapshot, foreign document, invalid IR), E_BIND_SHAPE (agentic System - the documented limitation), E_BIND_KIND, E_BIND_CAPABILITY (a step outside the closure) and E_BIND_PLAN (unknown edge target, cyclic graph). Steps are emitted by Kahn with the smallest ready id first, so two compiles of one snapshot are byte-identical. One real correction came out of the tests: in the IR the `when` belongs to the TARGET node, so the condition was being read from the wrong side; the code and the mapping table were both fixed. Approvals map onto the four-class vocabulary; routing.onError is carried verbatim and deliberately never becomes a gate (\"escalate on error\" and \"this class needs approval\" are different mechanisms). No route, no column, no runtime change.",
+   "dependencies": [
+    "ADI-FOUND-005",
+    "ADI-FOUND-003a"
+   ],
+   "acceptance_criteria": [
+    "visual-workflow.system.json compiles to steps/edges/entry matching the IR exactly",
+    "All seven node kinds survive the mapping unchanged",
+    "DependsOn is the inverse of next and a diamond yields one step with two dependencies",
+    "Two compiles produce identical canonical bytes and the same planDigest",
+    "m1-team.system.json is refused with E_BIND_SHAPE naming the limitation",
+    "A foreign document is E_BIND_SNAPSHOT; an unclosed capability is E_BIND_CAPABILITY",
+    "when text is carried verbatim and approvals map onto the four-class vocabulary"
+   ],
+   "repository_paths": [
+    "backend/pkg/plan/",
+    "docs/architecture/ir-to-run-binding.md"
+   ],
+   "tests": [
+    "go test ./pkg/plan/ -v -> 10/10 PASS (B1 fixture compiles, B2 seven steps present, B3 DependsOn inverse of next, B4 byte-identical compiles, B5 agentic refused with E_BIND_SHAPE, B6 foreign document, B7 capability outside closure, B8 conditions verbatim, B9 approvals to gates, B10 onError carried and not gated)",
+    "go vet ./pkg/plan/ clean; full backend suite green",
+    "gofmt clean"
+   ],
+   "documentation": [
+    "docs/architecture/ir-to-run-binding.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M"
   }
  ]
 }

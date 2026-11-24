@@ -27,3 +27,5 @@
 
 Rules: P0 first; no task without prerequisites; small verifiable tasks; research/
 design/implementation/test/deploy labeled; P7–P9 stay backlog until gates pass.
+
+ADI workstreams (2026-11-23, all PROPOSED design-only, BLOCKED until deps clear): ADI-FOUNDATION (IR parity, lock, resolver, snapshot), ADI-CONTEXT-ACTIVATION, ADI-MEMORY-PERSONALIZATION, ADI-EVENTS, ADI-EVALUATION-EVOLUTION, ADI-ECOSYSTEM — see `tasks/MASTER_BACKLOG.json` and `architecture/adaptive-intelligence-architecture.md`. First executable proof stays a bounded M0-consistent single-agent composition (D8/D9).

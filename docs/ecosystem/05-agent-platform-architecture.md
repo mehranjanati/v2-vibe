@@ -12,6 +12,8 @@ MCP trust slice, A2A delegation contract. Live seed: Eino DeepAgent team plus
 VFS/REST tools, role skills, gateway plus modelrouter with first live consumer
 on the coder role, MCP trust boundary without wire transport.
 
+ADI note (2026-11-23, PROPOSED): composition/activation/memory/personalization contracts live in `architecture/adaptive-intelligence-architecture.md`, `architecture/composition-lock.md`, `architecture/context-activation-and-memory.md` — DESIGNED only, no runtime consumer.
+
 Status: identity DESIGNED (platform-internal ids only today), manifests/IR
 DESIGNED (docs gates, no runtime consumer), gateway PARTIAL, MCP PARTIAL (no
 transport), memory PARTIAL (Redis VFS only), A2A DESIGNED.

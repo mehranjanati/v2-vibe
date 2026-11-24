@@ -81,3 +81,5 @@ Capabilities: node registration/discovery, advertisements, scheduling, WASM and
 container workloads, GPU discovery, health, trust/reputation, verification,
 metering, settlement, optional chain integration, future token utility.
 Seed today: RESEARCH — no node agent or settlement code exists.
+
+Shared capability note (2026-11-23): all eight products consume Adaptive Intelligence through shared contracts (`architecture/adaptive-intelligence-architecture.md`, PROPOSED); products stay independently releasable (D10/D11).

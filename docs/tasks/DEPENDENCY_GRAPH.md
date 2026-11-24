@@ -33,3 +33,19 @@ plan-agnostic and does not need it.
 
 Historical IDs keep their meaning; ecosystem IDs track the rollout and
 verification work on top. No task is marked DONE without repo evidence.
+
+## ADI workstreams (PROPOSED 2026-11-23, design-only, all BLOCKED)
+
+ADI-FOUND-001 [DONE 2026-11-23, audit] -> ADI-FOUND-001a [DONE 2026-11-23, parity closed] -> ADI-FOUND-002 [DONE 2026-11-23, lock contract] -> ADI-FOUND-003 [DONE 2026-11-23, resolver design] -> ADI-FOUND-003a [DONE 2026-11-23, backend/pkg/composition] -> ADI-FOUND-004 [DONE 2026-11-23, run-snapshot design] -> ADI-FOUND-004a [DONE 2026-11-23, migration + store + AdmitRun] -> ADI-FOUND-004b [DONE 2026-11-23, live guard + rollout switch]
+ADI-FOUND-003a -> ADI-FOUND-005 [DONE 2026-11-23, system-to-run binding] -> ADI-FOUND-005a [DONE 2026-11-23, backend/pkg/plan] -> (producer: resolve + persist + compile + start)
+ADI-FOUND-002 -> ADI-CTX-001 [DONE 2026-11-23, context-assembly] -> ADI-CTX-002 [DONE 2026-11-23, activation policy] -> ADI-CTX-003 -> ADI-CTX-004
+ADI-CTX-001 -> ADI-MEM-001 [DONE 2026-11-23, memory-provider interface] -> ADI-MEM-002 [DONE 2026-11-23, absorbed into MEM-001] -> ADI-MEM-004 [DONE 2026-11-23, retrieval integration]
+ADI-MEM-001 -> ADI-MEM-003 [DONE 2026-11-23, personalization profile] -> ADI-MEM-004
+ADI-MEM-001 -> ADI-MEM-001a [DONE 2026-11-23, backend/pkg/memory + D1 adapter]
+ADI-MEM-001 -> ADI-MEM-003 -> ADI-MEM-004
+ADI-CTX-001 -> ADI-EVT-001 [DONE 2026-11-23, event envelope] -> ADI-EVT-002 [DONE 2026-11-23, outbox + inbox] -> ADI-EVT-003 [DONE 2026-11-23, event-to-run]
+ADI-FOUND-004 -> ADI-EVAL-001 [DONE 2026-11-23, evaluation contract] -> ADI-EVAL-002 [DONE 2026-11-23, runner design] -> ADI-EVAL-002a [DONE 2026-11-23, backend/pkg/evaluation]
+ADI-EVAL-002 [DONE 2026-11-23, runner design] -> ADI-EVAL-003 [DONE 2026-11-23, candidate lifecycle] -> ADI-EVAL-004 [DONE 2026-11-23, promotion/rollback + audit]
+ADI-FOUND-002 -> ADI-ECO-001 -> ADI-ECO-002 -> ADI-ECO-003 -> ADI-ECO-004
+ADI-CTX-003 blocked on P1-AGT-004; ADI-EVT-002 blocked on P7-RUN-001; ADI-ECO-003 blocked on O24/O25.
+First executable proof (single-agent adaptive composition) is gated by D8/D9 and is not in NEXT_EXECUTION.

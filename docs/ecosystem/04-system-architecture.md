@@ -56,3 +56,5 @@ resolution, durable execution with approvals and idempotency, tenant-scoped
 state plus lineage plus audit, traces and evaluation, reported outcome.
 Control never executes untrusted code; execution never owns identity truth.
 Cloudflare is one provider, not the platform identity.
+
+ADI target (2026-11-23, PROPOSED): Studio authors System IR; Resolver plus Lock produce immutable snapshots; Context plus Activation select authorized subsets; Policy plus Gate enforce; Runtime executes via the provider contract; Evaluation plus Evolution govern promotion. Full map: `architecture/adaptive-intelligence-architecture.md`. Legend: IMPLEMENTED = live plus green tests; PARTIAL = incomplete; DESIGNED = spec only; PLANNED = roadmap item; RESEARCH = open question.

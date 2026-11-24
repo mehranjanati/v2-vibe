@@ -9,7 +9,7 @@ tools, agents, model adapters, execution providers, and commerce connectors.
 Flow: author manifest → validate against schema → local test → sign →
 publish with provenance → review plus certification → install as pinned
 closure → update/deprecate with notices. Compatibility follows semver;
-permissions declared up front; secrets by reference only; community supply
+permissions declared up front; secrets by reference only (`vault:` refs, never literals); community supply
 never executes with control-plane privilege.
 
 ## Integration-core conformance (added 2026-11-23)

@@ -240,4 +240,6 @@ that a second provider behaves the same — that is what C1–C18 exist to settl
 
 billing discrepancy. `backend/pkg/metering` is the only place that counts.
 
+ADI note (2026-11-23, PROPOSED): runs bind to immutable composition snapshots — the run-to-snapshot relation, stored record, admission verification and retention rules are specified in `architecture/run-snapshot.md` (ADI-FOUND-004); the lock itself is `architecture/composition-lock.md`; activation traces ride the run lineage (`architecture/context-activation-and-memory.md`); promotion follows `architecture/evaluation-and-evolution.md`. No contract change in this mission.
+
 

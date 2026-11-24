@@ -35,3 +35,5 @@ Delegation via typed agent-to-agent calls carrying tenant/user/agent identity.
 External reach via MCP (tools), UCP/AP2 (commerce), OpenAI-compatible APIs
 (models), WASM/WIT (portable components). Adapters independently versioned;
 conformance tests before any compliance claim.
+
+ADI boundary (2026-11-23, PROPOSED): composition vs activation stay separate; activation never mints grants or bypasses the Gate; extensions never create identity/audit/secret/execution authority. Contracts: `architecture/composition-lock.md`, `architecture/context-activation-and-memory.md`.

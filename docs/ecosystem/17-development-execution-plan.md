@@ -38,3 +38,7 @@ with the explicit tests from the matching proposal:
    `Verified` at marketplaces, never before.
 
 Sizes: (2) and (3) are M each, (4) is M, (5) is L. (1) is already sized L.
+
+## Adaptive Intelligence workstreams (PROPOSED 2026-11-23, design-only, BLOCKED until deps/decisions clear)
+
+ADI-FOUNDATION (IR parity audit, lock, resolver, snapshot) → ADI-CONTEXT-ACTIVATION (context, policy, engine design, trace) → ADI-MEMORY-PERSONALIZATION (provider interface, scope enforcement, profile, retrieval) → ADI-EVENTS (envelope, durable delivery design, event-to-activation; no broker without ADR) → ADI-EVALUATION-EVOLUTION (contract, benchmark design, candidate lifecycle, promotion/rollback) → ADI-ECOSYSTEM (bundle, registry design, provenance/signing, marketplace; BLOCKED on O24/O25). First executable proof: bounded M0-consistent single-agent composition (D8/D9). Task IDs: `tasks/MASTER_BACKLOG.json`.

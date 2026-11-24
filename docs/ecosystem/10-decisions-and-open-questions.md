@@ -62,6 +62,10 @@ binding is needed, remain open. Two new questions were opened by that research:
 Credential Provider, and is legal review needed for managed payment flows?).
 
 
+**D19 — Adaptive Intelligence as shared capability (PROPOSED 2026-11-23).** ADI (compose/activate/personalize/evaluate/evolve) lives on existing contracts; no ninth product, no new IR, no new manifest kind in v1, no new runtime. Needs owner acceptance: `architecture/adr-adaptive-intelligence-boundaries.md`.
+
+**O26 — Composition Lock exact shape (partially answered 2026-11-23).** The artifact shape, digest *format* (`<algorithm>:<hex>`), resolution modes, failure taxonomy and snapshot semantics are now normative in `architecture/composition-lock.md` (ADI-FOUND-002, design only). Still open: the digest algorithm pin (SHA-256 proposed), whether the lock digest covers `compilerVersion` (**O26a**), the registry storage shape (**O27**), and capability-cycle policy (**O29**). **O27 — Memory/personalization store shape (open).** Provider interfaces first; no new store without ADR. **O28 — Evaluation dataset catalog (open).** O20 stays open; no datasets invented here. **O29 — Capability-cycle policy (opened 2026-11-23).** Workflow cycles are refused outright (I5, ADI-FOUND-001a), but a capability graph cycle (`skill → tool → skill`, e.g. pagination) may be legitimate. v1 rejects and reports the path; whether recursion should be classified and allowed needs a real use case. Contract: `architecture/composition-lock.md` §17.
+
 **O21 — dedicated staging environment — RESOLVED by D17 (2026-11-22).**
 No staging environment is provisioned. `render.yaml` declares one web service plus
 one Key Value, and a Render workspace allows one Free Key Value, so a second

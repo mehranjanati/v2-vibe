@@ -292,3 +292,4 @@ transport (SSE), loader, or `search_tools` must close them again:
 | Cloudflare transport + authorization docs | Streamable HTTP as the standard; `createMcpHandler`; OAuth Provider split; per-tool scopes |
 | Cloudflare Code Mode + Portals | two-tools-in-1000-tokens; composed gateway with unified auth as the M5 portal shape |
 
+ADI note (2026-11-23, PROPOSED): Intelligence Bundles reuse this loader core (Tool vocabulary → mcp.Gate → AuditSink); the bundle itself adds no engine/auth plane (`architecture/composition-lock.md` §9).

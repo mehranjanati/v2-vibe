@@ -16,7 +16,11 @@
 - Metering recorder: PARTIAL (no billing).
 - Git lineage plus History: PARTIAL (plan-execute path gap).
 - Storage plus retrieval (Redis VFS, D1 lineage): PARTIAL.
-- Manifests plus System IR: DESIGNED (docs gates only).
+- Manifests plus System IR: DESIGNED (docs gates only) plus Go reader IMPLEMENTED (`backend/pkg/ir`; no compiler/registry consumer yet).
+- MCP trust boundary: PARTIAL plus stdio PoC (D8.1 exception; no agent-run MCP execution).
+- Execution provider contract: DESIGNED plus Fake IMPLEMENTED (C1–C18 18/18 on fake; Cloudflare adapter unverified live); run-control (cancel/pause/capabilities) PARTIAL (Go green, worker CI-only).
+- Skill/OpenAPI loaders plus tool search: IMPLEMENTED within loader scope only (no registry/agent-run consumer).
+- Adaptive Intelligence contracts (lock/resolver/activation/memory/eval/evolution/bundle): PROPOSED design-only (2026-11-23), no code.
 - Assistant/Research/Commerce/Cloud/Network surfaces: PLANNED/RESEARCH.
 - WASM, containers, GPU, wasmCloud, chain: RESEARCH (no code).
 

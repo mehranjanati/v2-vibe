@@ -27,3 +27,5 @@ Registry `server.json`), the ToolHive lessons (virtual server, five run modes),
 the three-sentence Cloudflare rule, and the per-surface activation rule — lives
 in `ecosystem/19-integration-research.md` proposals 1–7. Rule of thumb: an
 artifact family without a Gate path is a download page, not a marketplace.
+
+ADI note (2026-11-23, PROPOSED): Intelligence Bundles are distribution groupings only — same manifests plus lock, no new kind/authority/secrets (`architecture/composition-lock.md` §9; backlog ADI-ECOSYSTEM, BLOCKED on provenance/signing).
