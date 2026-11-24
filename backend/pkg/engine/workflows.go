@@ -228,10 +228,13 @@ func RecordWorkflowAccessDenial(ctx context.Context, d1 *cloudflare.D1Client, de
 // tenant (P0.7) — the DAG's owner, copied here so the runtime can refuse to
 // execute a run whose tenant no longer matches the DAG it points at; an
 // empty ownerID is stored as SQL NULL (unowned, pre-P0.7 behaviour).
-func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, ownerID, inputJSON string) error {
+// snapshotID is the composition snapshot the run is bound to (ADI-FOUND-004b);
+// an empty value is stored as SQL NULL, which is the honest record of an
+// unbound run rather than a fabricated closure.
+func CreateWorkflowInstanceRow(ctx context.Context, d1 *cloudflare.D1Client, workflowID, instanceID, ownerID, inputJSON, snapshotID string) error {
 	ok, err := d1.Exec(ctx,
-		"INSERT INTO workflow_instances (id, workflow_id, status, user_id, input, created_at) VALUES (?, ?, 'pending', NULLIF(?, ''), ?, CURRENT_TIMESTAMP)",
-		instanceID, workflowID, ownerID, inputJSON)
+		"INSERT INTO workflow_instances (id, workflow_id, status, user_id, input, snapshot_id, created_at) VALUES (?, ?, 'pending', NULLIF(?, ''), ?, NULLIF(?, ''), CURRENT_TIMESTAMP)",
+		instanceID, workflowID, ownerID, inputJSON, snapshotID)
 	if err != nil || !ok {
 		return fmt.Errorf("d1: insert workflow_instances: %v", err)
 	}

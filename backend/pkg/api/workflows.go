@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"backend/pkg/cloudflare"
+	"backend/pkg/composition"
 	"backend/pkg/engine"
 )
 
@@ -27,6 +28,10 @@ import (
 type workflowTriggerRequest struct {
 	WorkflowID string                 `json:"workflowId"`
 	Input      map[string]interface{} `json:"input"`
+	// SnapshotID optionally binds the run to a stored composition snapshot
+	// (ADI-FOUND-004b). Empty means unbound, which is allowed until
+	// CONTROL_PLANE_REQUIRE_SNAPSHOT makes binding mandatory.
+	SnapshotID string `json:"snapshotId,omitempty"`
 }
 
 // workflowInstanceLimit caps the run list of GET /api/workflows/:workflowId.
@@ -93,7 +98,26 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 		if resolved, ok := c.Locals(workflowOwnerLocals).(string); ok && resolved != "" {
 			runTenant = resolved
 		}
-		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, runTenant, string(inputJSON)); err != nil {
+		// ADI-FOUND-004b: admit the composition snapshot before any row exists. In
+		// soft mode (store installed, binding not required) an unbound run is still
+		// allowed, so this changes nothing until the rollout switch is flipped.
+		snapshotID := strings.TrimSpace(req.SnapshotID)
+		if _, findings := hub.AdmitRunSnapshot(ctx, snapshotID, runTenant); len(findings) > 0 {
+			status := fiber.StatusConflict
+			switch findings[0].Code {
+			case composition.CodeTenant:
+				status = fiber.StatusForbidden
+			case composition.CodeSource:
+				status = fiber.StatusServiceUnavailable
+			}
+			return c.Status(status).JSON(fiber.Map{
+				"success": false,
+				"error":   findings[0].Message,
+				"code":    string(findings[0].Code),
+			})
+		}
+
+		if err := engine.CreateWorkflowInstanceRow(ctx, d1, workflowID, instanceID, runTenant, string(inputJSON), snapshotID); err != nil {
 			return c.Status(500).JSON(fiber.Map{"success": false, "error": "failed to record the workflow run"})
 		}
 
@@ -102,13 +126,17 @@ func handleWorkflowTrigger(hub *engine.EngineHub) fiber.Handler {
 			return c.Status(502).JSON(fiber.Map{"success": false, "error": "failed to start workflow execution"})
 		}
 
+		run := fiber.Map{
+			"workflowId": workflowID,
+			"instanceId": instanceID,
+			"status":     "pending",
+		}
+		if snapshotID != "" {
+			run["snapshotId"] = snapshotID
+		}
 		return c.JSON(fiber.Map{
 			"success": true,
-			"data": fiber.Map{
-				"workflowId": workflowID,
-				"instanceId": instanceID,
-				"status":     "pending",
-			},
+			"data":    run,
 		})
 	}
 }

@@ -103,6 +103,9 @@ func (f *fakeWorkflowD1) apply(sql string, params []any) ([]map[string]any, bool
 			"workflow_id": paramAt(params, 1),
 			"user_id":     paramAt(params, 2),
 			"input":       paramAt(params, 3),
+			// ADI-FOUND-004b: the binding is positional after input so the
+			// existing assertions above keep their meaning.
+			"snapshot_id": paramAt(params, 4),
 		})
 
 	case strings.HasPrefix(sql, "INSERT INTO audit_logs"):

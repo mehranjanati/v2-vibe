@@ -235,7 +235,7 @@ func TestCreateWorkflowInstanceRowCarriesTenant(t *testing.T) {
 	f, d1 := newWFFakeD1(t)
 	ctx := context.Background()
 
-	if err := CreateWorkflowInstanceRow(ctx, d1, "wf-a", "inst-1", "user-a", `{"amount":1}`); err != nil {
+	if err := CreateWorkflowInstanceRow(ctx, d1, "wf-a", "inst-1", "user-a", `{"amount":1}`, ""); err != nil {
 		t.Fatalf("record run: %v", err)
 	}
 	stmt := f.statement(0)
@@ -248,7 +248,7 @@ func TestCreateWorkflowInstanceRowCarriesTenant(t *testing.T) {
 	}
 
 	// An unowned workflow records a NULL tenant (pre-P0.7 behaviour).
-	if err := CreateWorkflowInstanceRow(ctx, d1, "wf-b", "inst-2", "", `{}`); err != nil {
+	if err := CreateWorkflowInstanceRow(ctx, d1, "wf-b", "inst-2", "", `{}`, ""); err != nil {
 		t.Fatalf("record unowned run: %v", err)
 	}
 	if got := f.instance("inst-2")["user_id"]; got != "" {

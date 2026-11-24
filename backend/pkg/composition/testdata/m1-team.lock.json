@@ -1,0 +1,99 @@
+{
+  "compilerVersion": "vibesdk-compiler/0.1.0",
+  "evaluationRefs": [
+    "eval/lead-set@2.0.0"
+  ],
+  "generatedAt": "2026-11-23T10:15:00Z",
+  "lockVersion": "1.0.0",
+  "modelPolicyRefs": [
+    "model-policy/cheap@1.0.0",
+    "model-policy/standard@1.0.0"
+  ],
+  "resolutionMode": "bundled",
+  "resolvedClosure": [
+    {
+      "digest": "sha256:1b17b24f971a42f09821041ffea219e67ab664706704e0ad4ccd84f0089a0cfd",
+      "kind": "agent",
+      "publisher": "acme",
+      "ref": "agent/draft-reviewer@0.4.0",
+      "requestedBy": [
+        "system/m1-qualify-then-draft@1.0.0"
+      ]
+    },
+    {
+      "digest": "sha256:a589e7f12211cdee9142e38fb82402e580ae6a92b85d22d30f8f48108e5a82b8",
+      "kind": "agent",
+      "publisher": "acme",
+      "ref": "agent/followup-drafter@0.9.0",
+      "requestedBy": [
+        "system/m1-qualify-then-draft@1.0.0"
+      ]
+    },
+    {
+      "digest": "sha256:3dcf537b7db3c856d403e586c0412be0ee56ece1ff1a922c009a3f477911532d",
+      "kind": "agent",
+      "publisher": "acme",
+      "ref": "agent/lead-qualifier@1.2.0",
+      "requestedBy": [
+        "system/m1-qualify-then-draft@1.0.0"
+      ]
+    },
+    {
+      "digest": "sha256:6a562b2d9519c6737bef54e36d599a462732ab1688446e83f76aff0a50080419",
+      "kind": "eval",
+      "publisher": "acme",
+      "ref": "eval/lead-set@2.0.0",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0"
+      ]
+    },
+    {
+      "digest": "sha256:3c34864ec53ef754c5827413f2ffe2b22a6e8eaa6734826538e7c92a11f2a173",
+      "kind": "knowledge",
+      "publisher": "acme",
+      "ref": "knowledge/icp-docs@5.0.0",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0"
+      ]
+    },
+    {
+      "digest": "sha256:ccde6a288d2c89e50a1a75b8558695075e992af809f9ca1b76d95417a7d19fe5",
+      "kind": "model-policy",
+      "publisher": "acme",
+      "ref": "model-policy/cheap@1.0.0",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0"
+      ]
+    },
+    {
+      "digest": "sha256:57fc782a8286e8bfbd7a4d6a5f13e9f82dee97e42933566bbc02213750172475",
+      "kind": "model-policy",
+      "publisher": "acme",
+      "ref": "model-policy/standard@1.0.0",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0"
+      ]
+    },
+    {
+      "digest": "sha256:85c0532f42148b4bc58530d1c121ffd43ddd4234a8869eb0b8fbb28a81a0d4bb",
+      "kind": "skill",
+      "publisher": "acme",
+      "ref": "skill/qualification-rubric@3.0.1",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0"
+      ]
+    },
+    {
+      "digest": "sha256:fe7a3c202399bdb9b472580c1fd3807b510f350303e2c435cb81cd45761f3acc",
+      "kind": "tool",
+      "publisher": "acme",
+      "ref": "tool/score-lead@1.0.0",
+      "requestedBy": [
+        "agent/lead-qualifier@1.2.0",
+        "skill/qualification-rubric@3.0.1"
+      ]
+    }
+  ],
+  "systemDigest": "sha256:d02b20e7c0d96180f8132be0a79409853a20d3d9cb0ced602b2a1fb36835e87b",
+  "systemRef": "system/m1-qualify-then-draft@1.0.0"
+}

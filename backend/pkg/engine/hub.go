@@ -13,6 +13,7 @@ import (
 
 	"backend/pkg/agent"
 	"backend/pkg/cloudflare"
+	"backend/pkg/composition"
 	"backend/pkg/llm"
 )
 
@@ -83,6 +84,15 @@ type EngineHub struct {
 	// a no-op so the pre-existing behaviour is preserved until the P0.9
 	// identity decision lands.
 	sessionVerifier SessionVerifier
+
+	// snapshotStore pins each run to an immutable composition snapshot
+	// (ADI-FOUND-004b). nil means snapshot binding is not configured: the
+	// trigger guard degrades to a no-op, exactly like sessionVerifier, so an
+	// existing deployment keeps starting runs unbound.
+	snapshotStore composition.SnapshotStore
+	// requireSnapshot makes binding mandatory: with it on, a run without a
+	// stored snapshot is refused before any instance row exists.
+	requireSnapshot bool
 
 	// wsTickets holds pending short-lived WebSocket tickets (P0-SEC-008).
 	// Guarded by wsTicketsMu (its own lock: socket opens must not contend
@@ -176,6 +186,50 @@ func (h *EngineHub) SetSessionVerifier(v SessionVerifier) {
 // SessionVerifier returns the installed session verifier (nil when unset).
 func (h *EngineHub) SessionVerifier() SessionVerifier {
 	return h.sessionVerifier
+}
+
+// SetSnapshotBinding installs the composition snapshot store and decides whether
+// binding is mandatory (ADI-FOUND-004b). A nil store leaves the trigger guard a
+// no-op, which is what keeps existing deployments byte-for-byte unchanged.
+func (h *EngineHub) SetSnapshotBinding(store composition.SnapshotStore, required bool) {
+	h.snapshotStore = store
+	h.requireSnapshot = required
+}
+
+// SnapshotStore returns the installed snapshot store (nil when unset).
+func (h *EngineHub) SnapshotStore() composition.SnapshotStore {
+	return h.snapshotStore
+}
+
+// RequireSnapshot reports whether a run must reference a stored snapshot.
+func (h *EngineHub) RequireSnapshot() bool {
+	return h.requireSnapshot
+}
+
+// AdmitRunSnapshot is the guard the workflow trigger runs before it records a
+// run row (docs/architecture/run-snapshot.md §6). Three states:
+//
+//   - no store installed, binding not required -> allow (pre-004b behaviour);
+//   - no store installed, binding required     -> refuse: configuration error;
+//   - store installed, run unbound, soft mode  -> allow: a run that carries no
+//     snapshot id is the current state of the product, not a violation;
+//   - otherwise -> composition.AdmitRun, which refuses a missing snapshot, a
+//     foreign tenant or a broken digest chain.
+func (h *EngineHub) AdmitRunSnapshot(ctx context.Context, snapshotID, tenant string) (*composition.Snapshot, []composition.Finding) {
+	store := h.snapshotStore
+	if store == nil {
+		if h.requireSnapshot {
+			return nil, []composition.Finding{{
+				Code:    composition.CodeSnapshotMissing,
+				Message: "snapshot binding is required but no snapshot store is configured",
+			}}
+		}
+		return nil, nil
+	}
+	if !h.requireSnapshot && strings.TrimSpace(snapshotID) == "" {
+		return nil, nil
+	}
+	return composition.AdmitRun(ctx, store, snapshotID, tenant)
 }
 
 // Cfg returns an env var value or the provided fallback.

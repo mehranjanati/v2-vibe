@@ -673,6 +673,71 @@ export const workflowDags = sqliteTable('workflow_dags', {
  * is recorded, so `VibeWorkflow` can refuse to execute a run whose tenant no
  * longer matches the DAG it points at (worker/workflow/VibeWorkflow.ts).
  */
+/**
+ * Memory Records table - ADI-MEM-001a.
+ *
+ * One scoped memory record as defined by docs/architecture/memory-provider.md.
+ * The store is deliberately plain: scope, subject and tenant are columns because
+ * every recall filters on them, `key` exists so an inferred preference can be
+ * refused against an explicit one, and `expires_at` is the retention bound
+ * (the provider advertises SupportsTTL because it can honour it).
+ *
+ * There is no vector column: the adapter is lexical and says so through
+ * Capabilities.SemanticRecall = false. A semantic upgrade is a separate decision
+ * with its own evidence.
+ */
+export const memoryRecords = sqliteTable('memory_records', {
+    id: text('id').primaryKey(),
+    tenantKey: text('tenant_key').notNull(),
+    scope: text('scope').notNull(), // run | conversation | agent | team | tenant
+    subject: text('subject').notNull(),
+    kind: text('kind').notNull(), // fact | preference | summary | event-note
+    // Stable key, required for kind=preference and empty otherwise; the
+    // explicit-vs-inferred rule is enforced over (scope, subject, key).
+    key: text('key'),
+    text: text('text'),
+    data: text('data', { mode: 'json' }),
+    source: text('source').notNull(), // explicit | observed | inferred | tool-result | system
+    producer: text('producer').notNull(),
+    version: text('version').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp' }),
+}, (table) => ({
+    recallIdx: index('memory_records_recall_idx').on(table.tenantKey, table.scope, table.subject, table.createdAt),
+    expiryIdx: index('memory_records_expiry_idx').on(table.tenantKey, table.expiresAt),
+    keyIdx: index('memory_records_key_idx').on(table.tenantKey, table.scope, table.subject, table.kind, table.key),
+}));
+
+/**
+ * Composition Snapshots table - ADI-FOUND-004a.
+ *
+ * One immutable, content-addressed record of what a System resolved to
+ * (docs/architecture/run-snapshot.md). The primary key IS the lock digest, so
+ * persisting the same closure twice is a no-op rather than a duplicate row,
+ * and there is deliberately no UPDATE path: a correction is a new snapshot.
+ *
+ * There is no secret, grant or tenant payload here beyond the tenant key that
+ * decides who may read the row; the canonical lock document carries no
+ * credentials by construction (docs/architecture/composition-lock.md §4).
+ */
+export const compositionSnapshots = sqliteTable('composition_snapshots', {
+    snapshotId: text('snapshot_id').primaryKey(), // == lock digest (sha256:<hex>)
+    lockVersion: text('lock_version').notNull(),
+    systemRef: text('system_ref').notNull(),
+    systemDigest: text('system_digest').notNull(),
+    compilerVersion: text('compiler_version').notNull(),
+    resolutionMode: text('resolution_mode').notNull(),
+    // The full canonical lock document, including resolvedClosure. Storing it is
+    // what makes a run attributable without consulting a live registry.
+    canonicalLock: text('canonical_lock').notNull(),
+    tenantKey: text('tenant_key').notNull(),
+    closedAt: integer('closed_at', { mode: 'timestamp' }),
+    retentionClass: text('retention_class').notNull().default('run'),
+}, (table) => ({
+    tenantIdx: index('composition_snapshots_tenant_idx').on(table.tenantKey),
+    systemIdx: index('composition_snapshots_system_ref_idx').on(table.systemRef),
+}));
+
 export const workflowInstances = sqliteTable('workflow_instances', {
     id: text('id').primaryKey(),
     workflowId: text('workflow_id').notNull().references(() => workflowDags.workflowId, { onDelete: 'cascade' }),
@@ -682,6 +747,14 @@ export const workflowInstances = sqliteTable('workflow_instances', {
     // Execution payload
     input: text('input', { mode: 'json' }),
     output: text('output', { mode: 'json' }),
+    // ADI-FOUND-004a: the composition snapshot this run is bound to. Nullable on
+    // purpose - no existing run is snapshot-bound and the migration must not
+    // invent a closure for it. Admission refuses a run whose snapshot is
+    // missing once snapshot binding is switched on (see
+    // docs/architecture/run-snapshot.md).
+    snapshotId: text('snapshot_id').references(() => compositionSnapshots.snapshotId, {
+        onDelete: 'restrict',
+    }),
     error: text('error'),
     startedAt: integer('started_at', { mode: 'timestamp' }),
     completedAt: integer('completed_at', { mode: 'timestamp' }),
@@ -693,6 +766,7 @@ export const workflowInstances = sqliteTable('workflow_instances', {
     workflowIdx: index('workflow_instances_workflow_id_idx').on(table.workflowId),
     statusIdx: index('workflow_instances_status_idx').on(table.status),
     startedAtIdx: index('workflow_instances_started_at_idx').on(table.startedAt),
+    snapshotIdx: index('workflow_instances_snapshot_id_idx').on(table.snapshotId),
 }));
 
 /**
@@ -1057,3 +1131,5 @@ export type GenerationFile = typeof generationFiles.$inferSelect;
 export type NewGenerationFile = typeof generationFiles.$inferInsert;
 export type GenerationAudit = typeof generationAudits.$inferSelect;
 export type NewGenerationAudit = typeof generationAudits.$inferInsert;
+export type MemoryRecord = typeof memoryRecords.$inferSelect;
+export type NewMemoryRecord = typeof memoryRecords.$inferInsert;

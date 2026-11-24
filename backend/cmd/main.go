@@ -16,6 +16,7 @@ import (
 	"backend/pkg/agent/tools"
 	"backend/pkg/api"
 	"backend/pkg/cloudflare"
+	"backend/pkg/composition/d1store"
 	"backend/pkg/engine"
 	agenthandler "backend/pkg/handler"
 	"backend/pkg/llm"
@@ -115,6 +116,23 @@ func main() {
 	// Workflows: the Cloudflare Workflow name (wrangler.v2.jsonc [[workflows]],
 	// the VibeWorkflow runtime) that POST /api/workflows/trigger starts.
 	hub.SetWorkflowName(hub.Cfg("WORKFLOWS_NAME", "vibesdk-v2-workflows"))
+
+	// ADI-FOUND-004b: composition snapshot binding. The store is installed
+	// whenever D1 is configured, so a run that DOES carry a snapshot id is
+	// verified against it. CONTROL_PLANE_REQUIRE_SNAPSHOT makes binding
+	// mandatory; without it an unbound run keeps the pre-004b behaviour, which
+	// is why this switch is opt-in. Turning it on without D1 is a
+	// misconfiguration: the guard then refuses every run instead of silently
+	// starting unbound runs.
+	if d1Client != nil {
+		requireSnapshot := isTruthy(os.Getenv("CONTROL_PLANE_REQUIRE_SNAPSHOT"))
+		hub.SetSnapshotBinding(d1store.New(d1Client), requireSnapshot)
+		if requireSnapshot {
+			log.Println("composition snapshot binding enabled: every new run must reference a stored snapshot")
+		}
+	} else if isTruthy(os.Getenv("CONTROL_PLANE_REQUIRE_SNAPSHOT")) {
+		log.Println("WARNING: CONTROL_PLANE_REQUIRE_SNAPSHOT is on but D1 is not configured - runs will be refused")
+	}
 
 	// P0.3 control-plane session boundary. Enforcement is opt-in via
 	// CONTROL_PLANE_REQUIRE_SESSION so an existing deployment keeps working

@@ -120,6 +120,20 @@
       "when": 1795263584455,
       "tag": "0016_ambitious_human_torch",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1795441050900,
+      "tag": "0017_nebulous_shatterstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1795449617791,
+      "tag": "0018_adorable_luke_cage",
+      "breakpoints": true
     }
   ]
 }
