@@ -196,6 +196,23 @@ Next steps, in dependency order (2026-11-24 audit):
 
 History (superseded): ADI-FOUND-001a was originally scoped as validation tightening under the existing contracts — no new capability, so D8 was unaffected, and ADI-FOUND-002 was made to depend on it because a lock cannot be deterministic over two different validity answers. That reasoning held; the work is now DONE.
 
+Stash triage (2026-11-25, both stashes dropped after review): two long-lived stashes
+were inspected before they could rot. `docs-checkpoint-interim` (18 files, docs plus
+`go.mod`/`go.sum`) and `preexisting-worktree` (18 files, code plus docs) both branched
+from `9ee23fa`, which is an ancestor of `main`. Method: for every changed file the
+stash's added lines (>= 45 chars) were tested for presence verbatim on `main`, and the
+code changes were confirmed by symbol — P0.8 `SetLifecyclePolicy`/`EnsureRoom`/
+`StartJanitor`, P1.3.3 `takeGenerationIntake`/`genForked`/`generationCloseSQL`,
+`go-git` in `backend/go.mod`, the `code?: string` error field in
+`src/services/controlPlaneClient.ts`, and the `ROOM_QUOTA_EXCEEDED` path all exist on
+`main`. Result: 100% of the code and >= 95% of the doc lines already landed; every
+remaining line is superseded wording (old `2026-11-14` headers, `planned` statuses that
+later became `verified`). Nothing was recovered because nothing was lost. The two
+snapshots are archived as pushed branches `wip/docs-checkpoint-interim` and
+`wip/preexisting-worktree` for anyone who wants to diff them; the local stash entries
+are gone.
+
+
 ADI note (2026-11-23, superseded 2026-11-24): the 23 ADI-FOUND/CTX/MEM/EVT/EVAL/ECO tasks were PROPOSED design work, all BLOCKED on dependencies/decisions (lock/resolver, grants surface, durable idempotency, registry/provenance). None enters NEXT_EXECUTION until unblocked; D8/D9 gates unchanged.
 
 ## Web3 track (parallel, MVP-independent, no code)
