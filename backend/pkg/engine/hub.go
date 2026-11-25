@@ -15,6 +15,8 @@ import (
 	"backend/pkg/cloudflare"
 	"backend/pkg/composition"
 	"backend/pkg/llm"
+	"backend/pkg/mcp"
+	"backend/pkg/vault"
 )
 
 // SessionVerifier resolves a caller's session token to a user id. The control
@@ -110,12 +112,23 @@ type EngineHub struct {
 	// concurrently.
 	policyMu sync.RWMutex
 	policy   RoomLifecyclePolicy
+
+	// mcpSurface wires the MCP trust stores + gate the routes in
+	// backend/pkg/api read (P1-AGT-004 / D8.3). Never nil: the hub builds an
+	// empty surface, so the routes answer honestly (404/empty list) instead of
+	// 503 while no server is registered.
+	mcpSurface *mcp.Surface
+
+	// vaultStore is the generic credential store (P1-AGT-004 / D8.4). nil when
+	// the deployment has no key material, which is exactly when the vault
+	// routes and any secret-bearing policy must answer 503 — never plaintext.
+	vaultStore *vault.Store
 }
 
 // NewEngineHub creates a hub backed by the given Redis, LLM, and
 // Cloudflare clients.
 func NewEngineHub(rdb *redis.Client, llmClient *llm.Client, cfClient *cloudflare.Client) *EngineHub {
-	return &EngineHub{
+	hub := &EngineHub{
 		rooms:      make(map[string]*ProjectRoom),
 		roomOwners: make(map[string]string),
 		wsTickets:  make(map[string]wsTicket),
@@ -123,6 +136,40 @@ func NewEngineHub(rdb *redis.Client, llmClient *llm.Client, cfClient *cloudflare
 		llm:        llmClient,
 		cf:         cfClient,
 	}
+	// P1-AGT-004 / D8.3: an empty MCP surface is installed by default so the
+	// route surface is always coherent. NewSurface only fails on a nil store,
+	// which the constructor never passes.
+	if surface, err := mcp.NewSurface(time.Now); err == nil {
+		hub.mcpSurface = surface
+	} else {
+		log.Printf("[engine] MCP surface not installed: %v", err)
+	}
+	return hub
+}
+
+// SetMCPSurface replaces the MCP trust surface (registry, policies, grants,
+// audit, gate and transport rule). Tests inject their own; production may add
+// registrations to the default surface.
+func (h *EngineHub) SetMCPSurface(surface *mcp.Surface) {
+	h.mcpSurface = surface
+}
+
+// MCPSurface returns the MCP trust surface the routes use (never nil for a hub
+// built by NewEngineHub).
+func (h *EngineHub) MCPSurface() *mcp.Surface {
+	return h.mcpSurface
+}
+
+// SetVaultStore attaches the generic credential store. A nil store is the
+// honest "not configured" state: every vault route and every secret-bearing
+// MCP policy answers 503 instead of resolving anything.
+func (h *EngineHub) SetVaultStore(store *vault.Store) {
+	h.vaultStore = store
+}
+
+// VaultStore returns the credential store, or nil when it is not configured.
+func (h *EngineHub) VaultStore() *vault.Store {
+	return h.vaultStore
 }
 
 // SetD1Client attaches the Cloudflare D1 client used for persistence

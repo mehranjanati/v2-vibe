@@ -10,6 +10,8 @@
  *   - sleep nodes map to step.sleep(nodeId, duration)
  *   - retry/timeout propagate 1:1 into step.do's WorkflowStepConfig
  *   - invalid/missing DAGs mark the instance failed + throw NonRetryableError
+ *   - P7.12 run control: a cancelled run is final, and a DAG needing an
+ *     unadvertised guarantee is refused before any step
  */
 
 import { describe, it, expect } from 'vitest';
@@ -22,6 +24,10 @@ import {
   type WorkflowRunResult,
   type WorkflowV2Document,
 } from './VibeWorkflow';
+import {
+  WORKFLOW_CAPABILITIES,
+  type CapabilityAdvertisement,
+} from './workflowCapabilities';
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -41,7 +47,14 @@ interface StepCall {
   duration?: unknown;
 }
 
-function makeStep(opts: { results?: Record<string, unknown>; invokeCallbacks?: boolean }) {
+function makeStep(opts: {
+  results?: Record<string, unknown>;
+  invokeCallbacks?: boolean;
+  /** P7.12: fires when a step starts, so a test can act mid-run. */
+  onStep?: (name: string) => void;
+  /** P7.12: makes one step throw, emulating a terminated instance. */
+  throwOn?: string;
+}) {
   const calls: StepCall[] = [];
   return {
     calls,
@@ -49,6 +62,12 @@ function makeStep(opts: { results?: Record<string, unknown>; invokeCallbacks?: b
       const config = typeof arg2 === 'function' ? undefined : arg2;
       const callback = typeof arg2 === 'function' ? arg2 : arg3;
       calls.push({ kind: 'do', name, config });
+      opts.onStep?.(name);
+      if (opts.throwOn === name) {
+        // What Cloudflare does to a terminated instance: the in-flight step
+        // throws, and the run's catch block runs.
+        throw new Error('vibe-workflow: instance terminated');
+      }
       if (opts.invokeCallbacks && callback) {
         return (callback as () => Promise<unknown>)();
       }
@@ -67,6 +86,9 @@ interface FakeWrite {
 
 function makeFakeDb(opts: { instance: FakeInstanceRow | null; dag: Record<string, unknown> | null }) {
   const writes: FakeWrite[] = [];
+  // P7.12: writes the `status <> 'cancelled'` guard refused, kept apart so a
+  // test can prove both "the runtime tried" and "the row did not move".
+  const refusedWrites: FakeWrite[] = [];
 
   class FakeStatement {
     private values: unknown[] = [];
@@ -86,7 +108,15 @@ function makeFakeDb(opts: { instance: FakeInstanceRow | null; dag: Record<string
     }
 
     async run(): Promise<{ success: boolean; meta: { changes: number; last_row_id: number } }> {
-      writes.push({ sql: this.sql, values: [...this.values] });
+      const write = { sql: this.sql, values: [...this.values] };
+      // Emulate the WHERE clause the production SQL carries: a guarded instance
+      // write cannot touch a row that an operator already cancelled.
+      const guarded = this.sql.includes('UPDATE workflow_instances') && this.sql.includes("status <> 'cancelled'");
+      if (guarded && opts.instance && opts.instance.status.trim().toLowerCase() === 'cancelled') {
+        refusedWrites.push(write);
+        return { success: true, meta: { changes: 0, last_row_id: 0 } };
+      }
+      writes.push(write);
       return { success: true, meta: { changes: 1, last_row_id: 1 } };
     }
 
@@ -102,6 +132,15 @@ function makeFakeDb(opts: { instance: FakeInstanceRow | null; dag: Record<string
       },
     },
     writes,
+    refusedWrites,
+    /** P7.12: the operator's cancel lands while the run is in flight. */
+    cancelInstance(): void {
+      if (opts.instance) opts.instance.status = 'cancelled';
+    },
+    /** The durable row as it stands after the run. */
+    instanceRow(): FakeInstanceRow | null {
+      return opts.instance;
+    },
   };
 }
 
@@ -115,8 +154,12 @@ function makeFakeDb(opts: { instance: FakeInstanceRow | null; dag: Record<string
  * two fields `run()` reads instead; `ctx.waitUntil` still lands in
  * `waitOnExecutionContext`.
  */
-function makeWorkflow(ctx: ExecutionContext, env: Env): VibeWorkflow {
-  const instance = Object.create(VibeWorkflow.prototype) as VibeWorkflow;
+function makeWorkflow(
+  ctx: ExecutionContext,
+  env: Env,
+  workflowClass: typeof VibeWorkflow = VibeWorkflow,
+): VibeWorkflow {
+  const instance = Object.create(workflowClass.prototype) as VibeWorkflow;
   for (const [key, value] of Object.entries({ ctx, env })) {
     Object.defineProperty(instance, key, {
       value,
@@ -142,11 +185,19 @@ async function runWorkflow(opts: {
   invokeCallbacks?: boolean;
   /** Owning tenant recorded on the DAG row (P0.7); null = unowned. */
   dagTenant?: string | null;
+  /** P7.12: run under a runtime whose advertisement differs from the deployed one. */
+  workflowClass?: typeof VibeWorkflow;
+  /** P7.12: cancel the durable row when this step starts (a mid-run cancel). */
+  cancelAtStep?: string;
+  /** P7.12: make this step throw (a terminated instance). */
+  throwOn?: string;
 }): Promise<{
   outcome: RunResult;
   callNames: string[];
   stepDoConfigs: Record<string, unknown>;
   writes: FakeWrite[];
+  refusedWrites: FakeWrite[];
+  instanceRow: FakeInstanceRow | null;
 }> {
   const fakeDb = makeFakeDb({
     instance:
@@ -161,12 +212,22 @@ async function runWorkflow(opts: {
         }
       : null,
   });
-  const step = makeStep({ results: opts.results, invokeCallbacks: opts.invokeCallbacks });
+  const step = makeStep({
+    results: opts.results,
+    invokeCallbacks: opts.invokeCallbacks,
+    throwOn: opts.throwOn,
+    onStep: opts.cancelAtStep
+      ? (name) => {
+          if (name === opts.cancelAtStep) fakeDb.cancelInstance();
+        }
+      : undefined,
+  });
   const ctx = createExecutionContext();
 
   const workflow = makeWorkflow(
     ctx as unknown as ExecutionContext,
     { DB: fakeDb.db } as unknown as Env,
+    opts.workflowClass,
   );
 
   let outcome: RunResult;
@@ -192,6 +253,8 @@ async function runWorkflow(opts: {
     callNames: step.calls.map((call) => call.name),
     stepDoConfigs,
     writes: fakeDb.writes,
+    refusedWrites: fakeDb.refusedWrites,
+    instanceRow: fakeDb.instanceRow(),
   };
 }
 
@@ -520,5 +583,121 @@ describe('VibeWorkflow — tenant isolation (P0.7)', () => {
 
     expect(outcome.success).toBe(true);
     expect(callNames).toEqual(['trigger']);
+  });
+});
+
+describe('VibeWorkflow — run control (P7.12)', () => {
+  /** A runtime that keeps only three of the four advertised guarantees. */
+  class NoLongSleepWorkflow extends VibeWorkflow {
+    static override readonly advertisedCapabilities: CapabilityAdvertisement = {
+      ...WORKFLOW_CAPABILITIES,
+      longSleep: false,
+    };
+  }
+
+  const sleepDag = (): WorkflowV2Document => ({
+    schemaVersion: 2,
+    nodes: [
+      { id: 'trigger', type: 'trigger' },
+      { id: 'wait', type: 'sleep', params: { duration: '1 second' } },
+    ],
+    edges: [{ source: 'trigger', target: 'wait' }],
+  });
+
+  it('advertises exactly the object it enforces', () => {
+    // One object, not two copies that can drift: the caller reads this and
+    // `run()` refuses against this.
+    expect(VibeWorkflow.advertisedCapabilities).toBe(WORKFLOW_CAPABILITIES);
+  });
+
+  it('writes nothing when the instance was already cancelled', async () => {
+    const { outcome, callNames, writes, refusedWrites } = await runWorkflow({
+      dag: sleepDag(),
+      instance: { workflow_id: 'wf-1', status: 'cancelled', input: null, user_id: null },
+    });
+
+    // A re-entered instance is a no-op: no step, no state write and no refusal.
+    // A final state must not be re-decided by the runtime.
+    expect(outcome.success).toBe(true);
+    expect(outcome.result).toEqual({ payload: {}, steps: {} });
+    expect(callNames).toEqual([]);
+    expect(writes).toEqual([]);
+    expect(refusedWrites).toEqual([]);
+  });
+
+  it('keeps a cancel that lands mid-run final: no succeeded rewrite', async () => {
+    const { outcome, callNames, writes, refusedWrites, instanceRow } = await runWorkflow({
+      dag: {
+        schemaVersion: 2,
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'gate', type: 'condition', params: { condOp: 'truthy', lhs: '${var.ok}' } },
+        ],
+        edges: [{ source: 'trigger', target: 'gate' }],
+      },
+      payload: { ok: true },
+      invokeCallbacks: true,
+      cancelAtStep: 'gate',
+    });
+
+    expect(outcome.success).toBe(true);
+    expect(callNames).toEqual(['trigger', 'gate']);
+    // `running` was written before the cancel landed; `succeeded` was refused
+    // by the `status <> 'cancelled'` guard — the operator's decision wins.
+    expect(instanceStatus(writes, 'running')).toBe(true);
+    expect(instanceStatus(writes, 'succeeded')).toBe(false);
+    expect(refusedWrites.some((write) => write.values[0] === 'succeeded')).toBe(true);
+    expect(instanceRow?.status).toBe('cancelled');
+  });
+
+  it('never rewrites a cancelled run as failed when the instance is terminated', async () => {
+    const { outcome, writes, refusedWrites, instanceRow } = await runWorkflow({
+      dag: {
+        schemaVersion: 2,
+        nodes: [
+          { id: 'trigger', type: 'trigger' },
+          { id: 'gate', type: 'condition', params: { condOp: 'truthy', lhs: '${var.ok}' } },
+        ],
+        edges: [{ source: 'trigger', target: 'gate' }],
+      },
+      payload: { ok: true },
+      invokeCallbacks: true,
+      cancelAtStep: 'gate',
+      // What Cloudflare does to a terminated instance: the in-flight step throws.
+      throwOn: 'gate',
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.error?.message).toContain('terminated');
+    // The catch block tried to mark the run failed; the guard refused it, so
+    // the row still says `cancelled` and the refused-vs-failed distinction holds.
+    expect(instanceStatus(writes, 'failed')).toBe(false);
+    expect(refusedWrites.some((write) => write.values[0] === 'failed')).toBe(true);
+    expect(instanceRow?.status).toBe('cancelled');
+  });
+
+  it('refuses a DAG that needs an unadvertised guarantee, before any step', async () => {
+    const { outcome, callNames, writes } = await runWorkflow({
+      dag: sleepDag(),
+      workflowClass: NoLongSleepWorkflow,
+    });
+
+    expect(outcome.success).toBe(false);
+    expect(outcome.error).toBeInstanceOf(NonRetryableError);
+    expect(outcome.error?.message).toContain('longSleep');
+    expect(outcome.error?.message).toContain('does not advertise');
+    // Refusal, not degradation: no step ran, the run never went `running`, and
+    // the only write is the honest failure that says why.
+    expect(callNames).toEqual([]);
+    expect(instanceStatus(writes, 'running')).toBe(false);
+    expect(instanceStatus(writes, 'failed')).toBe(true);
+    expect(writes).toHaveLength(1);
+  });
+
+  it('admits the same DAG when the runtime advertises the guarantee', async () => {
+    const { outcome, callNames } = await runWorkflow({ dag: sleepDag() });
+
+    expect(outcome.success).toBe(true);
+    expect(callNames).toEqual(['trigger', 'wait']);
   });
 });

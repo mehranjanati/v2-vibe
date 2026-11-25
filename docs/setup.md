@@ -92,7 +92,8 @@ Three places hold configuration; these are the values the live planes actually r
 
 | Key | Purpose |
 |---|---|
-| `JWT_SECRET` | Signs session tokens (`worker/light/lightApp.ts`) |
+| `JWT_SECRET` | Signs session tokens (`worker/light/lightApp.ts`); also derives the Edge credential-vault key, so the control plane accepts it as the fallback for `VAULT_SECRET` |
+| `VAULT_SECRET` | Optional. Derives the control plane's credential-vault key (`backend/pkg/vault`). When unset, `JWT_SECRET` is used; when neither exists the vault routes answer 503 and a secret-bearing MCP policy is refused — never stored as plaintext |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | Deploy and D1 access (`bun run deploy`, `bun run db:migrate:remote`) |
 | `GITHUB_EXPORTER_CLIENT_ID`, `GITHUB_EXPORTER_CLIENT_SECRET` | GitHub login and GitHub export; unset means `/api/auth/providers` reports `github: false` and only email/password is offered |
 | `CONTROL_PLANE_URL` | Optional control-plane base URL for the Worker (`VITE_CONTROL_PLANE_URL` is what the SPA reads) |

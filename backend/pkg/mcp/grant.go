@@ -152,6 +152,16 @@ func (s *Store) lookup(id Identity, grantID string) (Grant, bool) {
 	return g, ok
 }
 
+// Get returns one of the tenant's grants. Unknown or another tenant's id is
+// (zero, false) — the same wall `lookup` enforces for execution, exposed so a
+// route can refuse before dialing (e.g. a tool whose policy needs the vault).
+func (s *Store) Get(id Identity, grantID string) (Grant, bool) {
+	if !id.Valid() {
+		return Grant{}, false
+	}
+	return s.lookup(id, grantID)
+}
+
 // List returns the tenant's grants in ID order, including revoked ones
 // (audit history, not a live set).
 func (s *Store) List(id Identity) []Grant {

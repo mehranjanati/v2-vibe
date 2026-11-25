@@ -1,4 +1,4 @@
-# DEV STATUS — Current-State Dashboard (2026-11-14)
+# DEV STATUS — Current-State Dashboard (2026-11-24)
 
 > Single concise current-state dashboard. This file describes **current reality**
 > and points elsewhere; it does not duplicate the backlog
@@ -126,6 +126,10 @@ platform yet. Per-task evidence in the checklist; specs in `DEV_SPEC_*.md`.
 | P1.3.3 write attribution + fork | `backend/pkg/engine/write_authors_test.go` (per-path `author_agent` through one real Start→Finish: coder / gapfill / delete-row / NULL-manual, plus the agent-only negative); fork flag in `backend/pkg/engine/generation.go` (`generations.fork` + `generation_forked` audit); `go test -race ./pkg/engine/ -run 'WriteAuthor\|Generation\|DualModel'` green |
 | P1.3.4 internal Git (D1-CAS) | `backend/pkg/engine/gitrepo.go` (`d1Storer` go-git Storer over `git_objects`/`git_refs`; `Init/Commit/Log/Diff/Revert` with real Git SHAs) + `worker/database/schema.ts` tables + `migrations/0015_skinny_tomorrow_man.sql`; `backend/pkg/engine/gitrepo_test.go` (4 cases: chain, storage contract + dedupe, fresh-handle reload, error modes) over the emulated D1 REST envelope |
 | Agent reconnect contract (2026-11-21) | `GET /api/agent/:id/connect` answers `{success, data:{agentId, websocketUrl}}` — the shape `src/lib/api-client.ts#connectToAgent` and `sdk/src/client.ts#connect` read (a flat body made every chat reopen fail); pinned by `backend/pkg/api/agent_connect_contract_test.go`; reopening a chat, its VFS and the History tab verified in a browser against production |
+| Credential vault proof (2026-11-24) | `backend/pkg/vault` (AES-256-GCM envelopes, AAD `vault:<tenant>:<name>`, migration `0020`) + four session-guarded `/api/vault` routes; 5 store tests + 5 route tests; resolution is call-time only and lands as the MCP transport's `Authorization: Bearer` header |
+| Activation core proof (2026-11-25) | `backend/pkg/activation` — pure `Decide()` (deny-overrides, default-deny, `E_ACTIVATION_ESCALATION` + audit, budget-before-bound, ranking intersection, canonical record with `decidedAt` excluded); 12 test functions incl. -race; go/parser import scan proves no `backend/pkg/mcp`/exec/SQL in non-test code |
+| MCP route surface proof (2026-11-24) | `backend/pkg/api/mcp.go` (six session-guarded routes over `mcp.Gate`; grants only against a reviewed policy, `vault:` policies 503, `stdio://` never dialed) with 7 route tests in `backend/pkg/api/mcp_test.go`, the SSE binding in `backend/pkg/mcp/sse.go` (+7 tests), and `scripts/postman-route-contract.json` carrying 40 control routes |
+| P7.12 run control proof (2026-11-24) | `backend/pkg/api/workflows_control_test.go` (8 route-test functions + 8 subtests green locally over the emulated D1/Workflows API) with the fake-D1 control surface in `backend/pkg/api/workflows_auth_test.go`; `worker/workflow/VibeWorkflow.test.ts` run-control cases (cancel finality, terminated run never rewritten as failed, capability refusal) — CI-run because workerd cannot start on macOS 12.7.6 |
 
 <a id="implemented-but-unverified"></a>
 

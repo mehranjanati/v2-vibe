@@ -14,8 +14,16 @@
  * step logs land in workflow_step_logs. Two layers, two honest answers.
  */
 
+/** The guarantees a runtime advertises; `false` means "refuse, do not degrade". */
+export interface CapabilityAdvertisement {
+  cancel: boolean;
+  pause: boolean;
+  longSleep: boolean;
+  history: boolean;
+}
+
 /** The guarantees the deployed runtime keeps. */
-export const WORKFLOW_CAPABILITIES = {
+export const WORKFLOW_CAPABILITIES: CapabilityAdvertisement = {
   /** A run can be terminated; the state becomes `cancelled` and stays final. */
   cancel: true,
   /** A running run can be held at its next step boundary and resumed. */
@@ -24,7 +32,7 @@ export const WORKFLOW_CAPABILITIES = {
   longSleep: true,
   /** Per-step rows are written to workflow_step_logs (best effort). */
   history: true,
-} as const;
+};
 
 export type WorkflowCapability = keyof typeof WORKFLOW_CAPABILITIES;
 
@@ -48,12 +56,19 @@ export function isCancelled(status: string | null | undefined): boolean {
 }
 
 /**
- * Returns the capabilities a run needs that this runtime does not advertise.
+ * Returns the capabilities a run needs that the runtime does not advertise.
  * Admission refuses the run when the list is non-empty: a missing guarantee is
  * a refusal, not a degraded run.
+ *
+ * The advertisement is a parameter so the rule can be proven against a runtime
+ * that keeps less than the deployed one — and so the refuser and the advertised
+ * answer are always the same object (never two copies that drift).
  */
-export function missingCapabilities(required: readonly WorkflowCapability[]): WorkflowCapability[] {
-  return required.filter((capability) => WORKFLOW_CAPABILITIES[capability] !== true);
+export function missingCapabilities(
+  required: readonly WorkflowCapability[],
+  advertisement: CapabilityAdvertisement = WORKFLOW_CAPABILITIES,
+): WorkflowCapability[] {
+  return required.filter((capability) => advertisement[capability] !== true);
 }
 
 /**

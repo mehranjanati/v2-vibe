@@ -18,9 +18,9 @@ Every integration lands as a **loader onto one core** (Tool Manifest → `mcp.Ga
 → AuditSink), never as a new engine. Recommended order, each a standalone task
 with the explicit tests from the matching proposal:
 
-1. `P1-AGT-004` (already tasked): finish the MCP surface — authenticated
+1. `P1-AGT-004` (**DONE 2026-11-24**): finish the MCP surface — authenticated
    grant/revoke/discover/execute routes, `SSETransport`, generic `vault:` store
-   (proposal: MCP appendix A). The stdio PoC (`P1-AGT-003`) stays the execution
+   (proposal: MCP appendix A; D8.2/D8.3/D8.4). The stdio PoC (`P1-AGT-003`) stays the execution
    proving ground; the loader tasks make it product-usable.
 2. `P7-SKL-001` (proposed): Skill Loader — `SKILL.md` frontmatter validation
    (agentskills.io: `name` 1–64 chars, `description` 1–1024, SPDX license tag),

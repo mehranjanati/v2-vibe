@@ -387,6 +387,26 @@ func RegisterRoutes(app *fiber.App, hub *engine.EngineHub) {
 	app.Post("/api/workflows/resume", guard, workflowGuard(hub), handleWorkflowControl(hub, "resume"))
 	app.Get("/api/workflows/:workflowId", guard, workflowGuard(hub), handleWorkflowGet(hub))
 
+	// P1-AGT-004 / D8.3: the authenticated MCP surface. Every route runs the
+	// session guard; the tenant is taken from the session, never the body.
+	// There is no registration route (platform configuration, P7.6 owns
+	// persistence) and no credential resolution (the generic store is still
+	// closed by D8). See mcp.go.
+	app.Get("/api/mcp/servers", guard, handleMCPListServers(hub))
+	app.Get("/api/mcp/servers/:server/tools", guard, handleMCPDiscover(hub))
+	app.Get("/api/mcp/grants", guard, handleMCPListGrants(hub))
+	app.Post("/api/mcp/grants", guard, handleMCPIssueGrant(hub))
+	app.Post("/api/mcp/grants/:grantId/revoke", guard, handleMCPRevokeGrant(hub))
+	app.Post("/api/mcp/call", guard, handleMCPCall(hub))
+
+	// P1-AGT-004 / D8.4: the generic credential store. Session-guarded, tenant
+	// from the session, and no route ever returns a value — resolution happens
+	// only inside a granted MCP call. See vault.go.
+	app.Get("/api/vault/status", guard, handleVaultStatus(hub))
+	app.Get("/api/vault/secrets", guard, handleVaultListSecrets(hub))
+	app.Post("/api/vault/secrets", guard, handleVaultPutSecret(hub))
+	app.Delete("/api/vault/secrets/:name", guard, handleVaultDeleteSecret(hub))
+
 	// WebSocket: real-time agent channel. P0.5: the upgrade runs the session
 	// boundary first (a no-op until CONTROL_PLANE_REQUIRE_SESSION installs a
 	// verifier), so a connection without a valid ticket/session is rejected

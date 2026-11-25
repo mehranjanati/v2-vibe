@@ -1,0 +1,53 @@
+# ADI Implementation Evidence Matrix (2026-11-24, HEAD `ad69c8b`)
+
+> **Purpose:** the single evidence-backed inventory linking every ADI capability
+> to code, migration, test, CI and commit evidence. Claims without a row here
+> are design statements, not implementation statements. Status vocabulary for
+> this file: `IMPLEMENTED_VERIFIED` | `IMPLEMENTED_NOT_VERIFIED` | `PARTIAL` |
+> `DESIGN_ONLY` | `BLOCKED` | `DEFERRED` | `NEXT` | `NOT_STARTED`.
+> **Scope note:** this audit re-ran `go test ./...` locally (green, 2026-11-24);
+> workerd-gated suites remain CI-only on this host, recorded per row.
+>
+> Canonical contracts: `adaptive-intelligence-architecture.md` (table S11 is the
+> status summary; this file is the evidence behind it),
+> `adr-adaptive-intelligence-boundaries.md`.
+> Task tracking: `../tasks/MASTER_BACKLOG.json`, `../tasks/DEPENDENCY_GRAPH.md`,
+> `../tasks/NEXT_EXECUTION.md`.
+
+## 1. Verdicts (part 1: IR through run admission)
+
+| capability_id | status | implementation_path | symbols_or_functions | migration_files / schema_objects | test_files / test_names | verification / commit |
+|---|---|---|---|---|---|---|
+| ADI_IR: System IR Go reader + docs gate parity | IMPLEMENTED_VERIFIED | `backend/pkg/ir/system.go`, `scripts/validate-system-ir.mjs`, `docs/architecture/manifest-schemas/system.schema.json` | `Load`, `Canonicalize` (`backend/pkg/ir/system.go`) | none (no schema change) | `backend/pkg/ir/system_test.go`: `TestLoadAcceptsTheFourCases`, `TestRejectsParityProbes`, `TestRejectsTrailingAndDuplicateKeys`, `TestPositiveControlLoads`; gate: 17 probes + shared positive control `docs/architecture/system-ir/positive-control.system.json` | MANUAL_VERIFICATION local `go test ./pkg/ir/` green 2026-11-24; CI `go-test` job; commit `56da19a`. Cycles/reachability are IR-boundary errors by decision. |
+| ADI_COMPOSITION: resolver, bundled mode | IMPLEMENTED_VERIFIED | `backend/pkg/composition/resolve.go`, `source.go`, `ref.go`, `lock.go` | `Resolve` (`backend/pkg/composition/resolve.go:90`), `AssetSource`, `CompilerVersion` (`backend/pkg/composition/lock.go:21`) | none (pure function, no store) | `backend/pkg/composition/resolve_test.go`: `TestP1EmptyClosureFromRealBundledSet` through `TestP6ReResolutionIsIdentical`, `TestN1InvalidManifestRefusedBeforeFetch` through `TestN12SourceUnavailableIsNotMissing`, `TestD1HundredResolutionsAreIdentical` through `TestD3ConcurrentResolutionsAgree`, `TestG1GoldenLock` (24 tests incl. `-race`); golden `backend/pkg/composition/testdata/m1-team.lock.json` | MANUAL_VERIFICATION local green incl. `-race` per commit evidence, re-run green 2026-11-24; CI `go-test`; commit `309af45`. Bundled mode only: refs outside the bundle refuse `E_MISSING` until a registry exists (ADI-ECO-002, O27). |
+| ADI_SNAPSHOT: persistence, Verify, AdmitRun | IMPLEMENTED_VERIFIED | `backend/pkg/composition/snapshot.go`, `backend/pkg/composition/d1store/d1store.go` | `NewSnapshot` (`backend/pkg/composition/snapshot.go:65`), `Verify` (`backend/pkg/composition/snapshot.go:114`), `AdmitRun` (`backend/pkg/composition/snapshot.go:159`) | `migrations/0017_nebulous_shatterstar.sql`: `composition_snapshots` (10 cols), tenant + system_ref indexes, nullable `snapshot_id` on `workflow_instances`; mirrored in `worker/database/schema.ts` | `snapshot_test.go`: `TestS1SnapshotIdentityIsTheLockDigest` through `TestS7CompletedRunKeepsItsClosure`; `d1store_test.go`: `TestD1PersistIsAppendOnly` through `TestD6UnconfiguredStoreRefuses` (13 tests) | MANUAL_VERIFICATION local green 2026-11-24; migration files on disk; CI `go-test`; commit `309af45`. Append-only, no UPDATE; cross-tenant second write is `ErrSnapshotTenant`. No reaper. |
+| ADI_RUN_ADMISSION: binding + producer | IMPLEMENTED_VERIFIED | `backend/pkg/api/workflows.go`, `backend/pkg/engine/hub.go` | `produceRunSnapshot` (`backend/pkg/api/workflows.go:218`), `AdmitRunSnapshot`/`SetSnapshotBinding` (`backend/pkg/engine/hub.go`), `plan.Compile` (`backend/pkg/api/workflows.go:282`) | `migrations/0019_cynical_madame_web.sql`: `plan_kind`, `plan_digest`, `compiler_version` on `workflow_instances` (NULL unless compiled) | `workflows_snapshot_test.go`: 7 guard tests (`TestSnapshotGuardBindsValidRun` through `TestSnapshotGuardRequiredWithoutStoreRefuses`); `workflows_produce_test.go`: 12 tests (`TestProduceResolvesPersistsCompilesAndStarts`, `TestProduceIsContentAddressed`, `TestProduceRefusesAgenticShapeButKeepsTheSnapshot`, `TestProduceRefusesAssetOutsideTheBundle`, `TestProduceSatisfiesRequireSnapshot`, `TestProduceWithoutSourceOrStoreIs503`, `TestSnapshotIdRunKeepsPlanIdentityEmpty`, `TestProduceAndSnapshotIdAreMutuallyExclusive` + 4); `bundle_test.go`: `TestBundleMatchesDocsExamples`, `TestBundleResolvesAndRefusesHonestly` | MANUAL_VERIFICATION local green + `-race` per commit evidence, re-run green 2026-11-24; CI `go-test`; commits `309af45` + `ad69c8b`. Opt-in `CONTROL_PLANE_REQUIRE_SNAPSHOT` (default off); 4-file example bundle; agentic resolves+persists but refuses `E_BIND_SHAPE` (snapshot kept, no run); `snapshotId`+`system` is 400; no SPA caller yet; outcome route unregistered. |
+| ADI_COMPILER: plan compiler, procedural only | IMPLEMENTED_VERIFIED | `backend/pkg/plan/plan.go` | `Compile` (`backend/pkg/plan/plan.go:105`), `CompilerVersion` (`backend/pkg/plan/plan.go:16`, `vibesdk-plan/0.1.0`) | none (plan recomputed, never stored as blob) | `backend/pkg/plan/plan_test.go`: `TestB1CompilesVisualWorkflow` through `TestB10OnErrorCarriedNotGated` (10 tests) | MANUAL_VERIFICATION local green 2026-11-24; CI `go-test`; commit `309af45`. Agentic refused `E_BIND_SHAPE` by design; see proposed `adr-agentic-execution.md`. |
+## 2. Verdicts (part 2: memory, evaluation, design-only, blocked)
+
+| capability_id | status | contract_or_scope | code_search_result | tests | note |
+|---|---|---|---|---|---|
+| ADI_MEMORY: provider + D1 adapter, lexical | PARTIAL | `backend/pkg/memory/memory.go`, `d1store/d1store.go` | `Provider`, lexical `Score`, `SemanticRecall: false` | `d1store_test.go`: `TestM1RoundTrip` through `TestM10CapabilitiesAreHonest`, `TestRememberIsIdempotent` (11 tests) | MANUAL_VERIFICATION green 2026-11-24; commit `309af45`. No route, no agent caller (D8 untouched); no embeddings; cross-tenant `Forget` is 0. Retrieval contract DESIGN_ONLY. |
+| ADI_EVALUATION: runner L1+L2 | PARTIAL | `backend/pkg/evaluation/runner.go` | `Evaluate` (`backend/pkg/evaluation/runner.go:21`), exit codes 0/1/2/3 | `runner_test.go`: `TestE1StructuralAndCapabilityPass` through `TestE12UnpinnedDatasetBlocks` (13 tests) | MANUAL_VERIFICATION green 2026-11-24; commit `309af45`. L3-L5 are `not_evaluated`; no dataset catalog (O28); no runtime integration. |
+| ADI_CONTEXT (ADI-CTX-001) | DESIGN_ONLY | `context-assembly.md`: envelope, bounds, drop order, codes | none (`grep Assemble|ContextEnvelope` over `backend/pkg/` empty) | S9 lists 8 future tests; none exist | CODE_INSPECTION absence verified 2026-11-24; design `5c30088`. |
+| ADI_ACTIVATION (ADI-CTX-002) | DESIGN_ONLY | `activation-policy.md`: eligibility/ranking/gate split, invariant, deny-overrides | none (`grep ActivationEngine|DecisionTrace` empty) | S10 lists 10 future tests; none exist | CODE_INSPECTION absence verified 2026-11-24; design `5c30088`. Reuses `mcp.Gate`; mints no grants. |
+| ADI_ACTIVATION_ENGINE (ADI-CTX-003) | DONE (2026-11-25, eligibility core) | `backend/pkg/activation` (`decide.go` `Decide`, `policy.go` validation, `evaluate.go` stage A, `record.go` Canonical/Digest) | pure `Decide` over (envelope, policy, closure, grants); deny-overrides, default-deny, E_ACTIVATION_ESCALATION+audit, budget-before-bound, ranking intersection | `activation_test.go`: `TestDenyOverridesAllow` through `TestBudgetRefusalOnlyWhenMinCapabilitiesPositive` (12 functions, 14 named cases incl. negative scan + vocabulary parity) | Library only: no route, no store, no caller, no clock (D8 untouched). |
+| ADI_TRACE (ADI-CTX-004) | NOT_STARTED | shape in `context-activation-and-memory.md` S5 + `activation-policy.md` S5 | none | none | Depends on ADI-CTX-003. No store, no writer. |
+| ADI_EVENTS (ADI-EVT-001/002/003) | DESIGN_ONLY | `event-envelope.md`, `durable-event-delivery.md`, `event-to-activation.md` | none (`grep EventEnvelope|Outbox|Inbox|Dispatcher` empty) | none | CODE_INSPECTION absence verified 2026-11-24; design `5c30088`. No broker/transport; events feed context, never authority. EVT-002 also blocked on `P7-RUN-001`. |
+
+| ADI_EVOLUTION (ADI-EVAL-003/004 + contracts) | DESIGN_ONLY | `candidate-lifecycle.md`, `promotion-and-rollback.md`, `evaluation-contract.md`, `benchmark-runner.md` | none | none (runner tests cover L1/L2 only) | CODE_INSPECTION verified 2026-11-24; design `5c30088` + `309af45`. Candidate = snapshot, stable = pointer, CAS, 4-condition conjunction; no executor/scheduler, no self-modification. |
+| ADI_REGISTRY (ADI-ECO-001..004) | DESIGN_ONLY (bundle rules) / BLOCKED (registry+) | bundle rules in `composition-lock.md`; no registry code or publish APIs | bundled `AssetSource` (`bundle/bundle.go`) is the stand-in, not a registry | `TestBundleMatchesDocsExamples` pins the stand-in | Blocked on O24/O25/O27. No implementation until decided. |
+
+## 3. Reconciliation notes (vs the 2026-11-23 narrative)
+
+1. Producer gap closed: `ad69c8b` (ADI-FOUND-004c) shipped the producer, answering the "still missing: a producer" note in `adaptive-intelligence-architecture.md` S11.
+2. Memory has a store: S11 "no store exists yet" predates ADI-MEM-001a; corrected to PARTIAL with lexical/D1/no-caller limits.
+3. Binding design has an implementation: ADI-FOUND-005a (`backend/pkg/plan`) sits next to the ADI-FOUND-005 design row.
+4. Counts: 32 ADI task IDs — 26 DONE (14 design-only + 12 code; ADI-CTX-003 joined 2026-11-25), 6 TODO (ADI-CTX-004, ADI-ECO-001..004).
+5. No silent reclassification: design-only DONE stays design-only; code DONE without a caller is PARTIAL; local green is MANUAL_VERIFICATION, not CI proof.
+
+## 4. NEXT determination
+
+- DONE 2026-11-24: `P1-AGT-004` (D8.2 SSE binding, D8.3 authenticated routes, D8.4 server-side credential store) — the named dependency of ADI-CTX-003 and ADI-ECO-001 is now satisfied. The next executable step is the owner decision on O1 evidence, not code.
+- DONE 2026-11-25: `ADI-CTX-003` — `backend/pkg/activation`, the eligibility core as a pure `Decide()`; 12 test functions green (`go test -race ./pkg/activation/`), import scan proves no `backend/pkg/mcp`/exec/SQL in non-test code.
+- PROPOSED (never NEXT without ADR): agentic execution — see `adr-agentic-execution.md`. No `agent` node kind, no topology executor, no lowering until decided.

@@ -1140,3 +1140,25 @@ export type GenerationAudit = typeof generationAudits.$inferSelect;
 export type NewGenerationAudit = typeof generationAudits.$inferInsert;
 export type MemoryRecord = typeof memoryRecords.$inferSelect;
 export type NewMemoryRecord = typeof memoryRecords.$inferInsert;
+
+// P1-AGT-004 / D8.4 — the generic credential vault.
+//
+// One row per (tenant, secret name). `envelope` is an AES-256-GCM envelope
+// (`enc:v1:<iv>:<ct>`) written by the control plane's backend/pkg/vault, which
+// derives its key exactly like worker/light/tokenVault.ts so both planes speak
+// one format; the plaintext never reaches D1. The AAD binds the ciphertext to
+// `vault:<userId>:<name>`, so a row copied between users (or names) fails to
+// open instead of leaking another tenant's credential.
+export const vaultSecrets = sqliteTable('vault_secrets', {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(), // the ref body: `vault:<name>`
+    envelope: text('envelope').notNull(), // enc:v1:<iv-b64>:<ct-b64>
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+}, (table) => ({
+    userNameIdx: uniqueIndex('vault_secrets_user_name_idx').on(table.userId, table.name),
+}));
+
+export type VaultSecret = typeof vaultSecrets.$inferSelect;
+export type NewVaultSecret = typeof vaultSecrets.$inferInsert;

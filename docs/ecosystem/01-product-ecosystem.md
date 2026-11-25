@@ -5,12 +5,19 @@
 > Strategy apex: `12-agentic-platform-strategy.md`.
 > Status labels: IMPLEMENTED / PARTIAL / DESIGNED / PLANNED / RESEARCH —
 > defined in `18-glossary-and-architecture-terms.md`.
+> Market reference: `20-market-and-competition.md`.
 
 ## Principle
 
 Every product below is a distinct product with its own surface, API, SDK,
 deployment model, release lifecycle, docs, and commercial offer. They stay
 interoperable through shared platform contracts, never through duplication.
+
+Products differ in surface, composition, and commercial offer — never in
+control plane, identity, System IR, runtime contract, memory scopes, or
+audit. Technical differentiation lives only in scale, provider adapters,
+and tool/MCP surface. No product builds its own control plane, identity
+truth, IR dialect, execution engine, or audit sink.
 
 ## 1. Vibe Assistant — General-purpose AI assistant (PLANNED)
 

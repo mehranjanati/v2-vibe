@@ -35,15 +35,25 @@ serialization, 4 fixtures + 6 negative probes in parity with the docs gate), and
 P1-AGT-003 (MCP stdio transport: a real spawned server round-trip through the
 trust gate, with the grantless call refusing to spawn at all).
 
-Next unblocked work: **`P1-AGT-004`** is still gated by D8 (authenticated MCP
-routes + credential store need O1 evidence). Everything else in the backlog is
-DONE or OBSOLETE; the live options are:
+Next unblocked work: **`ADI-CTX-003` is DONE (2026-11-25)** — `backend/pkg/activation`,
+the eligibility core as a pure `Decide()` (deny-overrides, default-deny,
+E_ACTIVATION_ESCALATION + audit, budget-before-bound, ranking intersection,
+canonical record), 12 test functions green incl. -race. It is a library: no
+route, no store, no caller, no clock, so D8 stays untouched. The next prepared
+task is `ADI-CTX-004` (persist the decision record); beyond that the live
+options are:
 (a) run the Cloudflare adapter against a deployed workflow (needs an account +
-credentials) to close P7.11's live half,
-(b) add the cancel-finality and capability-refusal cases to
-`worker/workflow/VibeWorkflow.test.ts` and the route-auth tests for the three new
-control endpoints — this is the CI proof P7.12 still owes, or
-(c) a real WASM/container `Sandbox` behind `toolsearch.CodeMode`.
+credentials) to close P7.11's live half, or
+(b) a real WASM/container `Sandbox` behind `toolsearch.CodeMode`.
+
+The P7.12 proof that used to sit between them is DONE (2026-11-24): the eight
+route-test functions in `backend/pkg/api/workflows_control_test.go` are green
+locally over the emulated D1 + Workflows API (401 incl. capabilities, 403 +
+audit, 404 unknown/foreign, 409 on every terminal state, 502 with no write on a
+runtime refusal, transition-guarded pause/resume, defaulted cancel reason), and
+the cancel-finality + capability-refusal cases now exist in
+`worker/workflow/VibeWorkflow.test.ts` — they run in CI because workerd cannot
+start on macOS 12.7.6.
 
 Done 2026-11-23 (loaders + search): **`P7-SKL-001`** — `backend/pkg/agentskills`, the
 agentskills.io loader on the D18 contract: frontmatter validation with
@@ -128,9 +138,9 @@ Done 2026-11-23 (ADI-MEM-004, design only): `docs/architecture/context-retrieval
 
 **Every ADI design task that can be closed without an open decision is now closed (37/45).** What remains is deliberately blocked, not pending:
 
-- `ADI-CTX-003` / `ADI-CTX-004` (activation engine and decision trace) depend on ADI-MEM-004 by graph, and they are the point where design stops paying: an engine needs a caller, and no run today carries a snapshot or an envelope.
+- `ADI-CTX-003` is DONE 2026-11-25 (the eligibility core exists as a pure library); `ADI-CTX-004` (persist the record) is the remaining trace piece. Neither has a caller yet: no run today carries a snapshot or an envelope, so the engine stays a library until a caller is decided.
 - `ADI-ECO-001..004` stay blocked on the registry storage shape (O27), provenance depth (O25) and vault rotation (O24). Opening them without those decisions would be the speculative infrastructure the mission forbids.
-- `P1-AGT-004` stays D8-gated.
+- `P1-AGT-004` is DONE 2026-11-24 (D8.2/D8.3/D8.4); `ADI-CTX-003` is DONE 2026-11-25 on top of it. The next owner gate is a caller for activation (ADI-CTX-004 + a run that carries an envelope).
 
 Done 2026-11-23 (ADI-MEM-001a, first memory code): `backend/pkg/memory` (types, Provider, validation, scope ladder, total ordering, lexical score, content ids, secret scan) plus `backend/pkg/memory/d1store` (D1 adapter over a two-method Querier, `ON CONFLICT DO NOTHING`, bounded recall, real forget counts, `NewWithoutTTL` so the refusal path is reachable) and additive migration `0018` with a `memory_records` table. 11 tests green; `go vet`, the whole backend suite, `typecheck` and `eslint` all clean. The storage decision is recorded in `memory-provider.md` §10: **D1 with `expires_at`**, revisited only on a measured latency problem. Honest limits: lexical only (`SemanticRecall: false`), no route, no agent caller, no embedding model.
 
@@ -159,14 +169,14 @@ the end-to-end proof; binding and producing are different intents and are
 refused together; `CONTROL_PLANE_REQUIRE_SNAPSHOT` is now satisfiable and
 stays off by default.
 
-Next steps, in dependency order:
-1. **`ADI-CTX-003`** (activation engine) — a run that exists and a plan whose
-   steps name capabilities are both real now.
-2. **Agentic execution** — needs an ADR (a new `agent` node kind, or a
-   topology-aware executor); deliberately not presumed.
-3. **`ADI-ECO-001..004`** — blocked on O24/O25/O27 decisions; the bundled
-   catalog is the honest stand-in until the registry lands.
+Next steps, in dependency order (2026-11-24 audit):
+1. **`P1-AGT-004`** — **DONE 2026-11-24** (D8.2/D8.3/D8.4): SSE binding (`backend/pkg/mcp/sse.go`, 7 tests), session-guarded routes (`backend/pkg/api/mcp.go`, 7 route tests, 6 routes) and the generic credential store (`backend/pkg/vault` + 4 `/api/vault/*` routes, migration `0020`, 10 tests) with call-time resolution into the MCP transport. `ADI-CTX-003`'s grants dependency is satisfied; starting it is the next owner gate.
+2. **`ADI-CTX-003`** — **DONE 2026-11-25**: `backend/pkg/activation`, the eligibility core as a pure `Decide()` (deny-overrides, default-deny, closure invariant with E_ACTIVATION_ESCALATION + audit, budget-before-bound, ranking intersection, canonical record with decidedAt excluded). 12 test functions incl. -race; the import scan proves no `backend/pkg/mcp`/exec/SQL in non-test code, so D8 is untouched. Next: `ADI-CTX-004` persists the record. Evidence matrix: `architecture/adi-implementation-evidence.md`.
+3. **Agentic execution** — PROPOSED ADR `architecture/adr-agentic-execution.md` (options: new `agent` node kind vs topology-aware executor vs keep refusing; lowering rejected by default). Deliberately not presumed; never NEXT without a decision.
+4. **`ADI-ECO-001..004`** — BLOCKED on O24/O25/O27 decisions; the bundled catalog is the honest stand-in until the registry lands.
 
 History (superseded): ADI-FOUND-001a was originally scoped as validation tightening under the existing contracts — no new capability, so D8 was unaffected, and ADI-FOUND-002 was made to depend on it because a lock cannot be deterministic over two different validity answers. That reasoning held; the work is now DONE.
 
-ADI note (2026-11-23): the 23 ADI-FOUND/CTX/MEM/EVT/EVAL/ECO tasks are PROPOSED design work, all BLOCKED on dependencies/decisions (lock/resolver, grants surface, durable idempotency, registry/provenance). None enters NEXT_EXECUTION until unblocked; D8/D9 gates unchanged.
+ADI note (2026-11-23, superseded 2026-11-24): the 23 ADI-FOUND/CTX/MEM/EVT/EVAL/ECO tasks were PROPOSED design work, all BLOCKED on dependencies/decisions (lock/resolver, grants surface, durable idempotency, registry/provenance). None enters NEXT_EXECUTION until unblocked; D8/D9 gates unchanged.
+
+ADI audit (2026-11-24, HEAD `ad69c8b`; updated 2026-11-25): 32 ADI task IDs — 26 DONE (14 design-only DONE + 12 code DONE: resolver `backend/pkg/composition`, snapshot store + `Verify`/`AdmitRun`, live binding `ADI-FOUND-004b`, producer `ADI-FOUND-004c`, plan compiler `backend/pkg/plan`, lexical memory `backend/pkg/memory`, L1+L2 evaluation `backend/pkg/evaluation`, activation core `backend/pkg/activation`), 6 BLOCKED (`ADI-CTX-004` trace persistence — dependency satisfied, `ADI-ECO-001..004`). Evidence matrix: `architecture/adi-implementation-evidence.md` (every capability linked to file:line code, migration, test names, local `go test ./...` green + CI `go-test`, commit SHAs). Agentic execution is a PROPOSED ADR (`architecture/adr-agentic-execution.md`), not an implementation. `P1-AGT-004` DONE 2026-11-24 (D8.2/D8.3/D8.4); `ADI-CTX-003` DONE 2026-11-25. D8/D9 gates unchanged.

@@ -362,23 +362,25 @@ something to compare in every case, and a mismatch fails the run with a
 revocation is effective. Executed evidence is Go/unit level; the Workers-pool
 suites run in CI (macOS < 13.5 cannot start workerd).
 
-### Two vaults, only one live
+### Two vaults, both live
 
 | Store | Status | Where |
 |---|---|---|
 | **GitHub OAuth token vault** — AES-256-GCM envelopes in D1 | **IMPLEMENTED (live)** | `worker/light/tokenVault.ts`, used by every export route |
-| **Generic user-secrets store** (923 lines, WS/RPC surface, `vault-types`) | **DESIGNED — NOT WIRED** | `worker/services/secrets/`; `/api/vault/*` answers 503 `notAvailable()` and nothing imports the store |
+| **Generic credential store** — AES-256-GCM envelopes in `vault_secrets` | **IMPLEMENTED (live 2026-11-24)** | `backend/pkg/vault` + `/api/vault/*` (D8.4); the 923-line `worker/services/secrets/` store stays unreachable legacy code |
 
-The generic store is not a secret-leak risk today (it is unreachable), but it is
-the reason `P1-AGT-003` (MCP transport) stays blocked: a real vault needs a route,
-a persistence contract and tenant isolation before MCP grants can hold
-credentials.
+The legacy `worker/services/secrets/` store is still unreachable and stays that
+way: D8.4 put the live store in the control plane, where execution and the grant
+are. An MCP policy that lists `vault:` references now resolves them **at call
+time** into the transport's `Authorization: Bearer` header; no route returns a
+value and nothing is stored in plaintext.
 
 ### Control matrix
 
 | Control | Status | Evidence |
 |---|---|---|
 | No plaintext at rest (GitHub token) | IMPLEMENTED | `enc:v1:` envelope in D1; migration `0012_github_tokens_seal` purges legacy rows; lazy re-seal on read |
+| No plaintext at rest (generic secrets) | IMPLEMENTED (2026-11-24) | `enc:v1:` envelope in `vault_secrets`; AAD binds `vault:<tenant>:<name>`; no route returns a value, and resolution happens only inside a granted MCP call (D8.4) |
 | Fail-closed resolve (tamper / wrong user) | IMPLEMENTED | AES-GCM AAD binds the ciphertext to `github_token:<userId>`; a row copied between users decrypts to `null` |
 | Key derivation without a new binding | IMPLEMENTED | SHA-256 of a domain-separated `JWT_SECRET`; no extra binding to keep in parity |
 | Plaintext never in manifests | IMPLEMENTED (schema-enforced) | `tool.schema.json` accepts only `^vault:` references; `docs:check` validates it |
@@ -416,7 +418,7 @@ Verified locally with `bun run typecheck`; the Workers-pool suites run in CI.
 
 | Gap | Task |
 |---|---|
-| Generic user-secrets store is not wired (no route, no persistence contract) | P1-AGT-003 blocker |
+| The SPA's client-KDF vault (`/api/vault/{config,setup,reset}`) is not adopted; the server-side store has no UI | D8.4 (revisit only with a UI decision) |
 | Key rotation: rotating `JWT_SECRET` makes every stored token unreadable (users must re-authorise) — intentional, undocumented in ops | O24 |
 | Per-provider vault coverage beyond GitHub | P2/P4 (MCP grants need it first) |
 

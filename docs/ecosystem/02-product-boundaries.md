@@ -9,6 +9,16 @@ Each product owns its surface, API, SDK integration, deployment, releases,
 docs, and offer. Sharing happens through versioned contracts, never copies.
 Duplication requires a written reason.
 
+## What varies per product (and what never does)
+
+Products vary only in: user surface and product API shape, System IR
+composition (which agents/skills/tools/knowledge are pinned), policy and
+approval defaults, and commercial offer. Products never vary in: control
+plane, edge/auth plane, identity truth, manifest/IR dialects, execution
+contract, memory-scope enforcement, event envelope, metering source, or
+audit sink. Scale, provider choice, and tool/MCP surface are the only
+technical axes of differentiation.
+
 ## Plane split
 
 - **Control plane** (Go in backend): sessions, rooms/VFS, LLM streaming,

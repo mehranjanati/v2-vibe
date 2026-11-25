@@ -57,7 +57,7 @@ a transport; enforcement, tenancy and audit are implemented exactly once.
   families (the `P7-SKL`/`P7-OPI` specs own that), and `Gate` becomes the most
   depended-on package — changes to it need the 12 + transport tests green.
 - **Neutral:** nothing in the live runtime changes; this records the direction
-  already taken by `P1-AGT-003` (`StdioTransport`) and queued `P1-AGT-004`.
+  already taken by `P1-AGT-003` (`StdioTransport`) and `P1-AGT-004` (SSE binding + session-guarded routes, landed 2026-11-24).
 
 ## Decision
 
@@ -91,7 +91,7 @@ Adopt option C:
 1. A family provably cannot be expressed as a Tool Manifest without losing
    safety semantics.
 2. `Gate` becomes a measured latency bottleneck that per-call spawning cannot
-   explain away (=> persistent sessions, a `P1-AGT-004` follow-up).
+   explain away (=> persistent sessions, a follow-up beyond P1-AGT-004).
 3. The official Registry API or the agentskills.io spec makes a breaking change
    the contracts cannot absorb.
 4. Legal review (W3.1/O23 lineage: provenance, M5 settlement) requires a

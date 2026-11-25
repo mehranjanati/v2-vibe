@@ -47,6 +47,7 @@ import {
   dagRequires,
   isCancelled,
   missingCapabilities,
+  type CapabilityAdvertisement,
 } from './workflowCapabilities';
 
 export const WORKFLOW_SCHEMA_VERSION = 2;
@@ -575,9 +576,11 @@ function bindValue(value: unknown): string | number | null {
 export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
   /**
    * P7-RUN-001c: the runtime's own advertisement (see workflowCapabilities.ts).
-   * A caller that needs a guarantee reads this instead of assuming it.
+   * A caller that needs a guarantee reads this instead of assuming it — and
+   * `run()` enforces exactly this object, so advertising and enforcing can
+   * never disagree.
    */
-  static readonly advertisedCapabilities = WORKFLOW_CAPABILITIES;
+  static readonly advertisedCapabilities: CapabilityAdvertisement = WORKFLOW_CAPABILITIES;
 
   override async run(
     event: Readonly<WorkflowEvent<WorkflowInput>>,
@@ -639,8 +642,11 @@ export class VibeWorkflow extends WorkflowEntrypoint<Env, WorkflowInput> {
 
       // P7-RUN-001c admission rule: a plan may not rely on a guarantee this
       // runtime does not advertise. Refusing here is the contract's answer; the
-      // alternative (running it degraded) is what the ADR rejects.
-      const missing = missingCapabilities(dagRequires(dag));
+      // alternative (running it degraded) is what the ADR rejects. The
+      // advertisement is read off the class, so the object a caller was told
+      // about is the object enforced here.
+      const advertisement = (this.constructor as typeof VibeWorkflow).advertisedCapabilities;
+      const missing = missingCapabilities(dagRequires(dag), advertisement);
       if (missing.length > 0) {
         const message = `vibe-workflow: workflow "${instance.workflow_id}" requires ${missing.join(', ')}, which this runtime does not advertise`;
         await this.markFailed(instanceId, message);

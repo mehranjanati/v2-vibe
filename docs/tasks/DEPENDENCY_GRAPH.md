@@ -7,14 +7,16 @@ P0-SEC-001 -> P0-SEC-006 (cost-gated deployment)
 P0-SEC-002 -> P1-AGT-001 -> P1-AGT-002 -> P7-RUN-001
 P6-COM-001 is research with no code dependency.
 
-P0-SEC-006, P7-RUN-001, P8, and P9 tasks stay backlog until their gates pass.
+P0-SEC-006, P8, and P9 tasks stay backlog until their gates pass.
 P0-SEC-001 is DONE (2026-11-22): boundary proven on a deployed plane,
 fail-closed under store outage, plus the Worker session-token forwarding fix.
 P1-AGT-001 is DONE (2026-11-22): identity + lifecycle + retirement contract.
-P7-RUN-001 is IN_PROGRESS: the contract (P7-RUN-001a) landed 2026-11-22; the
-adapters plus the C1-C18 suite (P7-RUN-001b) stay blocked on P1-AGT-002 only for
-binding the RunPlan payload to the System IR — the interface itself is
-plan-agnostic and does not need it.
+P7-RUN-001 is DONE (contract P7-RUN-001a 2026-11-22; Fake + C1–C18 suite P7-RUN-001b;
+live control surfaces P7-RUN-001c 2026-11-23; P7.12 route proof green locally
+2026-11-24 with the worker cases run by CI).
+P1-AGT-004 (MCP routes, SSE binding, generic credential store) is DONE 2026-11-24
+(D8.2 SSE, D8.3 routes, D8.4 credential store). Its grants surface satisfies
+ADI-CTX-003's stated dependency; the engine itself is DONE 2026-11-25 (`backend/pkg/activation`) and the next owner gate is a caller for it (ADI-CTX-004).
 
 ## Historical ID mapping (DEV_CHECKLIST to ecosystem backlog)
 
@@ -34,18 +36,18 @@ plan-agnostic and does not need it.
 Historical IDs keep their meaning; ecosystem IDs track the rollout and
 verification work on top. No task is marked DONE without repo evidence.
 
-## ADI workstreams (PROPOSED 2026-11-23, design-only, all BLOCKED)
+## ADI workstreams (2026-11-24 audit: 25 DONE, 7 BLOCKED; evidence in `architecture/adi-implementation-evidence.md`)
 
-ADI-FOUND-001 [DONE 2026-11-23, audit] -> ADI-FOUND-001a [DONE 2026-11-23, parity closed] -> ADI-FOUND-002 [DONE 2026-11-23, lock contract] -> ADI-FOUND-003 [DONE 2026-11-23, resolver design] -> ADI-FOUND-003a [DONE 2026-11-23, backend/pkg/composition] -> ADI-FOUND-004 [DONE 2026-11-23, run-snapshot design] -> ADI-FOUND-004a [DONE 2026-11-23, migration + store + AdmitRun] -> ADI-FOUND-004b [DONE 2026-11-23, live guard + rollout switch]
-ADI-FOUND-003a -> ADI-FOUND-005 [DONE 2026-11-23, system-to-run binding] -> ADI-FOUND-005a [DONE 2026-11-23, backend/pkg/plan] -> (producer: resolve + persist + compile + start)
+ADI-FOUND-001 [DONE 2026-11-23, audit] -> ADI-FOUND-001a [DONE 2026-11-23, parity closed, `56da19a`] -> ADI-FOUND-002 [DONE 2026-11-23, lock contract] -> ADI-FOUND-003 [DONE 2026-11-23, resolver design] -> ADI-FOUND-003a [DONE 2026-11-23, `backend/pkg/composition`, `309af45`] -> ADI-FOUND-004 [DONE 2026-11-23, run-snapshot design] -> ADI-FOUND-004a [DONE 2026-11-23, migration 0017 + store + AdmitRun] -> ADI-FOUND-004b [DONE 2026-11-23, live guard + rollout switch] -> ADI-FOUND-004c [DONE 2026-11-24, producer resolve + persist + compile + start, `ad69c8b`]
+ADI-FOUND-003a -> ADI-FOUND-005 [DONE 2026-11-23, system-to-run binding] -> ADI-FOUND-005a [DONE 2026-11-23, `backend/pkg/plan`]
 ADI-FOUND-002 -> ADI-CTX-001 [DONE 2026-11-23, context-assembly] -> ADI-CTX-002 [DONE 2026-11-23, activation policy] -> ADI-CTX-003 -> ADI-CTX-004
 ADI-CTX-001 -> ADI-MEM-001 [DONE 2026-11-23, memory-provider interface] -> ADI-MEM-002 [DONE 2026-11-23, absorbed into MEM-001] -> ADI-MEM-004 [DONE 2026-11-23, retrieval integration]
 ADI-MEM-001 -> ADI-MEM-003 [DONE 2026-11-23, personalization profile] -> ADI-MEM-004
-ADI-MEM-001 -> ADI-MEM-001a [DONE 2026-11-23, backend/pkg/memory + D1 adapter]
+ADI-MEM-001 -> ADI-MEM-001a [DONE 2026-11-23, `backend/pkg/memory` + D1 adapter, PARTIAL: lexical only, no caller]
 ADI-MEM-001 -> ADI-MEM-003 -> ADI-MEM-004
-ADI-CTX-001 -> ADI-EVT-001 [DONE 2026-11-23, event envelope] -> ADI-EVT-002 [DONE 2026-11-23, outbox + inbox] -> ADI-EVT-003 [DONE 2026-11-23, event-to-run]
-ADI-FOUND-004 -> ADI-EVAL-001 [DONE 2026-11-23, evaluation contract] -> ADI-EVAL-002 [DONE 2026-11-23, runner design] -> ADI-EVAL-002a [DONE 2026-11-23, backend/pkg/evaluation]
+ADI-CTX-001 -> ADI-EVT-001 [DONE 2026-11-23, event envelope] -> ADI-EVT-002 [DONE 2026-11-23, outbox + inbox, DESIGN_ONLY] -> ADI-EVT-003 [DONE 2026-11-23, event-to-run, DESIGN_ONLY]
+ADI-FOUND-004 -> ADI-EVAL-001 [DONE 2026-11-23, evaluation contract] -> ADI-EVAL-002 [DONE 2026-11-23, runner design] -> ADI-EVAL-002a [DONE 2026-11-23, `backend/pkg/evaluation`, PARTIAL: L1+L2 only]
 ADI-EVAL-002 [DONE 2026-11-23, runner design] -> ADI-EVAL-003 [DONE 2026-11-23, candidate lifecycle] -> ADI-EVAL-004 [DONE 2026-11-23, promotion/rollback + audit]
-ADI-FOUND-002 -> ADI-ECO-001 -> ADI-ECO-002 -> ADI-ECO-003 -> ADI-ECO-004
-ADI-CTX-003 blocked on P1-AGT-004; ADI-EVT-002 blocked on P7-RUN-001; ADI-ECO-003 blocked on O24/O25.
-First executable proof (single-agent adaptive composition) is gated by D8/D9 and is not in NEXT_EXECUTION.
+ADI-FOUND-002 -> ADI-ECO-001 [BLOCKED] -> ADI-ECO-002 [BLOCKED] -> ADI-ECO-003 [BLOCKED] -> ADI-ECO-004 [BLOCKED]
+P1-AGT-004 [DONE 2026-11-24: D8.2 + D8.3 + D8.4] -> ADI-CTX-003 [DONE 2026-11-25: eligibility core, pure library] -> ADI-CTX-004 [PREPARED, dependency satisfied]; P1-AGT-004 -> ADI-ECO-001 [BLOCKED]. ADI-EVT-002 blocked on P7-RUN-001 (DONE); ADI-ECO-003 blocked on O24/O25; ADI-ECO-002 blocked on O27.
+First executable proof (single-agent adaptive composition) is gated by D8/D9 and is not in NEXT_EXECUTION. `P1-AGT-004` and `ADI-CTX-003` are DONE; the next executable step is the owner decision on O1 evidence (which also governs any activation caller); ADI-CTX-003 is PREPARED, not NEXT.

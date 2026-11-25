@@ -79,23 +79,8 @@ func (t *StdioTransport) DiscoverTools(server ServerRegistration) ([]DiscoveredT
 	if err != nil {
 		return nil, err
 	}
-
-	var listing struct {
-		Tools []struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		} `json:"tools"`
-	}
-	if err := json.Unmarshal(raw, &listing); err != nil {
-		return nil, fmt.Errorf("mcp stdio: tools/list result is not a tool list: %w", err)
-	}
-	out := make([]DiscoveredTool, 0, len(listing.Tools))
-	for _, tool := range listing.Tools {
-		// Side effect and approvals are *declared* here and are deliberately not
-		// trusted: execution uses the reviewed Tool Manifest values.
-		out = append(out, DiscoveredTool{Name: tool.Name, Description: tool.Description})
-	}
-	return out, nil
+	// One result contract, shared with the SSE binding (result.go).
+	return parseToolList("mcp stdio", raw)
 }
 
 // InvokeTool runs one tool through tools/call and returns the server's text
@@ -120,27 +105,8 @@ func (t *StdioTransport) InvokeTool(server ServerRegistration, toolName string, 
 	if err != nil {
 		return "", err
 	}
-
-	var result struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return "", fmt.Errorf("mcp stdio: tools/call result is malformed: %w", err)
-	}
-	var text strings.Builder
-	for _, part := range result.Content {
-		if part.Type == "text" {
-			text.WriteString(part.Text)
-		}
-	}
-	if result.IsError {
-		return "", fmt.Errorf("mcp stdio: tool %q reported an error: %s", toolName, text.String())
-	}
-	return text.String(), nil
+	// One result contract, shared with the SSE binding (result.go).
+	return parseToolCallResult("mcp stdio", toolName, raw)
 }
 
 // initialize sends the MCP handshake (initialize + the required initialized

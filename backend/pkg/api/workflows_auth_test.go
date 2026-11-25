@@ -36,6 +36,14 @@ type fakeWorkflowD1 struct {
 	instances []map[string]any          // workflow_instances inserts
 	audits    []map[string]any          // audit_logs inserts
 	cfRuns    []map[string]any          // Cloudflare Workflows instance creates
+	// P7.12 control surface: pre-existing runs (instance id → row), the durable
+	// state writes the handlers issue after the runtime accepts, and the
+	// terminate/pause/resume calls the emulated runtime received.
+	runs        map[string]map[string]any
+	stateWrites []map[string]any
+	cfActions   []map[string]any
+	// failControl makes the emulated runtime refuse a control action.
+	failControl bool
 	// failOwnership makes the ownership SELECT fail, emulating a D1 outage.
 	failOwnership bool
 }
@@ -44,7 +52,7 @@ type fakeWorkflowD1 struct {
 // cloudflare.D1Client pointed at it.
 func newFakeWorkflowD1(t *testing.T, dags map[string]map[string]any) (*fakeWorkflowD1, *cloudflare.D1Client) {
 	t.Helper()
-	f := &fakeWorkflowD1{dags: dags}
+	f := &fakeWorkflowD1{dags: dags, runs: map[string]map[string]any{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			SQL    string `json:"sql"`
@@ -97,6 +105,42 @@ func (f *fakeWorkflowD1) apply(sql string, params []any) ([]map[string]any, bool
 		}
 		return []map[string]any{row}, false
 
+	// P7.12: the scoped instance load behind the three control endpoints.
+	case strings.HasPrefix(sql, "SELECT id, workflow_id, status, input, output, error, started_at, completed_at, created_at, snapshot_id"):
+		instanceID := paramAt(params, 1)
+		row, ok := f.runs[instanceID]
+		if !ok || (workflowID != "" && row["workflow_id"] != workflowID) {
+			return nil, false
+		}
+		return []map[string]any{row}, false
+
+	// P7.12: the durable state writes, each guarded by the transition it
+	// belongs to — the fake applies the same WHERE as the SQL so a test can
+	// assert both what was attempted and what a guarded write allowed.
+	case strings.HasPrefix(sql, "UPDATE workflow_instances SET status = 'cancelled'"):
+		reason, instanceID := paramAt(params, 0), paramAt(params, 1)
+		f.stateWrites = append(f.stateWrites, map[string]any{"status": "cancelled", "instance_id": instanceID, "reason": reason})
+		if row, ok := f.runs[instanceID]; ok {
+			switch row["status"] {
+			case "pending", "running", "paused":
+				row["status"] = "cancelled"
+			}
+		}
+
+	case strings.HasPrefix(sql, "UPDATE workflow_instances SET status = 'paused'"):
+		instanceID := paramAt(params, 0)
+		f.stateWrites = append(f.stateWrites, map[string]any{"status": "paused", "instance_id": instanceID})
+		if row, ok := f.runs[instanceID]; ok && row["status"] == "running" {
+			row["status"] = "paused"
+		}
+
+	case strings.HasPrefix(sql, "UPDATE workflow_instances SET status = 'running'"):
+		instanceID := paramAt(params, 0)
+		f.stateWrites = append(f.stateWrites, map[string]any{"status": "running", "instance_id": instanceID})
+		if row, ok := f.runs[instanceID]; ok && row["status"] == "paused" {
+			row["status"] = "running"
+		}
+
 	case strings.HasPrefix(sql, "INSERT INTO workflow_instances"):
 		f.instances = append(f.instances, map[string]any{
 			"id":          paramAt(params, 0),
@@ -131,6 +175,36 @@ func (f *fakeWorkflowD1) apply(sql string, params []any) ([]map[string]any, bool
 func workflowCloudflareEmulator(t *testing.T, f *fakeWorkflowD1) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// P7.12: the three control actions the runtime exposes. A refused
+		// action answers a non-2xx envelope, which is what the client turns
+		// into an error (and the handler into a 502).
+		for _, action := range []string{"terminate", "pause", "resume"} {
+			if !strings.HasSuffix(r.URL.Path, "/"+action) {
+				continue
+			}
+			var control struct {
+				Reason string `json:"reason"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&control)
+			instanceID := strings.TrimSuffix(strings.TrimSuffix(r.URL.Path, "/"+action), "/")
+			instanceID = instanceID[strings.LastIndex(instanceID, "/")+1:]
+			f.mu.Lock()
+			if f.failControl {
+				f.mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":10000,"message":"emulated runtime refusal"}]}`))
+				return
+			}
+			f.cfActions = append(f.cfActions, map[string]any{
+				"action": action, "instance_id": instanceID, "reason": control.Reason,
+			})
+			f.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"errors":[],"result":{}}`))
+			return
+		}
+
 		var body struct {
 			InstanceID string         `json:"instance_id"`
 			Params     map[string]any `json:"params"`
@@ -170,6 +244,50 @@ func (f *fakeWorkflowD1) setFailOwnership(fail bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failOwnership = fail
+}
+
+// seedRun installs a pre-existing run so the control endpoints can address it
+// (P7.12). The row mirrors the columns LoadWorkflowInstance selects.
+func (f *fakeWorkflowD1) seedRun(instanceID, workflowID, status string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.runs[instanceID] = map[string]any{
+		"id":               instanceID,
+		"workflow_id":      workflowID,
+		"status":           status,
+		"input":            nil,
+		"output":           nil,
+		"error":            nil,
+		"started_at":       nil,
+		"completed_at":     nil,
+		"created_at":       float64(1700000000),
+		"snapshot_id":      nil,
+		"plan_kind":        nil,
+		"plan_digest":      nil,
+		"compiler_version": nil,
+	}
+}
+
+// controlActions returns the terminate/pause/resume calls the emulated runtime
+// received, in order.
+func (f *fakeWorkflowD1) controlActions() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]any(nil), f.cfActions...)
+}
+
+// stateWritesSnapshot returns the durable workflow_instances state writes.
+func (f *fakeWorkflowD1) stateWritesSnapshot() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]any(nil), f.stateWrites...)
+}
+
+// setFailControl makes the emulated runtime refuse control actions.
+func (f *fakeWorkflowD1) setFailControl(fail bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failControl = fail
 }
 
 // cloudflareRuns returns the Cloudflare Workflows instances the control plane

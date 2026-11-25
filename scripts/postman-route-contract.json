@@ -6,7 +6,7 @@
     "backend/pkg/api/debug_routes.go",
     "worker/light/lightApp.ts"
   ],
-  "last_verified": "2026-10-07",
+  "last_verified": "2026-11-24",
   "worker": {
     "live": [
       "GET /api/status",
@@ -84,6 +84,16 @@
       "GET /api/generations/:chatId",
       "GET /api/generations/:chatId/:genId/diff",
       "POST /api/generations/:chatId/:genId/rollback",
+      "GET /api/mcp/servers",
+      "GET /api/mcp/servers/:server/tools",
+      "GET /api/mcp/grants",
+      "POST /api/mcp/grants",
+      "POST /api/mcp/grants/:grantId/revoke",
+      "POST /api/mcp/call",
+      "GET /api/vault/status",
+      "GET /api/vault/secrets",
+      "POST /api/vault/secrets",
+      "DELETE /api/vault/secrets/:name",
       "GET /ws/:id",
       "POST /api/debug/replay"
     ]

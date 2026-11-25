@@ -155,6 +155,23 @@ func (r *Registry) List() []string {
 	return out
 }
 
+// Registrations returns every server registration in name order. Callers get
+// metadata only — registration authorizes discovery, never execution.
+func (r *Registry) Registrations() []ServerRegistration {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ServerRegistration, 0, len(r.servers))
+	for _, s := range r.servers {
+		out = append(out, s)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Name < out[j-1].Name; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
 // Remove unregisters a server. Existing grants against it keep failing
 // closed (grant.go checks registration at every call), so removal is an
 // immediate revocation path.

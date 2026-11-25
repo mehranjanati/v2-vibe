@@ -401,17 +401,17 @@
    "title": "MCP routes, SSE binding, and the generic credential store",
    "type": "IMPLEMENTATION",
    "priority": "P1",
-   "status": "TODO",
-   "description": "Follow-up to P1-AGT-003 (stdio transport done). Three pieces before an agent run may call an MCP tool: (1) authenticated routes for discover/grant/revoke/execute that call backend/pkg/mcp.Gate with the session identity and the P0.4/P0.7 ownership discipline, plus a route-level test; (2) an SSE Transport binding behind the same interface; (3) the generic credential store: D1 table + AES-256-GCM envelopes in worker/light/tokenVault.ts (the documented vault merge point) and real /api/vault/* endpoints (today they answer 503) so a server own secrets are vault: references, never literals. Persistent registry/policy/grant stores stay with P7.6.",
+   "status": "DONE",
+   "description": "DONE 2026-11-24 (D8.2 + D8.3 + D8.4). Three pieces, each with its own amendment and tests. (1) Routes: backend/pkg/api/mcp.go exposes six session-guarded routes (GET /api/mcp/servers, GET /api/mcp/servers/:server/tools, GET and POST /api/mcp/grants, POST /api/mcp/grants/:grantId/revoke, POST /api/mcp/call) that call mcp.Gate with the tenant taken from the session; grants are issued only against a reviewed ToolPolicy looked up server-side, so a body cannot widen permissions; a stdio registration is 409 (no process spawn from a route); 7 route tests in backend/pkg/api/mcp_test.go. (2) SSE binding: backend/pkg/mcp/sse.go speaks MCP HTTP+SSE behind the same Transport with shared result parsing in backend/pkg/mcp/result.go; 7 tests (5 subtests) against a stub httptest server. (3) Generic credential store: backend/pkg/vault over vault_secrets (migration 0020), AES-256-GCM envelopes with the same key derivation as worker/light/tokenVault.ts and AAD binding vault:<tenant>:<name>; four session-guarded /api/vault routes (status, list, put, delete) that never return a value; resolution happens only inside a granted MCP call and becomes the transport Authorization: Bearer header (one ref per policy, two refs refused); 5 store tests + 5 route tests. Contract: scripts/postman-route-contract.json carries the six MCP and four vault routes. Still out (documented): an agent-run caller, persistent registry/policy/grant stores (P7.6), a registration route, the UI, and a per-secret header mapping. Follow-up to P1-AGT-003 (stdio transport done).",
    "dependencies": [
     "P1-AGT-003",
     "P0-SEC-004"
    ],
    "acceptance_criteria": [
-    "An authenticated route discovers and (with a grant) executes against a real server",
-    "Grantless route call is 403 and spawns nothing",
-    "A server secret is stored as a vault: ref and resolved only at call time",
-    "SSE binding passes the same 5 transport tests"
+    "An authenticated route discovers and (with a grant) executes against a real server — DONE 2026-11-24 (TestMCPRouteExecutesAgainstARealServer: routes → Gate → real HTTP+SSE server in one chain)",
+    "Grantless route call is 403 and spawns nothing — DONE 2026-11-24 (revoked grant → 403 + audit, transport never dialed)",
+    "A server secret is stored as a vault: ref and resolved only at call time — DONE 2026-11-24 (backend/pkg/vault + /api/vault routes; resolution becomes Authorization: Bearer on the transport; no route returns a value)",
+    "SSE binding passes the same transport tests — DONE 2026-11-24 (7 tests / 5 subtests, backend/pkg/mcp/sse_test.go)"
    ],
    "repository_paths": [
     "backend/pkg/mcp/",
@@ -421,9 +421,9 @@
     "migrations/"
    ],
    "tests": [
-    "Route-level gate tests (403 without grant, audit row)",
-    "SSE round-trip against a stub server",
-    "Vault store/resolve/revoke tests in worker/light/tokenVault.test.ts"
+    "Route-level gate tests — DONE 2026-11-24: 8 tests in backend/pkg/api (mcp_test.go: 401 anonymous, 403 + audit, 404 unknown/foreign grant, reviewed-permissions rule, unroutable 409, vault resolution 409/503, no dial on refusal; mcp_e2e_test.go: discover → grant → call against a real HTTP+SSE server); go test -count=1 -run TestMCP ./pkg/api/ green",
+    "SSE round-trip against a stub server — DONE 2026-11-24: 7 tests / 5 subtests in backend/pkg/mcp/sse_test.go, go test -race ./pkg/mcp/ green",
+    "Vault store/resolve/revoke tests — DONE 2026-11-24: 5 tests in backend/pkg/vault/vault_test.go (seal/AAD/tamper, ref parsing, D1 round-trip, resolve-at-call-time, fail-closed) + 5 route tests in backend/pkg/api/vault_test.go; both green under -race. The store lives in the control plane (D8.4), not worker/light/tokenVault.ts, which keeps the GitHub token"
    ],
    "documentation": [
     "docs/architecture/mcp-trust-slice.md",
@@ -539,7 +539,7 @@
    "dependencies": [
     "P7-RUN-001"
    ],
-   "description": "DONE 2026-11-23. Closes the residual gap recorded under P7-RUN-001 (\"the Worker interpreter still lacks cancel/pause/capabilities()\"). Control plane: backend/pkg/cloudflare gains TerminateWorkflowInstance/PauseWorkflowInstance/ResumeWorkflowInstance over one shared workflowInstanceAction (POST /instances/{id}/{action}, path-escaped id, envelope + status handling); backend/pkg/engine gains WorkflowCapabilities() (the deployed runtime's advertisement: all four true, with a doc comment explaining why it differs from execution.CloudflareCapabilities — that one describes the REST adapter from outside), WorkflowInstanceTerminal(), and three guarded state writers (cancelled only from pending/running/paused, paused only from running, running only from paused) so a terminal row is never overwritten; backend/pkg/api gains POST /api/workflows/{cancel,pause,resume} plus GET /api/workflows/capabilities, all behind the session guard and workflowGuard, loading the instance scoped to the addressed workflow (404 on a foreign run, never a cross-tenant control channel), refusing terminal runs with 409 and recording the new state only after the runtime accepted the call (502 otherwise, so the row still describes reality). Worker: worker/workflow/workflowCapabilities.ts declares the advertisement and derives DAG requirements; VibeWorkflow exposes static advertisedCapabilities, returns early without writing when the instance is already cancelled, refuses a DAG that needs an unadvertised guarantee (NonRetryableError before any step), and guards markRunning/markSucceeded/markFailed with status <> 'cancelled' — without that guard Cloudflare's terminate makes run() throw and the catch block rewrote a cancelled run as failed. Route contract updated (34 control routes). NOT done: no test suite was executed locally for this slice (workerd cannot start on macOS 12.6); the Go half builds and vets clean and docs:check passes, but the worker half is CI-verified only until it runs there.",
+   "description": "DONE 2026-11-23. Closes the residual gap recorded under P7-RUN-001 (\"the Worker interpreter still lacks cancel/pause/capabilities()\"). Control plane: backend/pkg/cloudflare gains TerminateWorkflowInstance/PauseWorkflowInstance/ResumeWorkflowInstance over one shared workflowInstanceAction (POST /instances/{id}/{action}, path-escaped id, envelope + status handling); backend/pkg/engine gains WorkflowCapabilities() (the deployed runtime's advertisement: all four true, with a doc comment explaining why it differs from execution.CloudflareCapabilities — that one describes the REST adapter from outside), WorkflowInstanceTerminal(), and three guarded state writers (cancelled only from pending/running/paused, paused only from running, running only from paused) so a terminal row is never overwritten; backend/pkg/api gains POST /api/workflows/{cancel,pause,resume} plus GET /api/workflows/capabilities, all behind the session guard and workflowGuard, loading the instance scoped to the addressed workflow (404 on a foreign run, never a cross-tenant control channel), refusing terminal runs with 409 and recording the new state only after the runtime accepted the call (502 otherwise, so the row still describes reality). Worker: worker/workflow/workflowCapabilities.ts declares the advertisement and derives DAG requirements; VibeWorkflow exposes static advertisedCapabilities, returns early without writing when the instance is already cancelled, refuses a DAG that needs an unadvertised guarantee (NonRetryableError before any step), and guards markRunning/markSucceeded/markFailed with status <> 'cancelled' — without that guard Cloudflare's terminate makes run() throw and the catch block rewrote a cancelled run as failed. Route contract updated (34 control routes). Test debt closed 2026-11-24: backend/pkg/api/workflows_control_test.go pins the eight route cases (401 incl. capabilities, 403 + audit, 404 unknown/foreign, 409 on every terminal state, 502 with no write on a runtime refusal, transition-guarded pause/resume, defaulted reason) and is green locally over the emulated D1 + Workflows API; worker/workflow/VibeWorkflow.test.ts gained the cancel-finality and capability-refusal cases (already-cancelled no-op, mid-run cancel never becomes succeeded, terminated run never rewritten as failed, refusal before any step, admission under the deployed advertisement). The worker cases are executed by CI because workerd cannot start on macOS 12.7.6; the frontend still has no cancel button.",
    "documentation": [
     "docs/architecture/adr-execution-provider-contract.md",
     "docs/ecosystem/06-runtime-and-execution-architecture.md",
@@ -557,7 +557,8 @@
    "solo_developer_estimate": "M",
    "status": "DONE",
    "tests": [
-    "NOT RUN LOCALLY (owner instruction + workerd unavailable on this host): the worker half needs the Workers pool in CI",
+    "go test -count=1 -run 'TestWorkflowControl|TestWorkflowCapabilities' ./pkg/api/ green locally: 8 route-test functions plus 8 subtests over the emulated D1 + Workflows API",
+    "worker/workflow/VibeWorkflow.test.ts run-control block (6 cases: already-cancelled no-op, mid-run cancel never succeeds, terminated run never rewritten as failed, capability refusal before any step, admission when advertised, advertisement identity) — compile-clean via bun run typecheck, executed by the CI test job because workerd cannot start on macOS 12.7.6",
     "Build evidence: go build ./... and go vet ./pkg/api ./pkg/engine ./pkg/cloudflare clean",
     "Contract evidence: bun run docs:check green with 34 control routes (postman-route-contract.json updated)"
    ],
@@ -778,29 +779,53 @@
   },
   {
    "id": "ADI-CTX-003",
-   "title": "Deterministic activation engine (design)",
-   "type": "DESIGN",
+   "title": "Deterministic activation engine (eligibility core)",
+   "type": "IMPLEMENTATION",
    "priority": "P2",
-   "status": "TODO",
-   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 (code; eligibility stays pure). backend/pkg/activation implements docs/architecture/activation-policy.md as a pure Decide() over (context envelope, activation policy, composition closure, tenant grants snapshot): deny-overrides allow with smallest-rule-id citation, default-deny into skipped/no-allow, closure invariant enforced (activation refuses E_ACTIVATION_ESCALATION with a per-ref audit event before any decision is emitted), policy-allow outside the closure fails to load with E_ACTIVATION_POLICY, budget-before-bound trimming (budget on MaxCandidates, bound on the envelope candidateLimit, default 8), ranking intersection preserving ref order then ref sort, approvalRequired recorded without Approved (no approved field exists), a DecisionRecord sorted by candidate with decidedAt excluded from the Canonical() digest. No route, no store, no clock, no manifest writes: the package imports only backend/pkg/ir, backend/pkg/composition and stdlib (static scan + go/parser import test prove no backend/pkg/mcp, os/exec, database/sql or SQL verbs); mcp vocabulary is mirrored with a parity test. Gate stays the enforcer, ranking stays injected/optional. Dependencies satisfied via P1-AGT-004 (DONE 2026-11-24: the named grants surface exists). D8 gate intact: the engine is pure, cannot emit new capabilities, mints no grant, and nothing invokes it yet — a library, not a capability surface. Next consumer: ADI-CTX-004 (decision trace persistence; shape stays in context-activation-and-memory.md S5 + activation-policy.md S5).",
    "dependencies": [
     "ADI-CTX-002",
     "P1-AGT-004"
    ],
    "acceptance_criteria": [
-    "Engine selects only resolved/authorized refs",
-    "Activation cannot install packages, change pins, issue grants, or bypass Gate/policy"
+    "Eligibility is a pure function of (envelope, policy, closure, grants): identical inputs + fixed clock give byte-identical decision records (minus decidedAt)",
+    "deny beats allow for the same candidate regardless of rule order",
+    "No matching allow yields skipped/no-allow (default-deny), never activated",
+    "A candidate absent from the closure is refused with E_ACTIVATION_ESCALATION and an auditable event (never silently dropped, never activated)",
+    "A policy allowing a ref outside the closure fails to load with E_ACTIVATION_POLICY",
+    "A ranking provider returning an ineligible ref cannot add it (intersection only)",
+    "requiresHuman records approvalRequired without marking approved; Gate remains the only approver",
+    "Empty-capability Systems yield empty decisions without error; minCapabilities>0 with empty eligibility refuses E_ACTIVATION_BUDGET",
+    "Engine cannot install packages, change pins, issue grants, bypass Gate/policy, or mutate the manifest (negative tests)",
+    "go vet ./... + go test ./... green incl. -race on the new package; docs:check green"
    ],
    "documentation": [
-    "docs/architecture/context-activation-and-memory.md"
+    "docs/architecture/activation-policy.md",
+    "docs/architecture/context-assembly.md",
+    "docs/architecture/adi-implementation-evidence.md",
+    "docs/architecture/adr-agentic-execution.md"
    ],
    "risk": "High",
    "solo_developer_estimate": "M",
    "repository_paths": [
-    "docs/architecture/context-activation-and-memory.md"
+    "backend/pkg/activation/",
+    "docs/architecture/activation-policy.md",
+    "backend/pkg/composition/",
+    "backend/pkg/mcp/"
    ],
    "tests": [
-    "Design tests specified; BLOCKED on P1-AGT-004 grants surface"
+    "TestDenyOverridesAllow (order-independent)",
+    "TestEscalationOutsideClosureRefusedAndAudited",
+    "TestPolicyAllowingOutsideClosureFailsToLoad",
+    "TestDefaultDenyYieldsSkipped",
+    "TestBoundTrimsToEightWithSkippedBound",
+    "TestIneligibleRankingRefIgnored",
+    "TestDeterministicReplayByteIdentical",
+    "TestApprovalRequiredRecordedNotApproved",
+    "TestEmptyCapabilitiesEmptyDecisions",
+    "TestBudgetRefusalOnlyWhenMinCapabilitiesPositive",
+    "Negative: no grant minting, no manifest mutation (compile-time: no imports of grant stores)"
    ]
   },
   {
@@ -809,7 +834,7 @@
    "type": "DESIGN",
    "priority": "P2",
    "status": "TODO",
-   "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
+   "description": "PREPARED 2026-11-25 (dependency satisfied, not started). Persist one decision record per run per activation-policy.md S5 and context-activation-and-memory.md S5 (runId, tenantKey, contextId, compositionDigest, pinned policy ref, per-candidate activated/skipped/denied with stage/ruleId/reason/approvalRequired, ranking provider + version or none, injected decidedAt). The record shape now exists in backend/pkg/activation (activation.Record + Canonical/Digest, ADI-CTX-003 DONE 2026-11-25), so this task persists it. No migration is proposed in this task — the store shape (run lineage vs audit_logs) is decided at implementation time.",
    "dependencies": [
     "ADI-CTX-003"
    ],
@@ -817,15 +842,18 @@
     "Activated/skipped/denied persisted with explanations and version refs"
    ],
    "documentation": [
+    "docs/architecture/activation-policy.md",
     "docs/architecture/context-activation-and-memory.md"
    ],
    "risk": "Medium",
    "solo_developer_estimate": "S",
    "repository_paths": [
+    "docs/architecture/activation-policy.md",
     "docs/architecture/context-activation-and-memory.md"
    ],
    "tests": [
-    "Contract review"
+    "Persisted decision record matches activation-policy.md S5 fields",
+    "ADI-CTX-003 landed 2026-11-25; the record to persist is activation.Record"
    ]
   },
   {
@@ -1183,7 +1211,7 @@
    "title": "Intelligence bundle distribution contract",
    "type": "DESIGN",
    "priority": "P3",
-   "status": "TODO",
+   "status": "BLOCKED",
    "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
    "dependencies": [
     "ADI-FOUND-002",
@@ -1210,7 +1238,7 @@
    "title": "Registry and package resolution (design)",
    "type": "DESIGN",
    "priority": "P4",
-   "status": "TODO",
+   "status": "BLOCKED",
    "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
    "dependencies": [
     "ADI-ECO-001"
@@ -1235,7 +1263,7 @@
    "title": "Package provenance and signing (design)",
    "type": "DESIGN",
    "priority": "P4",
-   "status": "TODO",
+   "status": "BLOCKED",
    "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
    "dependencies": [
     "ADI-ECO-002"
@@ -1260,7 +1288,7 @@
    "title": "Marketplace integration (design)",
    "type": "DESIGN",
    "priority": "P4",
-   "status": "TODO",
+   "status": "BLOCKED",
    "description": "PROPOSED 2026-11-23 (mission VIBE-ARCH-CONSOLIDATION-ADI-001, documentation/design only, BLOCKED until listed dependencies and decisions clear). See Documentation fields for the contract location.",
    "dependencies": [
     "ADI-ECO-003"
@@ -1624,6 +1652,101 @@
    ],
    "risk": "Medium",
    "solo_developer_estimate": "M"
+  },
+  {
+   "id": "ARCH-EXEC-001",
+   "title": "Multi-provider execution lifecycle record (D20) + Eino substrate boundary",
+   "type": "ARCHITECTURE",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-24 (docs only, no code/route/migration). Recorded D20 (docs/architecture/adr-multi-provider-execution.md): five layers with one job each; D16 nine ops/states/taxonomy/C1-C18 unchanged; no live Run migration without a checkpoint design. Recorded Eino-substrate boundary (docs/architecture/adr-eino-orchestration-substrate.md): Eino owns orchestration only; governance/admission/tenancy stay with the Control Plane, mcp.Gate and D16. Provider capability matrix (docs/architecture/execution-provider-matrix.md): native/emulated/no per D16 op; Cloudflare cancel/pause/capabilities/history stay implemented_unverified. Decision index (docs/architecture/decision-status-register.md). D8/D13/D16 gates unchanged; no blocked task activated.",
+   "dependencies": [],
+   "acceptance_criteria": [
+    "D16 operations/states/C1-C18 unchanged (no rewrite)",
+    "Five layers distinct with one job each",
+    "Eino boundary recorded without runtime change",
+    "Provider matrix distinguishes native/emulated/no with explicit-unsupported rule",
+    "docs:check green"
+   ],
+   "documentation": [
+    "docs/architecture/adr-multi-provider-execution.md",
+    "docs/architecture/adr-eino-orchestration-substrate.md",
+    "docs/architecture/execution-provider-matrix.md",
+    "docs/architecture/decision-status-register.md",
+    "docs/ecosystem/10-decisions-and-open-questions.md"
+   ],
+   "risk": "Low",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/adr-multi-provider-execution.md",
+    "docs/architecture/adr-eino-orchestration-substrate.md"
+   ],
+   "tests": [
+    "node scripts/validate-spec-refs.mjs green",
+    "no route/provider/migration touched by this task"
+   ]
+  },
+  {
+   "id": "ARCH-WASM-001",
+   "title": "WASM + Component execution strategy record (D21) + compatibility research scaffold",
+   "type": "ARCHITECTURE",
+   "priority": "P2",
+   "status": "DONE",
+   "description": "DONE 2026-11-24 (docs only, no runtime/dependency/binding change). Recorded D21 (docs/architecture/adr-wasm-component-strategy.md): WASM Components are sandboxed tool execution, never registry/grants/auth; Manifest vs WIT separated; mcp.Gate sole authority; full-Eino-in-WASM is RESEARCH_REQUIRED (Model B experiment, Model C preferred). Feasibility note (docs/architecture/eino-wasm-compatibility.md) with the 2026-11-24 Workers WASM page reading (instantiate() pre-compiled; SIMD yes/threading no/single-thread; WASI experimental partial syscalls; no Component Model/WIT claim on that page). Capability-tool mapping (docs/architecture/capability-tool-mapping.md): Eino Tool -> adapter -> Manifest -> Gate -> WIT -> host -> audit. PoC spec (docs/architecture/wasm-poc-spec.md): WASM-01..15 all NOT_RUN, explicit out-of-scope list. Runtime matrix scoreboard (docs/architecture/wasm-runtime-matrix.md): every cell NOT_RUN. O15 narrowed but still open.",
+   "dependencies": [],
+   "acceptance_criteria": [
+    "D21 recorded without claiming any PoC result",
+    "Every matrix cell NOT_RUN (no invented PASS)",
+    "Workers page claims quoted with date + limits (no threading, partial WASI)",
+    "Model A/B/C distinguished with Model B NOT_YET_PROVEN",
+    "docs:check green"
+   ],
+   "documentation": [
+    "docs/architecture/adr-wasm-component-strategy.md",
+    "docs/architecture/eino-wasm-compatibility.md",
+    "docs/architecture/wasm-poc-spec.md",
+    "docs/architecture/wasm-runtime-matrix.md",
+    "docs/architecture/capability-tool-mapping.md"
+   ],
+   "risk": "Low",
+   "solo_developer_estimate": "S",
+   "repository_paths": [
+    "docs/architecture/adr-wasm-component-strategy.md",
+    "docs/architecture/wasm-poc-spec.md"
+   ],
+   "tests": [
+    "node scripts/validate-spec-refs.mjs green",
+    "all matrix cells NOT_RUN (no invented PASS)"
+   ]
+  },
+  {
+   "id": "ARCH-WASM-002",
+   "title": "Execute the Eino-WASM-wasmCloud compatibility spike (WASM-01..15)",
+   "type": "RESEARCH",
+   "priority": "P3",
+   "status": "BLOCKED",
+   "description": "NOT STARTED 2026-11-24. Execute docs/architecture/wasm-poc-spec.md WASM-01..15 in order with reproducible commands + pinned toolchain/runtime versions per test. BLOCKED on owner scheduling (isolated spike, no production dependency) and on nothing else; must NOT gate M0/M2 or P1-AGT-004. Promotion of any model to production needs a new ADR with measured rows. backend/pkg/toolsearch/codemode.go stays a gate until a real Sandbox exists.",
+   "dependencies": [
+    "ARCH-WASM-001"
+   ],
+   "acceptance_criteria": [
+    "WASM-01 native baseline with perf numbers",
+    "WASM-02..15 each carry command + versions + PASS/FAIL/BLOCKED/NOT_APPLICABLE",
+    "No unexecuted test labeled passed",
+    "Unsupported deps + workarounds documented",
+    "Cancellation/streaming/durability measured, not inferred"
+   ],
+   "documentation": [
+    "docs/architecture/wasm-poc-spec.md",
+    "docs/architecture/wasm-runtime-matrix.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "repository_paths": [],
+   "tests": [
+    "per-test commands recorded in wasm-runtime-matrix.md",
+    "native vs WASM comparison on the same workload"
+   ]
   }
  ]
 }

@@ -78,31 +78,35 @@ flowchart TB
 | MCP Gate + stdio PoC | PARTIAL | backend/pkg/mcp, in-memory stores, D8-gated |
 | Skill/OpenAPI loaders + tool search | IMPLEMENTED (loader scope) | backend/pkg/agentskills, backend/pkg/openapiimport, backend/pkg/toolsearch |
 | Execution contract + Fake + Cloudflare adapter | PARTIAL | backend/pkg/execution, fake 18/18, adapter unverified live |
-| Run control cancel/pause/capabilities | PARTIAL | P7-RUN-001c Go green, worker CI-only |
+| Run control cancel/pause/capabilities | PARTIAL | P7-RUN-001c: control plane verified locally (`backend/pkg/api/workflows_control_test.go`), worker rules in `worker/workflow/VibeWorkflow.test.ts` (CI-run) |
 | Gateway + router | PARTIAL | backend/pkg/gateway, backend/pkg/modelrouter |
 | Composition Lock contract | DESIGNED (contract complete) | composition-lock.md (ADI-FOUND-002): artifact shape, digests, resolution modes, failure taxonomy, snapshot semantics |
 | Resolver design | DESIGNED | composition-resolver.md (ADI-FOUND-003): AssetSource contract, 8-step algorithm, 11 failure codes, 21-case test spec |
 | Resolver implementation (bundled mode) | IMPLEMENTED | backend/pkg/composition (ADI-FOUND-003a): 24 tests green incl. -race, golden M1 lock, no network/D1/route |
 | Snapshot contract (run binding) | DESIGNED | run-snapshot.md (ADI-FOUND-004): one snapshot per run, digest identity, admission verification, retention, migration |
 | Snapshot storage + admission rules | IMPLEMENTED | ADI-FOUND-004a: `composition_snapshots` + nullable `snapshot_id`, `composition.AdmitRun`/`Verify`, D1 adapter, 13 tests |
-| System-to-run binding | DESIGNED | ir-to-run-binding.md (ADI-FOUND-005): procedural compiles 1:1 onto the existing DAG; agentic is refused by design (E_BIND_SHAPE) |
-| Snapshot binding on live traffic | IMPLEMENTED (opt-in) | ADI-FOUND-004b: opt-in `snapshotId` on the trigger, `AdmitRunSnapshot` guard before any row exists, `CONTROL_PLANE_REQUIRE_SNAPSHOT`; 7 route tests. Still missing: a producer that writes snapshots |
-| Context assembly contract | DESIGNED | context-assembly.md (ADI-CTX-001): envelope shape, segment taxonomy, bounds, drop order, failure codes |
-| Activation policy contract | DESIGNED | activation-policy.md (ADI-CTX-002): eligibility/ranking/gate split, closure invariant, deny-overrides, decision record |
-| Activation engine + decision trace | PROPOSED | ADI-CTX-003 / ADI-CTX-004 |
-| Memory provider interface | DESIGNED | memory-provider.md (ADI-MEM-001): 3 operations, scope ladder, provenance, bounds, retention; no store exists yet |
+| System-to-run binding | DESIGNED + IMPLEMENTED (procedural) | ir-to-run-binding.md (ADI-FOUND-005): procedural compiles 1:1 onto the existing DAG; agentic refused by design (E_BIND_SHAPE); `backend/pkg/plan` (ADI-FOUND-005a): 10 tests |
+| Snapshot binding on live traffic | IMPLEMENTED (opt-in, producer live) | ADI-FOUND-004b: opt-in `snapshotId` on the trigger, `AdmitRunSnapshot` guard before any row exists, `CONTROL_PLANE_REQUIRE_SNAPSHOT`; 7 route tests. ADI-FOUND-004c (`ad69c8b`): producer resolve → persist → compile → start on the same path; 12 route tests + 2 bundle tests; migration 0019 (`plan_kind`, `plan_digest`, `compiler_version`). Evidence: `architecture/adi-implementation-evidence.md` |
+| Context assembly contract | DESIGNED | context-assembly.md (ADI-CTX-001): envelope shape, segment taxonomy, bounds, drop order, failure codes; no assembler code (audit 2026-11-24) |
+| Activation policy contract | DESIGNED | activation-policy.md (ADI-CTX-002): eligibility/ranking/gate split, closure invariant, deny-overrides, decision record; no engine code (audit 2026-11-24) |
+| Activation engine (eligibility core) | IMPLEMENTED (library, no caller) | ADI-CTX-003: `backend/pkg/activation` — pure `Decide()` over (envelope, policy, closure, grants), deny-overrides, default-deny, E_ACTIVATION_ESCALATION+audit, budget-before-bound, ranking intersection, canonical record |
+| Activation decision trace | PREPARED (not started) | ADI-CTX-004: persist the record per run; dependency (ADI-CTX-003) satisfied 2026-11-25, store shape decided at implementation |
+| Memory provider interface | DESIGNED | memory-provider.md (ADI-MEM-001): 3 operations, scope ladder, provenance, bounds, retention |
 | Memory scope enforcement | DESIGNED | memory-provider.md §3-§7 (ADI-MEM-002 delivered there, not as a second document) |
 | Personalization profile | DESIGNED | personalization-profile.md (ADI-MEM-003): three namespaces, evidence-required inference, explicit never overridden |
 | Context retrieval integration | DESIGNED | context-retrieval.md (ADI-MEM-004): profile->memory->knowledge order, one bounded query, providerKind recorded (lexical today), no query expansion |
-| Memory adapter (code) | IMPLEMENTED (lexical, D1) | backend/pkg/memory + memory/d1store (ADI-MEM-001a): 11 tests, additive migration 0018, `SemanticRecall: false`, no route/agent caller |
-| Event envelope | DESIGNED | event-envelope.md (ADI-EVT-001): identity, dedupe, both timestamps, at-least-once semantics; no transport |
-| Durable event delivery | DESIGNED | durable-event-delivery.md (ADI-EVT-002): transactional outbox + durable inbox on D1, lease claim, backoff, dead letters, loop guard; no broker |
-| Event-to-run integration | DESIGNED | event-to-activation.md (ADI-EVT-003): data-layer subscriptions, deterministic filter, pointer-resolved snapshot, per-binding dedupe; the event never grants |
+| Memory adapter (code) | PARTIAL (lexical, D1, no caller) | backend/pkg/memory + memory/d1store (ADI-MEM-001a): 11 tests, additive migration 0018, `SemanticRecall: false`, no route/agent caller; retrieval contract stays DESIGNED |
+| Agentic execution | PROPOSED ADR, undecided | `adr-agentic-execution.md` (2026-11-24): `agent` node kind vs topology-aware executor vs keep refusing; lowering rejected by default; never NEXT without a decision |
+| Event envelope | DESIGNED | event-envelope.md (ADI-EVT-001): identity, dedupe, both timestamps, at-least-once semantics; no transport, no code (audit 2026-11-24) |
+| Durable event delivery | DESIGNED | durable-event-delivery.md (ADI-EVT-002): transactional outbox + durable inbox on D1, lease claim, backoff, dead letters, loop guard; no broker, no code (audit 2026-11-24) |
+| Event-to-run integration | DESIGNED | event-to-activation.md (ADI-EVT-003): data-layer subscriptions, deterministic filter, pointer-resolved snapshot, per-binding dedupe; the event never grants; no code (audit 2026-11-24) |
 | Evaluation contract | DESIGNED | evaluation-contract.md (ADI-EVAL-001): snapshot subject, five layers, verdicts where not_evaluated never passes, no composite score |
-| Benchmark runner | IMPLEMENTED (L1 + L2) | backend/pkg/evaluation (ADI-EVAL-002a): 13 tests, exit codes 0/1/2/3, L3-L5 honestly not_evaluated |
+| Benchmark runner | PARTIAL (L1 + L2 executable) | backend/pkg/evaluation (ADI-EVAL-002a): 13 tests, exit codes 0/1/2/3, L3-L5 honestly not_evaluated; no dataset catalog (O28), no runtime integration |
 | Benchmark runner design | DESIGNED | benchmark-runner.md (ADI-EVAL-002): request contract, per-layer execution, canonical artifact, exit codes |
-| Candidate lifecycle | DESIGNED | candidate-lifecycle.md (ADI-EVAL-003): candidate = snapshot, stable = pointer, CAS promotion, expiry |
-| Controlled promotion / rollback | DESIGNED | promotion-and-rollback.md (ADI-EVAL-004): four-condition conjunction, artifact-bound approvals, environment-pointer rollout, rollback vs emergency pin, audit_logs |
-| Bundle distribution / marketplace | PROPOSED | composition-lock.md bundle section, ADI-ECOSYSTEM |
+| Candidate lifecycle | DESIGNED | candidate-lifecycle.md (ADI-EVAL-003): candidate = snapshot, stable = pointer, CAS promotion, expiry; no executor code (audit 2026-11-24) |
+| Controlled promotion / rollback | DESIGNED | promotion-and-rollback.md (ADI-EVAL-004): four-condition conjunction, artifact-bound approvals, environment-pointer rollout, rollback vs emergency pin, audit_logs; no code (audit 2026-11-24) |
+| Bundle distribution / marketplace | BLOCKED (design rules exist) | composition-lock.md bundle section, ADI-ECO-001..004 BLOCKED on O24/O25/O27; bundled `AssetSource` is the stand-in, not a registry |
+
+Evidence matrix: `adi-implementation-evidence.md` (created 2026-11-24, HEAD `ad69c8b`) links every row above to code file:line, migration, test names, verification type and commit SHA.
 
 First executable proof: single-agent adaptive composition (M0-consistent, D8/D9-gated); see evaluation-and-evolution.md slice section plus backlog.

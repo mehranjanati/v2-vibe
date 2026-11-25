@@ -1,8 +1,8 @@
-# Activation Policy — Normative Contract (PROPOSED, ADI-CTX-002)
+# Activation Policy — Normative Contract (ADI-CTX-002; eligibility core implemented by ADI-CTX-003)
 
-> **Status:** `proposed` (2026-11-23) — design only. No engine, store or code in this change.
+> **Status:** `implemented` for the eligibility core (2026-11-25, ADI-CTX-003): `backend/pkg/activation` is the pure `Decide()` this contract specifies — deny-overrides, default-deny, the closure invariant with `E_ACTIVATION_ESCALATION` + audit, budget-before-bound, ranking intersection, and the §5 decision record with `decidedAt` excluded from its digest. Still design-only: ranking **providers**, the persisted trace (ADI-CTX-004), any caller. Twelve test functions in `backend/pkg/activation/activation_test.go` (incl. -race) prove §10.
 > **Consumes:** the context envelope ([`context-assembly.md`](context-assembly.md)) — candidates only ever come from there. **Consumed by:** the activation engine (ADI-CTX-003) and the decision trace (ADI-CTX-004). **Umbrella:** [`context-activation-and-memory.md`](context-activation-and-memory.md) §4-§5.
-> **Existing vocabulary reused, not replaced:** `SideEffect` (`safe`/`external`/`irreversible`), `ApprovalClass` (`external-message`/`external-write`/`payment`/`human-review`), `resource:action` permissions and `RequiresHuman` from `backend/pkg/mcp`; the four approval classes from the manifest schemas; grants and audit from `mcp.Gate` (D18).
+> **Existing vocabulary reused, not replaced:** `SideEffect` (`safe`/`external`/`irreversible`), `ApprovalClass` (`external-message`/`external-write`/`payment`/`human-review`), `resource:action` permissions and `RequiresHuman` from `backend/pkg/mcp`; the four approval classes from the manifest schemas; grants and audit from `mcp.Gate` (D18). The vocabulary is **mirrored** in `backend/pkg/activation` (parity-tested) so the eligibility core imports no grant store.
 
 ## 1. The question this contract answers
 
@@ -148,6 +148,8 @@ What activation **cannot** do: record that an approval was given. Approvals are 
 - It does not rank with a model of its own; ranking is an injected provider or nothing.
 
 ## 10. Tests this contract will need (ADI-CTX-003a, when code starts)
+
+> **Landed 2026-11-25** as `backend/pkg/activation/activation_test.go` — the twelve functions below are the §10 list, one to one: `TestDenyOverridesAllow`, `TestEscalationOutsideClosureRefusedAndAudited`, `TestPolicyAllowingOutsideClosureFailsToLoad`, `TestDefaultDenyYieldsSkipped`, `TestBoundTrimsToEightWithSkippedBound`, `TestIneligibleRankingRefIgnored`, `TestDeterministicReplayByteIdentical`, `TestApprovalRequiredRecordedNotApproved`, `TestEmptyCapabilitiesEmptyDecisions`, `TestBudgetRefusalOnlyWhenMinCapabilitiesPositive`, plus the negative `TestNoGrantMintingNoManifestMutation` (go/parser import scan: no `backend/pkg/mcp`, no exec/SQL in non-test code) and the vocabulary-parity `TestMirroredVocabularyMatchesMcp`.
 
 1. `deny` beats `allow` for the same candidate, regardless of rule order.
 2. A candidate absent from the closure is refused with `E_ACTIVATION_ESCALATION` and produces an audit event.

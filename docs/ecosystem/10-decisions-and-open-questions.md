@@ -32,7 +32,7 @@
   `backend/pkg/mcp` — each kind lands as a **loader**, never as a new engine or
   a new auth plane (ADR: `architecture/adr-unified-integrations.md`). The
   research behind it is `ecosystem/19-integration-research.md` (proposals 1–7).
-  Consequences and owners: P1-AGT-004 finishes the MCP surface; P7-SKL-001
+  Consequences and owners: P1-AGT-004 (DONE 2026-11-24) finished the MCP surface; P7-SKL-001
   (Skill Loader, agentskills.io frontmatter + token budget + `allowed-tools`),
   P7-OPI-001 (OpenAPI Importer, owner + version pin) and P7-SCH-001 (dynamic
   `search_tools`) are the next loader tasks; WASM Components stay sandboxed
@@ -64,6 +64,13 @@ Credential Provider, and is legal review needed for managed payment flows?).
 
 **D19 — Adaptive Intelligence as shared capability (PROPOSED 2026-11-23).** ADI (compose/activate/personalize/evaluate/evolve) lives on existing contracts; no ninth product, no new IR, no new manifest kind in v1, no new runtime. Needs owner acceptance: `architecture/adr-adaptive-intelligence-boundaries.md`.
 
+**D20 — Multi-provider execution lifecycle (ACCEPTED 2026-11-24, docs only).** Five layers with one job each (Control Plane authority; Eino orchestration; D16 provider lifecycle; placement; substrate/capability execution). D16 operations, states, error taxonomy and C1–C18 unchanged; no live Run migration without a checkpoint design. Record: `architecture/adr-multi-provider-execution.md`. Eino-substrate boundary accepted the same day: `architecture/adr-eino-orchestration-substrate.md`.
+
+**D21 — WASM and Component execution strategy (ACCEPTED 2026-11-24, docs only).** WASM Components are sandboxed tool execution (never registry/grants/auth); Tool Manifest ↔ WIT stay associated but separate; `mcp.Gate` stays sole authority; full-Eino-in-WASM is RESEARCH_REQUIRED (Model B experiment, Model C preferred path). Record: `architecture/adr-wasm-component-strategy.md`. Index: `architecture/decision-status-register.md`.
+
+**O15 — WASM interface choice (narrowed 2026-11-24, still open).** D21 fixes the roles (WIT = ABI, Manifest = identity, Gate = authority) but the exact WIT surface stays open until the PoC executes: `architecture/wasm-poc-spec.md` (WASM-01..15, all `NOT_RUN`), scoreboard `architecture/wasm-runtime-matrix.md`, feasibility `architecture/eino-wasm-compatibility.md`. No interface is pinned before measured evidence.
+
+
 **O26 — Composition Lock exact shape (partially answered 2026-11-23).** The artifact shape, digest *format* (`<algorithm>:<hex>`), resolution modes, failure taxonomy and snapshot semantics are now normative in `architecture/composition-lock.md` (ADI-FOUND-002, design only). Still open: the digest algorithm pin (SHA-256 proposed), whether the lock digest covers `compilerVersion` (**O26a**), the registry storage shape (**O27**), and capability-cycle policy (**O29**). **O27 — Memory/personalization store shape (open).** Provider interfaces first; no new store without ADR. **O28 — Evaluation dataset catalog (open).** O20 stays open; no datasets invented here. **O29 — Capability-cycle policy (opened 2026-11-23).** Workflow cycles are refused outright (I5, ADI-FOUND-001a), but a capability graph cycle (`skill → tool → skill`, e.g. pagination) may be legitimate. v1 rejects and reports the path; whether recursion should be classified and allowed needs a real use case. Contract: `architecture/composition-lock.md` §17.
 
 **O21 — dedicated staging environment — RESOLVED by D17 (2026-11-22).**
@@ -91,7 +98,7 @@ MCP Registry read-only (proposal 4 of `ecosystem/19-integration-research.md`),
 but "how good is that mirror's word?" stays open: whether D1 stores full
 `server.json` documents or hashes, how often the cache refreshes, whether
 package digests are pinned, and whether a revoked/renamed upstream server
-propagates or tombstones locally. Unblock: the `P1-AGT-004` publish-flow design,
+propagates or tombstones locally. Unblock: the publish-flow design (no task owns it yet; ADI-ECO-003),
 before any `Verified` claim depends on cached provenance.
 
 
