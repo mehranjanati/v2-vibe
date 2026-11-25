@@ -8,6 +8,8 @@
 > Companion: `system-ir.md` (off-chain system model, accepted),
 > `web3-chain-abstraction.md`, `web3-layerzero-interop.md`,
 > `web3-toolchain-pipeline.md`, `web3-security-signing.md`.
+> Generation scope on top of this IR (in/out kinds, pinned module set with digests,
+> template lifecycle): `web3-solidity-generation-scope.md` (W1-WEB3-01).
 > Decisions: `adr-web3-ir-separation.md` and
 > `adr-web3-contract-ir-versioning.md` (both ACCEPTED 2026-11-25).
 > Schema: `contract-ir/contract.schema.json`; fixtures: `contract-ir/examples/`.

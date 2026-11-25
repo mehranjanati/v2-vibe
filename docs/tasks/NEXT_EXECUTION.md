@@ -42,8 +42,12 @@ canonical record), 12 test functions green incl. -race. It is a library: no
 route, no store, no caller, no clock, so D8 stays untouched. The next prepared
 task is `ADI-CTX-004` (persist the decision record); beyond that the live
 options are:
-(a) run the Cloudflare adapter against a deployed workflow (needs an account +
-credentials) to close P7.11's live half, or
+(a) run the Cloudflare adapter against a deployed workflow to close P7.11's live
+half — the harness is now one command (`go test -tags live ./pkg/execution/
+-run TestCloudflareLive`), the adapter's endpoint/body shapes were corrected
+against the published schema on 2026-11-25, and only a credential with
+`Workers Scripts Write` is missing (both tokens on this host answer 401 /
+code 9109), or
 (b) a real WASM/container `Sandbox` behind `toolsearch.CodeMode`.
 
 The P7.12 proof that used to sit between them is DONE (2026-11-24): the eight
@@ -54,6 +58,20 @@ runtime refusal, transition-guarded pause/resume, defaulted cancel reason), and
 the cancel-finality + capability-refusal cases now exist in
 `worker/workflow/VibeWorkflow.test.ts` — they run in CI because workerd cannot
 start on macOS 12.7.6.
+
+Done 2026-11-25 (P7.11 adapter, code + harness, live run still gated): reading the
+published REST method schemas and cross-checking wrangler 4.90.0 (cloudflare SDK
+5.2.0) showed the adapter had invented its lifecycle endpoints. It now creates
+instances with `instance_id` plus a JSON-encoded `params` string, edits lifecycle
+through `PATCH .../instances/{id}/status`, detects duplicates by the documented
+code `10405`, and maps the three non-terminal schema statuses (`waiting`,
+`waitingForPause`, `rollingBack`) to `running`. The stub rejects the old shapes,
+and `cloudflare_live_test.go` (`-tags live`) is the honest proof: it refuses to
+claim C1–C7/C10/C15/C17/C18 (workflow-body semantics), asserts zero HTTP calls for
+admission refusals, and skips with a reason when the instance finishes before
+pause/cancel can be observed. The live run is **not** done: both credentials on
+this host are invalid (`.env` token → 401 code 10000; wrangler OAuth → code 9109),
+so the test skips by design until a `Workers Scripts Write` token is supplied.
 
 Done 2026-11-23 (loaders + search): **`P7-SKL-001`** — `backend/pkg/agentskills`, the
 agentskills.io loader on the D18 contract: frontmatter validation with
@@ -195,11 +213,90 @@ capability comparison, release pins still open.
 Next in the Web3 track: `W0-WEB3-03` **DONE 2026-11-25** — owner decision D22
 accepted `W3-IR` and `W3-VER`, and Contract IR v1 shipped as schema plus two
 canonical fixtures plus the sixth docs validator (`scripts/validate-contract-ir.mjs`,
-eight negative probes; `bun run docs:check` runs six gates). Next planned:
-`W1-WEB3-01` (Solidity generation scope plus template strategy) and then
-`W1-WEB3-02` (compilation and artifacts). Still awaiting owner acceptance:
-`W3-TOOL` (Foundry primary, Hardhat 3 compatibility — evidence recorded) and
-`W3-LZ` (LayerZero architecture verified, adapter unimplemented). None of
+eight negative probes; `bun run docs:check` runs six gates).
+
+`W1-WEB3-01` **DONE 2026-11-25** (design only, no generator) —
+`architecture/web3-solidity-generation-scope.md` settles the three acceptance
+items. Scope: eight in-scope kinds mapped onto existing Contract IR v1 fields
+(escrow/vault, treasury splitter, fixed-supply ERC-20, role-minted ERC-20,
+ERC-721, ERC-1155, access-controlled registry, UUPS registry) and eleven named
+exclusions with reasons (AMM/lending math, governance, bridge/OApp generation,
+diamonds/4626/4337, oracles, Yul and assembly, formal verification, tokenomics,
+non-EVM, fee-on-transfer/rebasing/permit in v1, gas golfing); a proxy needs
+`risksAcknowledged: true` and every payable function's policy must be one of four
+authority shapes. Pinned set: `@openzeppelin/contracts` **5.6.1** (MIT) — tarball
+SHA-256 `bd202ef9a2fd09f6005edc18437b4d3090841d0f676c01c814ee9608581d2e63`, npm
+shasum plus SHA-512 integrity, and **17 allowed entry points with digests computed
+locally** (`shasum -a 256`) and observed pragmas (`^0.8.20`; UUPS at `^0.8.22`),
+governed by six pin rules (closure resolved inside the tarball, digest mismatch is
+a hard failure, upgrades are deliberate). Templates: IR skeleton plus acceptance
+list plus NatSpec outline plus module-set pin — never generated source or framework
+scaffolding; identity `publisher/tpl-<kind>@semver`; lifecycle
+`draft → reviewed → pinned → deprecated` with pin-means-frozen,
+deprecation-never-deletes, no-`latest`, security-change-is-major, and template
+version independent of IR version. Toolchain stays **unbound** (`W3-TOOL` is still
+PROPOSED): no template names Foundry or Hardhat, and `go.mod`/`package.json` were
+not touched.
+
+`W1-WEB3-02` **DONE 2026-11-25** (design only, no compiler or sandbox added) —
+`architecture/web3-compilation-and-artifacts.md`. Compiler pin: solc
+**0.8.39+commit.ce47f2c8**, per-platform SHA-256/keccak from the official
+`list.json` (the macosx-amd64 binary was downloaded and hashed locally and matched
+`6134d77c…ef51`), plus the npm `solc` channel. Settings profile: `evmVersion` always
+comes from the IR and defaults to `cancun` — measured trap: 0.8.39 defaults to
+`osaka`, which the IR enum forbids; optimizer explicit; `bytecodeHash: ipfs` by
+default, `appendCBOR: false` only with `bytecodeHash: none` (0.8.39 rejects the
+combination); `libraries` empty. Twelve reproducibility rules (R1–R12), four of them
+measured rather than assumed: the same content under `Contract.sol`,
+`src/Contract.sol` and `./Contract.sol` yields **three different bytecodes**; the
+same sources under `ozpkg/package/` vs `vendor/oz-5.6.1/` yields different bytecodes
+because metadata records resolved paths — the **vendor root name is a build input**;
+content-supplied sources are working-directory independent while an absolute
+remapping target breaks under `--base-path`; and solc metadata carries **no
+timestamp**, so no `SOURCE_DATE_EPOCH` workaround is needed. Artifact manifest
+`vibesdk-artifact/v1` defined (contract ref + irDigest + templateRef, `build.id` from
+the canonical Standard JSON input, sourceDigest, closureDigest, full compiler
+identity, settings, module pin, digest-addressed outputs incl. metadata IPFS CID and
+storage layout, `reproducibility.verified` only after a double build in two
+independent instances, `sandbox.keysPresent: false`), with timestamps/hosts/user ids
+deliberately excluded because they belong to lineage records keyed by `build.id`.
+Sandbox boundary fixed: inputs (IR, content sources, digest-verified tarball,
+profile, digest-verified compiler) → outputs (artifacts, manifest, secret-free log);
+network, keys, deployment, control-plane writes and out-of-workspace filesystem
+denied. No framework is bound (`W3-TOOL` stays PROPOSED).
+
+`W2-WEB3-01` **DONE 2026-11-25** (design only, no gate implemented) —
+`architecture/web3-security-gates.md`. Eleven gates G0–G10, each with an objective
+**Pass** and **Fail** list and, where the IR has the field, derived from it: the IR
+`tests[].kind` enum (`unit`, `integration`, `fuzz`, `invariant`, `static-analysis`,
+`simulation`) maps 1:1 onto G2–G7, so the required set is machine-readable. G0 scope
+admission, G1 build reproducibility (consumes the W1-WEB3-02 manifest), G2 unit,
+G3 integration, G4 fuzz, G5 invariant, G6 static analysis, G7 simulation preview,
+G8 provenance and traceability, G9 deployment policy and approvals, G10 secret and
+key hygiene; required-versus-optional is fixed per risk class (standard versus high,
+the classes the signing doc already defines).
+
+The no-audit rule is **structural**, not a disclaimer: the verdict vocabulary is
+`not_run | failed | passed | waived | not_applicable` with a mandatory `bound` per
+passing gate and deliberately no `safe` value; `gates_passed` is true only when every
+required gate passed (a waiver never counts); there is no `production_ready` field;
+the pipeline **may never write** `security.auditStatus` (IR enum
+`none|reviewed|audited`) and G8 **fails** an `audited` claim with no resolvable
+external record; and a forbidden-label list bans “audited/secure/safe/production-ready”
+plus “verified” used as a synonym for audited (`source_verified` is reserved for
+on-chain source verification, with its own label and link).
+
+Evidence: one digest-addressed artefact per gate (`admission.json`, the manifest,
+`test/integration/fuzz/invariant-report.json`, `static-analysis.sarif` +
+`dispositions.json`, `simulation.json`, `provenance.json`, `policy-decision.json`,
+`secret-scan.json`), canonical serialization, mandatory reference to the artifact
+digest under test, never-overwrite retention, and a verdict that references artefacts
+by digest so tampering breaks the reference instead of changing the story.
+
+Next planned: `W3-WEB3-01` (wallet/signing/deployment lifecycle — it consumes the
+verdict and G9's approval record, and owns the key boundary). Still awaiting owner
+acceptance: `W3-TOOL` (Foundry primary, Hardhat 3 compatibility — evidence recorded)
+and `W3-LZ` (LayerZero architecture verified, adapter unimplemented). None of
 these blocks or reorders the P0–P7 engineering line above.
 
 ADI audit (2026-11-24, HEAD `ad69c8b`; updated 2026-11-25): 32 ADI task IDs — 28 DONE (18 design-only DONE + 10 code DONE: resolver `backend/pkg/composition`, snapshot store + `Verify`/`AdmitRun`, live binding `ADI-FOUND-004b`, producer `ADI-FOUND-004c`, plan compiler `backend/pkg/plan`, lexical memory `backend/pkg/memory`, L1+L2 evaluation `backend/pkg/evaluation`, activation core `backend/pkg/activation`, decision trace `backend/pkg/activation/trace.go` + `d1store`), 4 BLOCKED (`ADI-ECO-001..004`). Evidence matrix: `architecture/adi-implementation-evidence.md` (every capability linked to file:line code, migration, test names, local `go test ./...` green + CI `go-test`, commit SHAs). Agentic execution is a PROPOSED ADR (`architecture/adr-agentic-execution.md`), not an implementation. `P1-AGT-004` DONE 2026-11-24 (D8.2/D8.3/D8.4); `ADI-CTX-003` DONE 2026-11-25; `ADI-CTX-004` DONE 2026-11-25 (store only — no caller, so no trace is produced on the live path). D8/D9 gates unchanged.

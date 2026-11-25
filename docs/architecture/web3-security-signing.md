@@ -2,7 +2,10 @@
 
 > **Status:** `proposed` 2026-11-25. No wallet, signer, or deployment code
 > exists. The invariants below are normative for all future Web3 tasks.
-> Companions: `web3-chain-abstraction.md`, `web3-layerzero-interop.md`.
+> Companions: `web3-chain-abstraction.md`, `web3-layerzero-interop.md`,
+> `web3-security-gates.md` (G0–G10 gates plus the verdict model; invariant 5 is
+> enforced structurally there — signing refuses a deployment whose verdict is not
+> `gates_passed`, and no gate may set an audit status).
 > Decision: `adr-web3-signing-authority.md` (PROPOSED).
 
 ## Mandatory invariants

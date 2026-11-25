@@ -18,9 +18,11 @@ monitoring events on the envelope. No chain code ships until W-gates pass.
 1. Toolchain sandbox image: pinned `solc` plus **Foundry as the primary
    framework with Hardhat 3 as the compatibility path** (evidence in
    `architecture/web3-toolchain-pipeline.md`, decision `W3-TOOL` PROPOSED —
-   owner acceptance still required before the image names a default),
-   scanners, and artifact capture; runs as an untrusted worker with no
-   secrets and no network egress by default.
+   owner acceptance still required before the image names a default; the
+   compiler itself is pinned in `architecture/web3-compilation-and-artifacts.md`:
+   solc `0.8.39+commit.ce47f2c8` with per-platform digests, settings profile and
+   `vibesdk-artifact/v1` manifest), scanners, and artifact capture; runs as an
+   untrusted worker with no secrets and no network egress by default.
 2. RPC posture: provider endpoints only via env/secrets, never code; adapter
    interface drafted (W3-CHAIN) with failover plus health probes plus a
    confirmation-count policy per chain profile.
