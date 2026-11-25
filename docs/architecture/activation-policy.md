@@ -1,6 +1,6 @@
 # Activation Policy — Normative Contract (ADI-CTX-002; eligibility core implemented by ADI-CTX-003)
 
-> **Status:** `implemented` for the eligibility core (2026-11-25, ADI-CTX-003): `backend/pkg/activation` is the pure `Decide()` this contract specifies — deny-overrides, default-deny, the closure invariant with `E_ACTIVATION_ESCALATION` + audit, budget-before-bound, ranking intersection, and the §5 decision record with `decidedAt` excluded from its digest. Still design-only: ranking **providers**, the persisted trace (ADI-CTX-004), any caller. Twelve test functions in `backend/pkg/activation/activation_test.go` (incl. -race) prove §10.
+> **Status:** `implemented` for the eligibility core and its persisted trace (2026-11-25, ADI-CTX-003 + ADI-CTX-004): `backend/pkg/activation` is the pure `Decide()` this contract specifies — deny-overrides, default-deny, the closure invariant with `E_ACTIVATION_ESCALATION` + audit, budget-before-bound, ranking intersection, and the §5 decision record with `decidedAt` excluded from its digest — and §5's record is persisted append-only by `backend/pkg/activation/d1store` (migration `0021`, one row per run, §11). Still design-only: ranking **providers**, any caller (no assembler, no policy source). Twelve decision tests plus the trace/store tests in `backend/pkg/activation` (incl. `-race`) prove §10 and §11.
 > **Consumes:** the context envelope ([`context-assembly.md`](context-assembly.md)) — candidates only ever come from there. **Consumed by:** the activation engine (ADI-CTX-003) and the decision trace (ADI-CTX-004). **Umbrella:** [`context-activation-and-memory.md`](context-activation-and-memory.md) §4-§5.
 > **Existing vocabulary reused, not replaced:** `SideEffect` (`safe`/`external`/`irreversible`), `ApprovalClass` (`external-message`/`external-write`/`payment`/`human-review`), `resource:action` permissions and `RequiresHuman` from `backend/pkg/mcp`; the four approval classes from the manifest schemas; grants and audit from `mcp.Gate` (D18). The vocabulary is **mirrored** in `backend/pkg/activation` (parity-tested) so the eligibility core imports no grant store.
 
@@ -151,7 +151,9 @@ What activation **cannot** do: record that an approval was given. Approvals are 
 
 > **Landed 2026-11-25** as `backend/pkg/activation/activation_test.go` — the twelve functions below are the §10 list, one to one: `TestDenyOverridesAllow`, `TestEscalationOutsideClosureRefusedAndAudited`, `TestPolicyAllowingOutsideClosureFailsToLoad`, `TestDefaultDenyYieldsSkipped`, `TestBoundTrimsToEightWithSkippedBound`, `TestIneligibleRankingRefIgnored`, `TestDeterministicReplayByteIdentical`, `TestApprovalRequiredRecordedNotApproved`, `TestEmptyCapabilitiesEmptyDecisions`, `TestBudgetRefusalOnlyWhenMinCapabilitiesPositive`, plus the negative `TestNoGrantMintingNoManifestMutation` (go/parser import scan: no `backend/pkg/mcp`, no exec/SQL in non-test code) and the vocabulary-parity `TestMirroredVocabularyMatchesMcp`.
 
-1. `deny` beats `allow` for the same candidate, regardless of rule order.
+> **Trace tests landed 2026-11-25 (ADI-CTX-004):** `TestTraceAcceptsWhatTheEngineEmits`, `TestTraceRefusesUnattributableDecisions` (13 cases), `TestTraceRefusesUnknownIdentity` (7 cases) and `TestTraceDigestIgnoresTheClock` prove §5 and §11's attributability in `backend/pkg/activation/trace_test.go`; `backend/pkg/activation/d1store/d1store_test.go` proves the store T1–T11 (round trip, idempotent replay, immutability, tenant wall, missing row, corruption, refusal record, absent clock, validate-before-write, no database, loud failures).
+
+
 2. A candidate absent from the closure is refused with `E_ACTIVATION_ESCALATION` and produces an audit event.
 3. A policy containing an `allow` for a ref outside the closure fails to load (`E_ACTIVATION_POLICY`).
 4. No matching rule yields `skipped` / `no-allow` (default-deny), never `activated`.
@@ -162,7 +164,26 @@ What activation **cannot** do: record that an approval was given. Approvals are 
 9. An empty capability System produces an empty decision list and no error.
 10. `E_ACTIVATION_BUDGET` fires only when `minCapabilities > 0` and eligibility left nothing.
 
-## 11. Open items
+## 11. Persisting the record (ADI-CTX-004)
+
+The record is stored with the run lineage, not in a second ledger: one row per run in `activation_decision_traces` (migration `0021`), written through `activation.TraceStore` (`backend/pkg/activation/trace.go`) and implemented by `backend/pkg/activation/d1store`.
+
+| Rule | Why |
+|---|---|
+| `run_id` is the primary key and the insert is `ON CONFLICT DO NOTHING` | One record per run. A replay of the same decision is a no-op, so a retried write cannot duplicate an explanation. |
+| The first write wins, including `decidedAt` | The trace says when the decision was first recorded; a later replay does not move it. |
+| A different record under an existing run is `ErrTraceImmutable` | A re-decision is a new run, exactly like a correction is a new snapshot. Nothing rewrites history. |
+| A run id already recorded by another tenant is `ErrTraceTenant` | The record sits beside runs, so the tenant wall applies to the row. |
+| `trace_digest` is `Record.Digest()` (`decidedAt` excluded) and is re-verified on read | A row that no longer matches its own digest answers `ErrTraceCorrupt` instead of explaining something that never happened. |
+| `ValidateRecord` runs before the write | An `activated` without a `ruleId`, or a `skipped`/`denied` without a reason, is refused (`ErrTraceInvalid`) before D1 is touched. |
+
+The whole record is stored as one JSON document (`record`), with identity columns denormalised for lookup and retention (`tenant_key`), rather than split into a second per-candidate table: the entry list is one attributable artifact, and a second copy would be a second answer to one question. Reading a trace is `Load(ctx, runId)`; the store has no update and no delete operation.
+
+**Why a dedicated table, not `audit_logs` or a column on `workflow_instances`.** `audit_logs` carries individual security events — activation still writes its `E_ACTIVATION_ESCALATION` events there through the caller — while this table carries the *whole decision* as one retrievable artifact, so the two cannot compete for the same rows. A JSON column on the run row would make the trace mutable with the run and would leave an unbound run with nowhere to record a decision; a separate keyed row keeps one record per run regardless of which table the run lives in, and keeps the append-only rule enforceable with a primary key.
+
+**Honest limits.** Nothing calls the store yet: no assembler supplies candidates (ADI-CTX-001 is design-only) and no policy source exists, so activation — and therefore its trace — has no producer on the live path. The store is the seam a caller will use; it is not a capability surface (D8 untouched).
+
+## 12. Open items
 
 | Item | Why it is open |
 |---|---|

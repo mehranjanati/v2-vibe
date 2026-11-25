@@ -709,6 +709,36 @@ export const memoryRecords = sqliteTable('memory_records', {
 }));
 
 /**
+ * Activation Decision Traces table - ADI-CTX-004.
+ *
+ * One row per run: the persisted decision record of
+ * docs/architecture/activation-policy.md §5. `run_id` is the primary key, so a
+ * replay of the same decision is a no-op (`ON CONFLICT DO NOTHING`) and a
+ * different record for the same run is refused instead of rewritten - a trace
+ * is append-only, exactly like a snapshot.
+ *
+ * `record` holds the whole record as stored JSON (including `decidedAt`), and
+ * `trace_digest` is its content address with the clock excluded, so a row can
+ * detect its own corruption. The identity columns are denormalised for lookup
+ * and retention; the per-candidate explanations are read from `record` as one
+ * attributable document, never as a second, drifting copy.
+ */
+export const activationDecisionTraces = sqliteTable('activation_decision_traces', {
+    runId: text('run_id').primaryKey(),
+    tenantKey: text('tenant_key').notNull(),
+    contextId: text('context_id').notNull(),
+    compositionDigest: text('composition_digest').notNull(),
+    activationPolicyRef: text('activation_policy_ref').notNull(),
+    rankingSource: text('ranking_source').notNull(), // provider id, or "none"
+    rankingVersion: text('ranking_version'),
+    decidedAt: integer('decided_at', { mode: 'timestamp' }), // injected clock; may be absent
+    traceDigest: text('trace_digest').notNull(), // sha256:<hex>, decidedAt excluded
+    record: text('record').notNull(),
+}, (table) => ({
+    tenantIdx: index('activation_decision_traces_tenant_idx').on(table.tenantKey),
+}));
+
+/**
  * Composition Snapshots table - ADI-FOUND-004a.
  *
  * One immutable, content-addressed record of what a System resolved to

@@ -37,7 +37,7 @@ Scopes run, conversation, agent, team, tenant, in a containment ladder (`run ⊂
 
 ## 5. Decision trace fields
 
-One record per run with one entry per candidate: `runId`, `tenantKey`, `contextId`, `compositionDigest`, pinned `activationPolicyRef`, `decisions[]` (candidate, `activated`/`skipped`/`denied`, `stage`, `ruleId`, `reason`, `approvalRequired`), `ranking` (provider id + version, or `none`) and an injected `decidedAt` excluded from any digest. The exact shape, ordering rules and the rule that every decision must be attributable live in [`activation-policy.md`](activation-policy.md) §5. Persisted with the run lineage; denied/skipped entries name the policy rule or the missing grant.
+One record per run with one entry per candidate: `runId`, `tenantKey`, `contextId`, `compositionDigest`, pinned `activationPolicyRef`, `decisions[]` (candidate, `activated`/`skipped`/`denied`, `stage`, `ruleId`, `reason`, `approvalRequired`), `ranking` (provider id + version, or `none`) and an injected `decidedAt` excluded from any digest. The exact shape, ordering rules and the rule that every decision must be attributable live in [`activation-policy.md`](activation-policy.md) §5. Persisted with the run lineage; denied/skipped entries name the policy rule or the missing grant. **Storage landed 2026-11-25 (ADI-CTX-004):** one append-only D1 row per run in `activation_decision_traces` (migration `0021`), written through `activation.TraceStore`; a replay is a no-op, a different record for the same run is refused, and a corruption is detected by re-verifying the digest on read (`activation-policy.md` §11). No caller yet — no assembler (ADI-CTX-001) and no policy source, so the record has no producer on the live path.
 
 ## 6. Authorization boundaries
 

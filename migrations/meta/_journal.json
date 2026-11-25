@@ -148,6 +148,13 @@
       "when": 1795538980121,
       "tag": "0020_modern_jocasta",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1795608091376,
+      "tag": "0021_mature_nekra",
+      "breakpoints": true
     }
   ]
 }

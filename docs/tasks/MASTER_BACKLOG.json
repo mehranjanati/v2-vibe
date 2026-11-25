@@ -833,13 +833,17 @@
    "title": "Activation decision trace",
    "type": "DESIGN",
    "priority": "P2",
-   "status": "TODO",
-   "description": "PREPARED 2026-11-25 (dependency satisfied, not started). Persist one decision record per run per activation-policy.md S5 and context-activation-and-memory.md S5 (runId, tenantKey, contextId, compositionDigest, pinned policy ref, per-candidate activated/skipped/denied with stage/ruleId/reason/approvalRequired, ranking provider + version or none, injected decidedAt). The record shape now exists in backend/pkg/activation (activation.Record + Canonical/Digest, ADI-CTX-003 DONE 2026-11-25), so this task persists it. No migration is proposed in this task — the store shape (run lineage vs audit_logs) is decided at implementation time.",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 (store; no caller). The decision record of activation-policy.md S5 is now persisted: activation.TraceStore + ValidateRecord in backend/pkg/activation/trace.go (the pure seam, so the eligibility core still imports no SQL and no grant store), the D1 adapter backend/pkg/activation/d1store (append-only Persist + Load over a two-method Querier) and additive migration 0021 (activation_decision_traces: run_id primary key, tenant_key, context_id, composition_digest, activation_policy_ref, ranking_source/version, decided_at, trace_digest, record JSON). The whole record is one JSON document with identity columns denormalised; decisions[] keep candidate/decision/stage/ruleId/reason/approvalRequired. Contract: run_id is the key with ON CONFLICT DO NOTHING (a replay is a no-op and the first write keeps its decidedAt), a different record for the same run is ErrTraceImmutable, another tenant's run id is ErrTraceTenant, a row that no longer matches its digest is ErrTraceCorrupt, and an unattributable record (activated without ruleId, skipped/denied without a reason, unsorted or duplicate entries) is ErrTraceInvalid before D1 is touched. decidedAt is excluded from the digest, exactly as the engine already defined it. Honest limit: nothing calls the store — no assembler supplies candidates (ADI-CTX-001 is design-only) and no policy source exists, so no row is produced on the live path. Migration 0021 is additive and not applied. D8 untouched: no route, no grant, no capability surface.",
    "dependencies": [
     "ADI-CTX-003"
    ],
    "acceptance_criteria": [
-    "Activated/skipped/denied persisted with explanations and version refs"
+    "Activated/skipped/denied persisted with explanations and version refs",
+    "One append-only row per run; a replay is a no-op and a different record for the same run is refused (no rewrite)",
+    "An unattributable record is refused before the write (activated without ruleId, skipped/denied without reason, unsorted/duplicate entries)",
+    "A row that no longer matches its trace digest is refused on read; a cross-tenant run id is refused",
+    "go vet ./... + go test ./... green, including -race on backend/pkg/activation and its d1store; docs:check green"
    ],
    "documentation": [
     "docs/architecture/activation-policy.md",
@@ -848,12 +852,18 @@
    "risk": "Medium",
    "solo_developer_estimate": "S",
    "repository_paths": [
+    "backend/pkg/activation/trace.go",
+    "backend/pkg/activation/trace_test.go",
+    "backend/pkg/activation/d1store/d1store.go",
+    "backend/pkg/activation/d1store/d1store_test.go",
+    "worker/database/schema.ts",
+    "migrations/0021_mature_nekra.sql",
     "docs/architecture/activation-policy.md",
     "docs/architecture/context-activation-and-memory.md"
    ],
    "tests": [
-    "Persisted decision record matches activation-policy.md S5 fields",
-    "ADI-CTX-003 landed 2026-11-25; the record to persist is activation.Record"
+    "trace_test.go: TestTraceAcceptsWhatTheEngineEmits, TestTraceRefusesUnattributableDecisions (13 cases), TestTraceRefusesUnknownIdentity (7), TestTraceDigestIgnoresTheClock",
+    "d1store_test.go: TestTraceRoundTrip, TestTracePersistIsIdempotent, TestTraceIsImmutablePerRun, TestTraceRefusesAnotherTenant, TestTraceMissingRun, TestTraceCorruptionIsRefused, TestTracePersistsARefusalRecord, TestTraceWithoutAClock, TestTraceValidatesBeforeWriting, TestTraceRequiresADatabase, TestTraceStoreFailuresAreLoud (T1-T11)"
    ]
   },
   {
