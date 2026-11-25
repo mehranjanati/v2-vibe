@@ -50,6 +50,8 @@ Target architecture: `04-system-architecture.md`. Gap analysis:
 >
 > AaaS-only direction with Web3 as next plan: [`11-aaas-web3-strategy.md`](11-aaas-web3-strategy.md)
 > (decision D6, preserved); ADR: [`architecture/adr-aaas-only-end-of-saas.md`](architecture/adr-aaas-only-end-of-saas.md).
+> Web3 application direction (PROPOSED 2026-11-25, architecture only, no code):
+> [`ecosystem/11-web3-network-economy.md`](ecosystem/11-web3-network-economy.md).
 
 ## Contents
 

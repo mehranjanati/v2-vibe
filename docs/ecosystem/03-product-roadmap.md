@@ -24,6 +24,21 @@
   scheduling, health, trust, verification, metering, settlement interface.
 - **P9 Web3 Economy (optional)** — chain-agnostic settlement, wallets, escrow,
   incentives, reputation, staking evaluation, token research, legal review.
+  Web3 application phases W0–W6 (PROPOSED 2026-11-25, architecture only)
+  sequence inside P9 without changing P0–P8: W0 foundations (IR separation,
+  chain abstraction, signing model, toolchain and LayerZero ADRs); W1 EVM
+  contract foundation (spec model, Solidity scope, toolchain, compilation,
+  artifacts, isolated tests, templates); W2 validation and security
+  pipeline (unit, integration, fuzz/invariant, static analysis, simulation,
+  provenance, policy enforcement); W3 wallet, signing, deployment
+  (transaction lifecycle, approvals, testnet deploy, verification,
+  deployment records); W4 LayerZero and omnichain (interop abstraction,
+  adapter, OApp/OFT use cases, peer/DVN config, lifecycle, retry/recovery,
+  monitoring); W5 agentic Web3 operations (policy-governed contract calls,
+  monitoring agents, human approval for sensitive actions); W6 marketplace
+  and ecosystem (contract templates, Web3 capabilities, publisher trust,
+  metering, monetization, additional chains). Backlog IDs use the
+  `W<n>-WEB3-<nn>` namespace so no P-number collides.
 
 Rules: P0 first; no task without prerequisites; small verifiable tasks; research/
 design/implementation/test/deploy labeled; P7–P9 stay backlog until gates pass.

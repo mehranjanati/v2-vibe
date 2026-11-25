@@ -86,6 +86,18 @@ agentic control plane above it. Canonical definitions, market entry,
 reference systems, competitive landscape, and moat hypotheses:
 [`PRODUCT_THESIS.md`](PRODUCT_THESIS.md).
 
+Web3 note (PROPOSED 2026-11-25, architecture only, no runtime code): owner
+decision **D22** accepted the versioned, canonical, target-independent Smart
+Contract IR with a generic core plus explicit target extensions; it ships as
+`architecture/web3-smart-contract-ir.md` plus schema and fixtures under
+`architecture/contract-ir/` plus the sixth docs gate
+(`scripts/validate-contract-ir.mjs`, eight negative probes). Chain
+abstraction, LayerZero interop, toolchain pipeline and wallet-first signing
+remain PROPOSED/OPEN; the tree still contains no wallet, RPC client,
+compiler, generator, bridge, or deployment code. Commercial entry point and
+MVP scope: `ecosystem/11-web3-network-economy.md` and
+`ecosystem/14-product-and-business-model.md`.
+
 <a id="current-implementation-state"></a>
 
 ## Current Implementation State

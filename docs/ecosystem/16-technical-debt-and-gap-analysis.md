@@ -22,7 +22,12 @@
 - Skill/OpenAPI loaders plus tool search: IMPLEMENTED within loader scope only (no registry/agent-run consumer).
 - Adaptive Intelligence contracts (lock/resolver/activation/memory/eval/evolution/bundle): PROPOSED design-only (2026-11-23), no code.
 - Assistant/Research/Commerce/Cloud/Network surfaces: PLANNED/RESEARCH.
-- WASM, containers, GPU, wasmCloud, chain: RESEARCH (no code).
+- WASM, containers, GPU, wasmCloud: RESEARCH (no code).
+- Web3 and chains: RESEARCH with PROPOSED architecture only (2026-11-25) —
+  Smart Contract IR, chain abstraction, LayerZero interop, toolchain
+  pipeline, signing model, API/event plan, stack review, eight W3 ADRs
+  (seven PROPOSED, one OPEN); no wallet, RPC, compiler, generator, bridge,
+  or deployment code exists and none is claimed.
 
 ## Conflicts and gaps
 

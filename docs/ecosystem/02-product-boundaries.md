@@ -39,6 +39,12 @@ Extension, Metering, Audit. Owners: `05-agent-platform-architecture.md`,
 `06-runtime-and-execution-architecture.md`, `07-multitenancy-security.md`,
 `09-marketplace-architecture.md`, `14-product-and-business-model.md`.
 
+Web3 extension (PROPOSED 2026-11-25, additive only): Smart Contract IR,
+Chain Profile, Interop Manifest, Deployment Record, Signing Request. None
+replaces a contract above; System IR stays the whole-system model and
+references contracts by pinned identifiers. Schemas land only after the W3
+decisions are accepted.
+
 ## Interop
 
 Delegation via typed agent-to-agent calls carrying tenant/user/agent identity.

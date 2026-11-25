@@ -1,6 +1,6 @@
 {
- "generated": "2026-11-24",
- "source": "docs/DEV_CHECKLIST.md preserved; new ecosystem tasks only",
+ "generated": "2026-11-25",
+ "source": "docs/DEV_CHECKLIST.md preserved; ecosystem tasks plus W0-W6 Web3 design tasks (no code)",
  "tasks": [
   {
    "acceptance_criteria": [
@@ -38,7 +38,7 @@
    "dependencies": [
     "P0-SEC-001"
    ],
-   "description": "DONE 2026-11-22. Audit of every guarded control-plane family (projects files/deploy/github-export, agent connect, generations list/diff/rollback, workflows trigger/get, /ws/:id, Worker VibeWorkflow tenant stamp): the isolation itself held — no cross-tenant read or write was found. The real gap was automated coverage: the History API (generations) had only a manual production run as evidence. Added backend/pkg/api/isolation_test.go which pins the whole matrix in one table (cross-tenant 403, unknown 404, anonymous 401, owner not denied) plus a case proving a denied rollback mutates nothing and leaves the owner's history reachable, and a case proving the one deliberately unguarded route (POST /api/agent, which never touches a room) mints no WebSocket ticket. go vet ./... and go test ./... green; go test -tags e2e ./e2e/ -run 'P03|P05|P17' green.",
+   "description": "DONE 2026-11-22. Audit of every guarded control-plane family (projects files/deploy/github-export, agent connect, generations list/diff/rollback, workflows trigger/get, /ws/:id, Worker VibeWorkflow tenant stamp): the isolation itself held \u2014 no cross-tenant read or write was found. The real gap was automated coverage: the History API (generations) had only a manual production run as evidence. Added backend/pkg/api/isolation_test.go which pins the whole matrix in one table (cross-tenant 403, unknown 404, anonymous 401, owner not denied) plus a case proving a denied rollback mutates nothing and leaves the owner's history reachable, and a case proving the one deliberately unguarded route (POST /api/agent, which never touches a room) mints no WebSocket ticket. go vet ./... and go test ./... green; go test -tags e2e ./e2e/ -run 'P03|P05|P17' green.",
    "documentation": [
     "docs/07-multitenancy-security.md"
    ],
@@ -98,7 +98,7 @@
    "dependencies": [
     "P0-SEC-001"
    ],
-   "description": "DONE 2026-11-22. Audit: two stores exist — the live GitHub OAuth vault (AES-256-GCM envelopes in D1, AAD-bound to the user, migration 0012 purges legacy plaintext, lazy re-seal on read) and a 923-line generic user-secrets store that is NOT wired (/api/vault/* answers 503 and nothing imports it). No plaintext reaches manifests (tool schema accepts only ^vault: refs) or logs (no control-plane log carries a token). Revocation was the real gap: the provider call lived in the route, untested, with no timeout, swallowing failures and always answering revoked:true. It now lives in the vault (revokeGitHubToken): DELETE /applications/{client_id}/token with Basic auth, 5s AbortSignal timeout, 2xx/401/404 count as revoked, warns without the token, always performs the authoritative local delete, and returns {localRevoked, providerRevoked} so the route can answer honestly. Opened O24 for JWT_SECRET rotation (mass re-authorisation) and recorded that the generic vault is what still blocks P1-AGT-003.",
+   "description": "DONE 2026-11-22. Audit: two stores exist \u2014 the live GitHub OAuth vault (AES-256-GCM envelopes in D1, AAD-bound to the user, migration 0012 purges legacy plaintext, lazy re-seal on read) and a 923-line generic user-secrets store that is NOT wired (/api/vault/* answers 503 and nothing imports it). No plaintext reaches manifests (tool schema accepts only ^vault: refs) or logs (no control-plane log carries a token). Revocation was the real gap: the provider call lived in the route, untested, with no timeout, swallowing failures and always answering revoked:true. It now lives in the vault (revokeGitHubToken): DELETE /applications/{client_id}/token with Basic auth, 5s AbortSignal timeout, 2xx/401/404 count as revoked, warns without the token, always performs the authoritative local delete, and returns {localRevoked, providerRevoked} so the route can answer honestly. Opened O24 for JWT_SECRET rotation (mass re-authorisation) and recorded that the generic vault is what still blocks P1-AGT-003.",
    "documentation": [
     "docs/07-multitenancy-security.md",
     "docs/ecosystem/10-decisions-and-open-questions.md"
@@ -130,7 +130,7 @@
    "dependencies": [
     "P0-SEC-002"
    ],
-   "description": "DONE 2026-11-22. Route-level isolation was already covered (403 + workflow.access_denied audit, 404 unknown/unowned, 503 outages, room-ownership fallback, denied trigger records no run). The real hole was on the stamp side: the guard resolved the tenant as 'D1 column first, then the P0.4 room claim', but the trigger handler stamped dag.UserID straight from D1, so a legacy row (workflow_dags.user_id NULL) authorized via the room fallback recorded a NULL tenant — and the runtime's mismatch check is skipped when either side is empty, making the second layer of defence vacuous for exactly those runs. Fix: workflowGuard records the tenant it authorized (workflowOwnerLocals) and the trigger stamps that value, falling back to dag.UserID only when the guard is not installed. Pinned by TestWorkflowTriggerStampsAuthorizedTenantForLegacyDag (NULL-owner DAG claimed by room owner A: A triggers -> 200 and the run carries user-a; B -> 403 and no new row) and TestWorkflowTriggerDeniedInvokesNoRuntime (a refused trigger starts no Cloudflare instance). Resulting invariant: with the boundary on every run that reaches the runtime carries a non-empty tenant, and a mismatch fails the run with NonRetryableError before any step executes.",
+   "description": "DONE 2026-11-22. Route-level isolation was already covered (403 + workflow.access_denied audit, 404 unknown/unowned, 503 outages, room-ownership fallback, denied trigger records no run). The real hole was on the stamp side: the guard resolved the tenant as 'D1 column first, then the P0.4 room claim', but the trigger handler stamped dag.UserID straight from D1, so a legacy row (workflow_dags.user_id NULL) authorized via the room fallback recorded a NULL tenant \u2014 and the runtime's mismatch check is skipped when either side is empty, making the second layer of defence vacuous for exactly those runs. Fix: workflowGuard records the tenant it authorized (workflowOwnerLocals) and the trigger stamps that value, falling back to dag.UserID only when the guard is not installed. Pinned by TestWorkflowTriggerStampsAuthorizedTenantForLegacyDag (NULL-owner DAG claimed by room owner A: A triggers -> 200 and the run carries user-a; B -> 403 and no new row) and TestWorkflowTriggerDeniedInvokesNoRuntime (a refused trigger starts no Cloudflare instance). Resulting invariant: with the boundary on every run that reaches the runtime carries a non-empty tenant, and a mismatch fails the run with NonRetryableError before any step executes.",
    "documentation": [
     "docs/07-multitenancy-security.md"
    ],
@@ -163,7 +163,7 @@
    "dependencies": [
     "P0-SEC-003"
    ],
-   "description": "DONE 2026-11-22. W2 (Origin): wsOriginGuard runs before the session guard and refuses a foreign Origin with 403 — middleware rather than an upgrader option because the Fiber websocket config only does exact Origins matching while the allow-list ships an https://*. wildcard; no Origin is allowed (SDK/CLI/e2e, and a browser cannot omit it). W3 (ticket): the URL no longer carries the session token. POST /api/ws-ticket mints a 32-byte random ticket bound to (user, room) with a 15s TTL (engine.WSTicketTTL, the lifetime the SDK already documents); redemption deletes it (GETDEL in Redis, so it is single-use across instances); replay, cross-room use, or a session token in the URL all answer 401, and the ?token= alias was removed. buildWebSocketURL mints a ticket, the SPA fetches one per connect (getWsTicket), and the SDK contract {ticket, expiresIn, expiresAt} is now implemented. Tests: 22 WS cases in backend/pkg/api/ws_auth_test.go (single-use, room binding, TTL, Origin allow-list incl. suffix trick, endpoint 200/403/401) + e2e P05 fetching the ticket over HTTP and upgrading 101. Postman contract + collection + README §7 updated for the new route.",
+   "description": "DONE 2026-11-22. W2 (Origin): wsOriginGuard runs before the session guard and refuses a foreign Origin with 403 \u2014 middleware rather than an upgrader option because the Fiber websocket config only does exact Origins matching while the allow-list ships an https://*. wildcard; no Origin is allowed (SDK/CLI/e2e, and a browser cannot omit it). W3 (ticket): the URL no longer carries the session token. POST /api/ws-ticket mints a 32-byte random ticket bound to (user, room) with a 15s TTL (engine.WSTicketTTL, the lifetime the SDK already documents); redemption deletes it (GETDEL in Redis, so it is single-use across instances); replay, cross-room use, or a session token in the URL all answer 401, and the ?token= alias was removed. buildWebSocketURL mints a ticket, the SPA fetches one per connect (getWsTicket), and the SDK contract {ticket, expiresIn, expiresAt} is now implemented. Tests: 22 WS cases in backend/pkg/api/ws_auth_test.go (single-use, room binding, TTL, Origin allow-list incl. suffix trick, endpoint 200/403/401) + e2e P05 fetching the ticket over HTTP and upgrading 101. Postman contract + collection + README \u00a77 updated for the new route.",
    "documentation": [
     "docs/07-multitenancy-security.md",
     "docs/POSTMAN_COLLECTION_README.md"
@@ -227,7 +227,7 @@
    "dependencies": [
     "P0-SEC-001"
    ],
-   "description": "OBSOLETE by D17 (2026-11-22) — no staging environment will be provisioned. Owner decision: Vibe runs one control plane (production) plus a locally-deployed plane for security proofs. Rationale recorded in D17: a second Render environment needs a paid Key Value, and the security value is in the proof matrix (200/401/403/404/503), which already runs against production (2026-11-21) and locally (P0-SEC-001, docker-compose with the boundary on and the real Edge KV id). A draft render.staging.yaml was written during O21 and then removed with this decision; render.yaml stays the only blueprint and deploy-staging.yml keeps pointing at the production control plane as a Worker preview. Replacement: none needed — the acceptance criteria are met by the production matrix plus the local deployed-plane proof. Explicitly unproven and not to be claimed: behaviour that only a separate host could show (proxy chains, a second Key Value, cross-origin cookies).",
+   "description": "OBSOLETE by D17 (2026-11-22) \u2014 no staging environment will be provisioned. Owner decision: Vibe runs one control plane (production) plus a locally-deployed plane for security proofs. Rationale recorded in D17: a second Render environment needs a paid Key Value, and the security value is in the proof matrix (200/401/403/404/503), which already runs against production (2026-11-21) and locally (P0-SEC-001, docker-compose with the boundary on and the real Edge KV id). A draft render.staging.yaml was written during O21 and then removed with this decision; render.yaml stays the only blueprint and deploy-staging.yml keeps pointing at the production control plane as a Worker preview. Replacement: none needed \u2014 the acceptance criteria are met by the production matrix plus the local deployed-plane proof. Explicitly unproven and not to be claimed: behaviour that only a separate host could show (proxy chains, a second Key Value, cross-origin cookies).",
    "documentation": [
     "docs/DEPLOY_RENDER_CLOUDFLARE.md",
     "docs/ecosystem/10-decisions-and-open-questions.md"
@@ -408,10 +408,10 @@
     "P0-SEC-004"
    ],
    "acceptance_criteria": [
-    "An authenticated route discovers and (with a grant) executes against a real server — DONE 2026-11-24 (TestMCPRouteExecutesAgainstARealServer: routes → Gate → real HTTP+SSE server in one chain)",
-    "Grantless route call is 403 and spawns nothing — DONE 2026-11-24 (revoked grant → 403 + audit, transport never dialed)",
-    "A server secret is stored as a vault: ref and resolved only at call time — DONE 2026-11-24 (backend/pkg/vault + /api/vault routes; resolution becomes Authorization: Bearer on the transport; no route returns a value)",
-    "SSE binding passes the same transport tests — DONE 2026-11-24 (7 tests / 5 subtests, backend/pkg/mcp/sse_test.go)"
+    "An authenticated route discovers and (with a grant) executes against a real server \u2014 DONE 2026-11-24 (TestMCPRouteExecutesAgainstARealServer: routes \u2192 Gate \u2192 real HTTP+SSE server in one chain)",
+    "Grantless route call is 403 and spawns nothing \u2014 DONE 2026-11-24 (revoked grant \u2192 403 + audit, transport never dialed)",
+    "A server secret is stored as a vault: ref and resolved only at call time \u2014 DONE 2026-11-24 (backend/pkg/vault + /api/vault routes; resolution becomes Authorization: Bearer on the transport; no route returns a value)",
+    "SSE binding passes the same transport tests \u2014 DONE 2026-11-24 (7 tests / 5 subtests, backend/pkg/mcp/sse_test.go)"
    ],
    "repository_paths": [
     "backend/pkg/mcp/",
@@ -421,9 +421,9 @@
     "migrations/"
    ],
    "tests": [
-    "Route-level gate tests — DONE 2026-11-24: 8 tests in backend/pkg/api (mcp_test.go: 401 anonymous, 403 + audit, 404 unknown/foreign grant, reviewed-permissions rule, unroutable 409, vault resolution 409/503, no dial on refusal; mcp_e2e_test.go: discover → grant → call against a real HTTP+SSE server); go test -count=1 -run TestMCP ./pkg/api/ green",
-    "SSE round-trip against a stub server — DONE 2026-11-24: 7 tests / 5 subtests in backend/pkg/mcp/sse_test.go, go test -race ./pkg/mcp/ green",
-    "Vault store/resolve/revoke tests — DONE 2026-11-24: 5 tests in backend/pkg/vault/vault_test.go (seal/AAD/tamper, ref parsing, D1 round-trip, resolve-at-call-time, fail-closed) + 5 route tests in backend/pkg/api/vault_test.go; both green under -race. The store lives in the control plane (D8.4), not worker/light/tokenVault.ts, which keeps the GitHub token"
+    "Route-level gate tests \u2014 DONE 2026-11-24: 8 tests in backend/pkg/api (mcp_test.go: 401 anonymous, 403 + audit, 404 unknown/foreign grant, reviewed-permissions rule, unroutable 409, vault resolution 409/503, no dial on refusal; mcp_e2e_test.go: discover \u2192 grant \u2192 call against a real HTTP+SSE server); go test -count=1 -run TestMCP ./pkg/api/ green",
+    "SSE round-trip against a stub server \u2014 DONE 2026-11-24: 7 tests / 5 subtests in backend/pkg/mcp/sse_test.go, go test -race ./pkg/mcp/ green",
+    "Vault store/resolve/revoke tests \u2014 DONE 2026-11-24: 5 tests in backend/pkg/vault/vault_test.go (seal/AAD/tamper, ref parsing, D1 round-trip, resolve-at-call-time, fail-closed) + 5 route tests in backend/pkg/api/vault_test.go; both green under -race. The store lives in the control plane (D8.4), not worker/light/tokenVault.ts, which keeps the GitHub token"
    ],
    "documentation": [
     "docs/architecture/mcp-trust-slice.md",
@@ -454,7 +454,7 @@
     "docs/architecture/manifest-schemas/"
    ],
    "tests": [
-    "12 test functions in backend/pkg/agentskills/agentskills_test.go (15 cases in the invalid-frontmatter table, 5 in the grant-intersection table) — all green",
+    "12 test functions in backend/pkg/agentskills/agentskills_test.go (15 cases in the invalid-frontmatter table, 5 in the grant-intersection table) \u2014 all green",
     "Gate integration: a grantless skill script is denied before spawn (transport call count stays 0) and a granted one executes only through mcp.Gate, cross-tenant grant refused"
    ],
    "documentation": [
@@ -485,7 +485,7 @@
     "docs/architecture/manifest-schemas/"
    ],
    "tests": [
-    "11 test functions in backend/pkg/openapiimport/openapiimport_test.go (the 5-operation leads fixture incl. a bearer scheme and an Authorization header) — all green",
+    "11 test functions in backend/pkg/openapiimport/openapiimport_test.go (the 5-operation leads fixture incl. a bearer scheme and an Authorization header) \u2014 all green",
     "Independent cross-check: generated manifests validated against docs/architecture/manifest-schemas/tool.schema.json with scripts/lib/schema-subset.mjs, byte-identical to its canonical serialize()",
     "Conducted call: grantless Gate.Call denied with zero transport invocations; granted call executes once; DELETE policy requires live human approval"
    ],
@@ -501,7 +501,7 @@
    "type": "IMPLEMENTATION",
    "priority": "P2",
    "status": "DONE",
-   "description": "DONE 2026-11-23 for all four acceptance criteria, as search beside the gate (no execution, no agent wiring). backend/pkg/toolsearch builds a Catalog from the loaders' own output: AddImported indexes the OpenAPI importer's manifests (pinned ref + description + sideEffect) and AddSkill indexes an agentskills skill's allowed-tools, so search covers exactly what already has a manifest and nothing else. Search(query, limit) ranks with fixed documented weights (name word/substring beats description word/substring, with a phrase bonus), drops one-character and stop-word tokens so common words cannot flatten the ranking, normalises - and _ in names, and breaks ties by score then name then pinned ref, so the same catalog and query always give the same order (golden-tested). Bounds are structural: limit is clamped to MaxCandidates=8, the slice is dropped when it would exceed ContextTokenBudget=600 estimated tokens, and Truncated plus a note say so; the default answer is DefaultLimit=5. A miss is information: the result is empty with Missed=true and a note telling the model to state the missing capability, never a return-everything fallback. Authority stays with the gate: Verify/GrantID resolve a live non-revoked non-expired grant for the tenant, CallRequest refuses an ungranted match with mcp.DeniedError instead of building a request that can only fail, and a test drives a surfaced tool through a real mcp.Gate (no grant = zero transport calls, foreign grant refused, live grant executes once). Code Mode is a gated spike, not a runtime: NewCodeMode needs both an explicit enabled flag and a Sandbox, the zero value and nil receiver refuse, Program/empty input refuse, and a static test asserts the package links no os/exec, plugin or syscall execution facility — so no code path runs agent-authored code unsandboxed. NOT done by design: no server.json/event-log ranking source yet, no real WASM/container Sandbox (sequenced with P7-RUN), no agent or route caller (D8).",
+   "description": "DONE 2026-11-23 for all four acceptance criteria, as search beside the gate (no execution, no agent wiring). backend/pkg/toolsearch builds a Catalog from the loaders' own output: AddImported indexes the OpenAPI importer's manifests (pinned ref + description + sideEffect) and AddSkill indexes an agentskills skill's allowed-tools, so search covers exactly what already has a manifest and nothing else. Search(query, limit) ranks with fixed documented weights (name word/substring beats description word/substring, with a phrase bonus), drops one-character and stop-word tokens so common words cannot flatten the ranking, normalises - and _ in names, and breaks ties by score then name then pinned ref, so the same catalog and query always give the same order (golden-tested). Bounds are structural: limit is clamped to MaxCandidates=8, the slice is dropped when it would exceed ContextTokenBudget=600 estimated tokens, and Truncated plus a note say so; the default answer is DefaultLimit=5. A miss is information: the result is empty with Missed=true and a note telling the model to state the missing capability, never a return-everything fallback. Authority stays with the gate: Verify/GrantID resolve a live non-revoked non-expired grant for the tenant, CallRequest refuses an ungranted match with mcp.DeniedError instead of building a request that can only fail, and a test drives a surfaced tool through a real mcp.Gate (no grant = zero transport calls, foreign grant refused, live grant executes once). Code Mode is a gated spike, not a runtime: NewCodeMode needs both an explicit enabled flag and a Sandbox, the zero value and nil receiver refuse, Program/empty input refuse, and a static test asserts the package links no os/exec, plugin or syscall execution facility \u2014 so no code path runs agent-authored code unsandboxed. NOT done by design: no server.json/event-log ranking source yet, no real WASM/container Sandbox (sequenced with P7-RUN), no agent or route caller (D8).",
    "dependencies": [
     "P7-SKL-001",
     "P7-OPI-001"
@@ -518,7 +518,7 @@
     "backend/pkg/agent/"
    ],
    "tests": [
-    "8 test functions in backend/pkg/toolsearch/toolsearch_test.go (5 golden ranking cases over a 7-candidate catalog built from the real leads-api fixture + pdf-report skill) — all green",
+    "8 test functions in backend/pkg/toolsearch/toolsearch_test.go (5 golden ranking cases over a 7-candidate catalog built from the real leads-api fixture + pdf-report skill) \u2014 all green",
     "Bound assertion over limits -5..1000: never more than MaxCandidates or the requested limit, token budget enforced, truncation reported",
     "Missed-capability negative cases: 'reconcile supplier invoices', 'transcribe audio' and the empty query return nothing with a note",
     "Gate reuse: surfaced-but-ungranted denied with zero transport invocations, cross-tenant grant refused, live grant executes exactly once",
@@ -539,7 +539,7 @@
    "dependencies": [
     "P7-RUN-001"
    ],
-   "description": "DONE 2026-11-23. Closes the residual gap recorded under P7-RUN-001 (\"the Worker interpreter still lacks cancel/pause/capabilities()\"). Control plane: backend/pkg/cloudflare gains TerminateWorkflowInstance/PauseWorkflowInstance/ResumeWorkflowInstance over one shared workflowInstanceAction (POST /instances/{id}/{action}, path-escaped id, envelope + status handling); backend/pkg/engine gains WorkflowCapabilities() (the deployed runtime's advertisement: all four true, with a doc comment explaining why it differs from execution.CloudflareCapabilities — that one describes the REST adapter from outside), WorkflowInstanceTerminal(), and three guarded state writers (cancelled only from pending/running/paused, paused only from running, running only from paused) so a terminal row is never overwritten; backend/pkg/api gains POST /api/workflows/{cancel,pause,resume} plus GET /api/workflows/capabilities, all behind the session guard and workflowGuard, loading the instance scoped to the addressed workflow (404 on a foreign run, never a cross-tenant control channel), refusing terminal runs with 409 and recording the new state only after the runtime accepted the call (502 otherwise, so the row still describes reality). Worker: worker/workflow/workflowCapabilities.ts declares the advertisement and derives DAG requirements; VibeWorkflow exposes static advertisedCapabilities, returns early without writing when the instance is already cancelled, refuses a DAG that needs an unadvertised guarantee (NonRetryableError before any step), and guards markRunning/markSucceeded/markFailed with status <> 'cancelled' — without that guard Cloudflare's terminate makes run() throw and the catch block rewrote a cancelled run as failed. Route contract updated (34 control routes). Test debt closed 2026-11-24: backend/pkg/api/workflows_control_test.go pins the eight route cases (401 incl. capabilities, 403 + audit, 404 unknown/foreign, 409 on every terminal state, 502 with no write on a runtime refusal, transition-guarded pause/resume, defaulted reason) and is green locally over the emulated D1 + Workflows API; worker/workflow/VibeWorkflow.test.ts gained the cancel-finality and capability-refusal cases (already-cancelled no-op, mid-run cancel never becomes succeeded, terminated run never rewritten as failed, refusal before any step, admission under the deployed advertisement). The worker cases are executed by CI because workerd cannot start on macOS 12.7.6; the frontend still has no cancel button.",
+   "description": "DONE 2026-11-23. Closes the residual gap recorded under P7-RUN-001 (\"the Worker interpreter still lacks cancel/pause/capabilities()\"). Control plane: backend/pkg/cloudflare gains TerminateWorkflowInstance/PauseWorkflowInstance/ResumeWorkflowInstance over one shared workflowInstanceAction (POST /instances/{id}/{action}, path-escaped id, envelope + status handling); backend/pkg/engine gains WorkflowCapabilities() (the deployed runtime's advertisement: all four true, with a doc comment explaining why it differs from execution.CloudflareCapabilities \u2014 that one describes the REST adapter from outside), WorkflowInstanceTerminal(), and three guarded state writers (cancelled only from pending/running/paused, paused only from running, running only from paused) so a terminal row is never overwritten; backend/pkg/api gains POST /api/workflows/{cancel,pause,resume} plus GET /api/workflows/capabilities, all behind the session guard and workflowGuard, loading the instance scoped to the addressed workflow (404 on a foreign run, never a cross-tenant control channel), refusing terminal runs with 409 and recording the new state only after the runtime accepted the call (502 otherwise, so the row still describes reality). Worker: worker/workflow/workflowCapabilities.ts declares the advertisement and derives DAG requirements; VibeWorkflow exposes static advertisedCapabilities, returns early without writing when the instance is already cancelled, refuses a DAG that needs an unadvertised guarantee (NonRetryableError before any step), and guards markRunning/markSucceeded/markFailed with status <> 'cancelled' \u2014 without that guard Cloudflare's terminate makes run() throw and the catch block rewrote a cancelled run as failed. Route contract updated (34 control routes). Test debt closed 2026-11-24: backend/pkg/api/workflows_control_test.go pins the eight route cases (401 incl. capabilities, 403 + audit, 404 unknown/foreign, 409 on every terminal state, 502 with no write on a runtime refusal, transition-guarded pause/resume, defaulted reason) and is green locally over the emulated D1 + Workflows API; worker/workflow/VibeWorkflow.test.ts gained the cancel-finality and capability-refusal cases (already-cancelled no-op, mid-run cancel never becomes succeeded, terminated run never rewritten as failed, refusal before any step, admission under the deployed advertisement). The worker cases are executed by CI because workerd cannot start on macOS 12.7.6; the frontend still has no cancel button.",
    "documentation": [
     "docs/architecture/adr-execution-provider-contract.md",
     "docs/ecosystem/06-runtime-and-execution-architecture.md",
@@ -558,7 +558,7 @@
    "status": "DONE",
    "tests": [
     "go test -count=1 -run 'TestWorkflowControl|TestWorkflowCapabilities' ./pkg/api/ green locally: 8 route-test functions plus 8 subtests over the emulated D1 + Workflows API",
-    "worker/workflow/VibeWorkflow.test.ts run-control block (6 cases: already-cancelled no-op, mid-run cancel never succeeds, terminated run never rewritten as failed, capability refusal before any step, admission when advertised, advertisement identity) — compile-clean via bun run typecheck, executed by the CI test job because workerd cannot start on macOS 12.7.6",
+    "worker/workflow/VibeWorkflow.test.ts run-control block (6 cases: already-cancelled no-op, mid-run cancel never succeeds, terminated run never rewritten as failed, capability refusal before any step, admission when advertised, advertisement identity) \u2014 compile-clean via bun run typecheck, executed by the CI test job because workerd cannot start on macOS 12.7.6",
     "Build evidence: go build ./... and go vet ./pkg/api ./pkg/engine ./pkg/cloudflare clean",
     "Contract evidence: bun run docs:check green with 34 control routes (postman-route-contract.json updated)"
    ],
@@ -571,7 +571,7 @@
    "type": "RESEARCH",
    "priority": "P0",
    "status": "DONE",
-   "description": "DONE 2026-11-23 (audit only, no application code changed). Executed a two-sided probe: ten mutated System documents through backend/pkg/ir.Load and through the P7.1 schema via scripts/lib/schema-subset.mjs. Result: Go is the LENIENT side in 8 of 10 cases — name/node-id length (schema maxLength 63, Go slug only), semver leading zeros (Go \\d+ vs schema (0|[1-9][0-9]*)), missing spec.outcome (required by both oneOf branches), agents without topology, approvals[].on enum, evaluation.dataset, duplicate next/delegatesTo. Cycles and reachability are unenforced at the IR boundary on BOTH sides (cycle refusal exists only at runtime: VibeWorkflow.ts:462, backend/pkg/engine/workflowschema.go:375; reachability is a non-failing note in the gate and silent in Go). Load rejects trailing JSON (dec.More) but Canonicalize does not; duplicate JSON keys are last-wins in both. Full matrix, severities and the 13-case negative test contract: docs/architecture/ir-parity-audit.md.",
+   "description": "DONE 2026-11-23 (audit only, no application code changed). Executed a two-sided probe: ten mutated System documents through backend/pkg/ir.Load and through the P7.1 schema via scripts/lib/schema-subset.mjs. Result: Go is the LENIENT side in 8 of 10 cases \u2014 name/node-id length (schema maxLength 63, Go slug only), semver leading zeros (Go \\d+ vs schema (0|[1-9][0-9]*)), missing spec.outcome (required by both oneOf branches), agents without topology, approvals[].on enum, evaluation.dataset, duplicate next/delegatesTo. Cycles and reachability are unenforced at the IR boundary on BOTH sides (cycle refusal exists only at runtime: VibeWorkflow.ts:462, backend/pkg/engine/workflowschema.go:375; reachability is a non-failing note in the gate and silent in Go). Load rejects trailing JSON (dec.More) but Canonicalize does not; duplicate JSON keys are last-wins in both. Full matrix, severities and the 13-case negative test contract: docs/architecture/ir-parity-audit.md.",
    "dependencies": [],
    "acceptance_criteria": [
     "Go Reader versus JSON Schema required-field consistency",
@@ -593,7 +593,7 @@
     "docs/architecture/system-ir/examples/"
    ],
    "tests": [
-    "docs/architecture/ir-parity-audit.md §3 executed parity matrix (Go vs schema, 10 probes + trailing + duplicate key)",
+    "docs/architecture/ir-parity-audit.md \u00a73 executed parity matrix (Go vs schema, 10 probes + trailing + duplicate key)",
     "go test ./pkg/ir/ green and go vet ./pkg/ir/ clean before and after",
     "node scripts/validate-system-ir.mjs green before and after",
     "git status backend/ clean: probe test files removed, documentation only"
@@ -667,7 +667,7 @@
    ],
    "tests": [
     "docs review: sections 1-10 answer the six acceptance criteria (source contract, exact versions, fail-closed, cycles, determinism, tests)",
-    "consistency check: failure codes in composition-resolver.md match composition-lock.md §8 after the patch",
+    "consistency check: failure codes in composition-resolver.md match composition-lock.md \u00a78 after the patch",
     "no code, no package, no route added by this task",
     "bun run docs:check green with the new cross-references"
    ]
@@ -783,7 +783,7 @@
    "type": "IMPLEMENTATION",
    "priority": "P2",
    "status": "DONE",
-   "description": "DONE 2026-11-25 (code; eligibility stays pure). backend/pkg/activation implements docs/architecture/activation-policy.md as a pure Decide() over (context envelope, activation policy, composition closure, tenant grants snapshot): deny-overrides allow with smallest-rule-id citation, default-deny into skipped/no-allow, closure invariant enforced (activation refuses E_ACTIVATION_ESCALATION with a per-ref audit event before any decision is emitted), policy-allow outside the closure fails to load with E_ACTIVATION_POLICY, budget-before-bound trimming (budget on MaxCandidates, bound on the envelope candidateLimit, default 8), ranking intersection preserving ref order then ref sort, approvalRequired recorded without Approved (no approved field exists), a DecisionRecord sorted by candidate with decidedAt excluded from the Canonical() digest. No route, no store, no clock, no manifest writes: the package imports only backend/pkg/ir, backend/pkg/composition and stdlib (static scan + go/parser import test prove no backend/pkg/mcp, os/exec, database/sql or SQL verbs); mcp vocabulary is mirrored with a parity test. Gate stays the enforcer, ranking stays injected/optional. Dependencies satisfied via P1-AGT-004 (DONE 2026-11-24: the named grants surface exists). D8 gate intact: the engine is pure, cannot emit new capabilities, mints no grant, and nothing invokes it yet — a library, not a capability surface. Next consumer: ADI-CTX-004 (decision trace persistence; shape stays in context-activation-and-memory.md S5 + activation-policy.md S5).",
+   "description": "DONE 2026-11-25 (code; eligibility stays pure). backend/pkg/activation implements docs/architecture/activation-policy.md as a pure Decide() over (context envelope, activation policy, composition closure, tenant grants snapshot): deny-overrides allow with smallest-rule-id citation, default-deny into skipped/no-allow, closure invariant enforced (activation refuses E_ACTIVATION_ESCALATION with a per-ref audit event before any decision is emitted), policy-allow outside the closure fails to load with E_ACTIVATION_POLICY, budget-before-bound trimming (budget on MaxCandidates, bound on the envelope candidateLimit, default 8), ranking intersection preserving ref order then ref sort, approvalRequired recorded without Approved (no approved field exists), a DecisionRecord sorted by candidate with decidedAt excluded from the Canonical() digest. No route, no store, no clock, no manifest writes: the package imports only backend/pkg/ir, backend/pkg/composition and stdlib (static scan + go/parser import test prove no backend/pkg/mcp, os/exec, database/sql or SQL verbs); mcp vocabulary is mirrored with a parity test. Gate stays the enforcer, ranking stays injected/optional. Dependencies satisfied via P1-AGT-004 (DONE 2026-11-24: the named grants surface exists). D8 gate intact: the engine is pure, cannot emit new capabilities, mints no grant, and nothing invokes it yet \u2014 a library, not a capability surface. Next consumer: ADI-CTX-004 (decision trace persistence; shape stays in context-activation-and-memory.md S5 + activation-policy.md S5).",
    "dependencies": [
     "ADI-CTX-002",
     "P1-AGT-004"
@@ -834,7 +834,7 @@
    "type": "DESIGN",
    "priority": "P2",
    "status": "DONE",
-   "description": "DONE 2026-11-25 (store; no caller). The decision record of activation-policy.md S5 is now persisted: activation.TraceStore + ValidateRecord in backend/pkg/activation/trace.go (the pure seam, so the eligibility core still imports no SQL and no grant store), the D1 adapter backend/pkg/activation/d1store (append-only Persist + Load over a two-method Querier) and additive migration 0021 (activation_decision_traces: run_id primary key, tenant_key, context_id, composition_digest, activation_policy_ref, ranking_source/version, decided_at, trace_digest, record JSON). The whole record is one JSON document with identity columns denormalised; decisions[] keep candidate/decision/stage/ruleId/reason/approvalRequired. Contract: run_id is the key with ON CONFLICT DO NOTHING (a replay is a no-op and the first write keeps its decidedAt), a different record for the same run is ErrTraceImmutable, another tenant's run id is ErrTraceTenant, a row that no longer matches its digest is ErrTraceCorrupt, and an unattributable record (activated without ruleId, skipped/denied without a reason, unsorted or duplicate entries) is ErrTraceInvalid before D1 is touched. decidedAt is excluded from the digest, exactly as the engine already defined it. Honest limit: nothing calls the store — no assembler supplies candidates (ADI-CTX-001 is design-only) and no policy source exists, so no row is produced on the live path. Migration 0021 was applied remotely on 2026-11-25 (together with the then-pending 0017–0020; verified by the `d1_migrations` read-back). D8 untouched: no route, no grant, no capability surface.",
+   "description": "DONE 2026-11-25 (store; no caller). The decision record of activation-policy.md S5 is now persisted: activation.TraceStore + ValidateRecord in backend/pkg/activation/trace.go (the pure seam, so the eligibility core still imports no SQL and no grant store), the D1 adapter backend/pkg/activation/d1store (append-only Persist + Load over a two-method Querier) and additive migration 0021 (activation_decision_traces: run_id primary key, tenant_key, context_id, composition_digest, activation_policy_ref, ranking_source/version, decided_at, trace_digest, record JSON). The whole record is one JSON document with identity columns denormalised; decisions[] keep candidate/decision/stage/ruleId/reason/approvalRequired. Contract: run_id is the key with ON CONFLICT DO NOTHING (a replay is a no-op and the first write keeps its decidedAt), a different record for the same run is ErrTraceImmutable, another tenant's run id is ErrTraceTenant, a row that no longer matches its digest is ErrTraceCorrupt, and an unattributable record (activated without ruleId, skipped/denied without a reason, unsorted or duplicate entries) is ErrTraceInvalid before D1 is touched. decidedAt is excluded from the digest, exactly as the engine already defined it. Honest limit: nothing calls the store \u2014 no assembler supplies candidates (ADI-CTX-001 is design-only) and no policy source exists, so no row is produced on the live path. Migration 0021 was applied remotely on 2026-11-25 (together with the then-pending 0017\u20130020; verified by the `d1_migrations` read-back). D8 untouched: no route, no grant, no capability surface.",
    "dependencies": [
     "ADI-CTX-003"
    ],
@@ -892,8 +892,8 @@
    ],
    "tests": [
     "docs review: both acceptance criteria (replaceable scoped interfaces; no new mandatory database) are answered by numbered sections",
-    "evidence check: backend/pkg/engine/vector.go is a VFS file index with HashEmbedding, and worker/database/schema.ts has no memory table - both stated in §1",
-    "cross-check: provenance and the inferred rule match context-assembly.md §4.3 rather than restating a different precedence",
+    "evidence check: backend/pkg/engine/vector.go is a VFS file index with HashEmbedding, and worker/database/schema.ts has no memory table - both stated in \u00a71",
+    "cross-check: provenance and the inferred rule match context-assembly.md \u00a74.3 rather than restating a different precedence",
     "no table, no migration, no adapter, no code added by this task",
     "bun run docs:check green"
    ]
@@ -904,7 +904,7 @@
    "type": "DESIGN",
    "priority": "P2",
    "status": "DONE",
-   "description": "DONE 2026-11-23 - delivered inside docs/architecture/memory-provider.md rather than as a separate document, because a second document describing the same scope rules would have created two canonicals. Both acceptance criteria are covered there: (1) run/conversation/agent/team/tenant boundaries at retrieval are the containment ladder plus the read/write/forget authority matrix of §3, with three non-negotiables (tenant is a wall not a filter, a requested scope may only narrow the caller authority and is refused rather than clamped, no cross-subject reads inside a scope); (2) provenance/timestamp/retention/deletion semantics are §4 (source/producer/version, explicit-vs-inferred rule), §6 (bounded recall with a total ordering) and §7 (expiry, Forget returning the real count, erasure). Store-level enforcement belongs to the adapter task ADI-MEM-001a, not to a second design document.",
+   "description": "DONE 2026-11-23 - delivered inside docs/architecture/memory-provider.md rather than as a separate document, because a second document describing the same scope rules would have created two canonicals. Both acceptance criteria are covered there: (1) run/conversation/agent/team/tenant boundaries at retrieval are the containment ladder plus the read/write/forget authority matrix of \u00a73, with three non-negotiables (tenant is a wall not a filter, a requested scope may only narrow the caller authority and is refused rather than clamped, no cross-subject reads inside a scope); (2) provenance/timestamp/retention/deletion semantics are \u00a74 (source/producer/version, explicit-vs-inferred rule), \u00a76 (bounded recall with a total ordering) and \u00a77 (expiry, Forget returning the real count, erasure). Store-level enforcement belongs to the adapter task ADI-MEM-001a, not to a second design document.",
    "dependencies": [
     "ADI-MEM-001"
    ],
@@ -1019,7 +1019,7 @@
    "tests": [
     "docs review: both acceptance criteria (identity/tenant/source/timestamps/correlation; delivery and duplication semantics) are answered by numbered sections",
     "evidence check: the workflow trigger node already treats event.payload as its execution input (worker/workflow/VibeWorkflow.ts), and there is no event table in worker/database/schema.ts - both stated",
-    "cross-check: the category/source vocabularies match context-assembly.md §2 exactly",
+    "cross-check: the category/source vocabularies match context-assembly.md \u00a72 exactly",
     "JSON envelope example parses",
     "no broker, table, transport or code added by this task",
     "bun run docs:check green"
@@ -1082,7 +1082,7 @@
     "docs/architecture/event-to-activation.md"
    ],
    "tests": [
-    "docs review: the acceptance criterion (eligible events map into context assembly without granting authority) is answered by §3-§6 and stated as a table of what the event may and may not influence",
+    "docs review: the acceptance criterion (eligible events map into context assembly without granting authority) is answered by \u00a73-\u00a76 and stated as a table of what the event may and may not influence",
     "cross-check: subscriptions are deliberately NOT added to the IR, so D7 is untouched and no ADR is implied",
     "cross-check: pointer resolution and snapshot binding reference candidate-lifecycle.md and run-snapshot.md rather than redefining them",
     "cross-check: duplicate-is-success matches event-envelope.md; mandatory-segment refusal matches context-assembly.md",
@@ -1177,7 +1177,7 @@
     "docs/architecture/candidate-lifecycle.md"
    ],
    "tests": [
-    "docs review: the acceptance criterion (candidate versions created without changing stable compositions) is answered structurally in §1 and again as E_CAND_MUTATE in §8",
+    "docs review: the acceptance criterion (candidate versions created without changing stable compositions) is answered structurally in \u00a71 and again as E_CAND_MUTATE in \u00a78",
     "cross-check: state guards reference evaluation-contract.md verdicts rather than inventing a second pass/fail vocabulary",
     "cross-check: promotions change defaults only - run binding semantics come from run-snapshot.md and are not restated differently",
     "no table, state store or code added by this task",
@@ -1209,7 +1209,7 @@
     "docs/architecture/promotion-and-rollback.md"
    ],
    "tests": [
-    "docs review: both acceptance criteria (evaluation plus approval required before rollout; promotion/rollback auditable) are answered by §2 and §6",
+    "docs review: both acceptance criteria (evaluation plus approval required before rollout; promotion/rollback auditable) are answered by \u00a72 and \u00a76",
     "evidence check: the audit shape maps onto the existing audit_logs columns in worker/database/schema.ts - no new table proposed",
     "cross-check: state names, pointer semantics and CAS come from candidate-lifecycle.md rather than being redefined",
     "no route, table, UI or code added by this task",
@@ -1371,7 +1371,7 @@
     "ADI-FOUND-001a"
    ],
    "acceptance_criteria": [
-    "All 21 cases in composition-resolver.md §7 pass, negatives asserted on the code, not merely on failure",
+    "All 21 cases in composition-resolver.md \u00a77 pass, negatives asserted on the code, not merely on failure",
     "P1-P3 resolve the three agent-shaped fixtures offline with closure equal to the declared refs",
     "N1 proves zero source calls when the manifest is invalid (E_IR before any fetch)",
     "D1/D2 prove byte-identical locks across 100 resolutions and across reversed discovery order",
@@ -1401,7 +1401,7 @@
    "type": "IMPLEMENTATION",
    "priority": "P1",
    "status": "DONE",
-   "description": "DONE 2026-11-23 for the storage and admission-logic half; the live request path is ADI-FOUND-004b. Delivered: (1) worker/database/schema.ts gains composition_snapshots (snapshot_id primary key = lock digest, the ten fields of run-snapshot.md §3.1, tenant/system indexes) plus a nullable snapshot_id on workflow_instances with a RESTRICT reference and an index; drizzle generated migrations/0017_nebulous_shatterstar.sql - purely additive, no DROP, no backfill (inventing a closure for an existing run would be a fabrication). (2) backend/pkg/composition/snapshot.go: Snapshot/NewSnapshot (id == lock digest, canonical document stored, generatedAt kept as closedAt), Lock() round-trip, SnapshotStore (Persist must be append-only, Load returns ErrSnapshotMissing), Verify (pure digest-chain check: id match, document parse, recomputed digest, lockVersion agreement, digest prefixes) and AdmitRun (existence + tenant + digest chain in one call), with E_DIGEST/E_SNAPSHOT_MISSING/E_TENANT added to the code vocabulary and precedence. (3) backend/pkg/composition/d1store: the D1 adapter over a two-method Querier (cloudflare.D1Client satisfies it structurally, so the package imports no Cloudflare code), INSERT ... ON CONFLICT(snapshot_id) DO NOTHING, no UPDATE path at all, and first-writer-wins tenant handling that surfaces ErrSnapshotTenant at write time instead of failing later at admission.",
+   "description": "DONE 2026-11-23 for the storage and admission-logic half; the live request path is ADI-FOUND-004b. Delivered: (1) worker/database/schema.ts gains composition_snapshots (snapshot_id primary key = lock digest, the ten fields of run-snapshot.md \u00a73.1, tenant/system indexes) plus a nullable snapshot_id on workflow_instances with a RESTRICT reference and an index; drizzle generated migrations/0017_nebulous_shatterstar.sql - purely additive, no DROP, no backfill (inventing a closure for an existing run would be a fabrication). (2) backend/pkg/composition/snapshot.go: Snapshot/NewSnapshot (id == lock digest, canonical document stored, generatedAt kept as closedAt), Lock() round-trip, SnapshotStore (Persist must be append-only, Load returns ErrSnapshotMissing), Verify (pure digest-chain check: id match, document parse, recomputed digest, lockVersion agreement, digest prefixes) and AdmitRun (existence + tenant + digest chain in one call), with E_DIGEST/E_SNAPSHOT_MISSING/E_TENANT added to the code vocabulary and precedence. (3) backend/pkg/composition/d1store: the D1 adapter over a two-method Querier (cloudflare.D1Client satisfies it structurally, so the package imports no Cloudflare code), INSERT ... ON CONFLICT(snapshot_id) DO NOTHING, no UPDATE path at all, and first-writer-wins tenant handling that surfaces ErrSnapshotTenant at write time instead of failing later at admission.",
    "dependencies": [
     "ADI-FOUND-004",
     "ADI-FOUND-003a"
@@ -1520,7 +1520,7 @@
    "type": "IMPLEMENTATION",
    "priority": "P2",
    "status": "DONE",
-   "description": "DONE 2026-11-23 (first memory code). backend/pkg/memory holds the contract in code: Record/Query/Item/Capabilities, the Provider interface (Remember/Recall/Forget), ValidateRecord and ValidateQuery, the scope ladder via AllowedScopes (a caller reads its own scope and broader, never narrower), the total order Compare/SortItems (score, then newest, then id), lexical Score, EstimateTokens, ContentID (so a retried write is idempotent), the secret denylist scan and the closed kind/source vocabularies. backend/pkg/memory/d1store is the D1 adapter over a two-method Querier: INSERT ... ON CONFLICT(id) DO NOTHING, a bounded candidate window with lexical scoring and the documented ordering, token-budget truncation that skips rather than exceeds, Forget returning the real count and treating a foreign id as 0 (no existence leak), and NewWithoutTTL so the retention refusal path is reachable. migrations/0018_adorable_luke_cage.sql adds memory_records additively (one CREATE TABLE, three indexes, no DROP, no backfill). 11 tests green. Storage decision recorded in memory-provider.md §10: D1 with expires_at, revisit only on a measured latency problem. Honest limits: lexical only (SemanticRecall false), no route, no agent caller, no embedding model, cross-tenant sharing still open.",
+   "description": "DONE 2026-11-23 (first memory code). backend/pkg/memory holds the contract in code: Record/Query/Item/Capabilities, the Provider interface (Remember/Recall/Forget), ValidateRecord and ValidateQuery, the scope ladder via AllowedScopes (a caller reads its own scope and broader, never narrower), the total order Compare/SortItems (score, then newest, then id), lexical Score, EstimateTokens, ContentID (so a retried write is idempotent), the secret denylist scan and the closed kind/source vocabularies. backend/pkg/memory/d1store is the D1 adapter over a two-method Querier: INSERT ... ON CONFLICT(id) DO NOTHING, a bounded candidate window with lexical scoring and the documented ordering, token-budget truncation that skips rather than exceeds, Forget returning the real count and treating a foreign id as 0 (no existence leak), and NewWithoutTTL so the retention refusal path is reachable. migrations/0018_adorable_luke_cage.sql adds memory_records additively (one CREATE TABLE, three indexes, no DROP, no backfill). 11 tests green. Storage decision recorded in memory-provider.md \u00a710: D1 with expires_at, revisit only on a measured latency problem. Honest limits: lexical only (SemanticRecall false), no route, no agent caller, no embedding model, cross-tenant sharing still open.",
    "dependencies": [
     "ADI-MEM-001",
     "ADI-CTX-001"
@@ -1756,6 +1756,277 @@
    "tests": [
     "per-test commands recorded in wasm-runtime-matrix.md",
     "native vs WASM comparison on the same workload"
+   ]
+  },
+  {
+   "id": "W0-WEB3-01",
+   "title": "LayerZero V2 official-docs verification",
+   "type": "RESEARCH",
+   "priority": "P0",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 (research + docs only). Official LayerZero V2 docs were reachable this time and three pages were read: protocol architecture (five independent layers: OApp business logic, Endpoint protocol interface, message libraries, DVNs, Executors; per-channel config with channel-specific nonce tracking; X-of-Y-of-N verification such as 2-of-2-of-2), OApp reference (Endpoint V2 integration sets delegate authority; directional setPeer(eid, peerAddress); receiving OApp checks peers[srcEid] == origin.sender; send() -> transport/routing -> lzReceive(); fee handling quotes, collects and refunds native and ZRO fees) and OFT reference (single global supply; source debit by burn or escrow lock, destination credit by mint or unlock; shared decimals plus decimalConversionRate; Direct vs Adapter patterns). Documented failure modes taken from the provider troubleshooting nav: debugging messages, chain reorgs and nonce recovery. All claims recorded with source URL plus read date in docs/architecture/web3-layerzero-interop.md; no API invented beyond what the pages showed. O32 answered for architecture; SDK versions and the target-chain list remain open.",
+   "dependencies": [],
+   "acceptance_criteria": [
+    "Every protocol claim in web3-layerzero-interop.md carries a primary-source URL plus date",
+    "OApp/OFT scope recorded without invented APIs",
+    "O32 closed or stays open with a dated reason"
+   ],
+   "documentation": [
+    "docs/architecture/web3-layerzero-interop.md"
+   ],
+   "repository_paths": [
+    "docs/architecture/web3-layerzero-interop.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "tests": [
+    "bun run docs:check green",
+    "three official pages recorded with URL plus 2026-11-25 read date",
+    "no invented SDK/API names: setPeer, send, lzReceive and peers/origin.sender appear in the docs"
+   ]
+  },
+  {
+   "id": "W0-WEB3-02",
+   "title": "Foundry vs Hardhat toolchain comparison",
+   "type": "RESEARCH",
+   "priority": "P0",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 (research + docs only, no dependency added). Foundry book and Hardhat docs were reachable and compared: Foundry (Forge/Anvil/Cast/Chisel, Solidity-native tests via forge-std/Test.sol, testFuzz_* with 256 default runs, invariant mode, --fork-url plus --fork-block-number for reproducible forks, cheatcodes, bounded z3 symbolic testing that explicitly reports incomplete != proof, single binary with foundry.toml profiles, call isolation on by default) versus Hardhat 3 (Node.js v22.13.0+, contracts/test/ignition/scripts layout, Solidity .t.sol AND TypeScript viem/ethers tests, Ignition deployment modules, Foundry-compatible cheatcodes, gas snapshots, code coverage, build profiles, plugin ecosystem, migrate-from-Foundry guide; invariant testing not observed in the pages read). Recommendation recorded as PROPOSED in adr-web3-toolchain.md: Foundry primary in the isolated sandbox, Hardhat 3 as compatibility path, both behind one pipeline interface. O31 answered for capability comparison; release pins, Hardhat invariant coverage, scanner shortlist and sandbox implementation stay open. No manifest names a default until the owner accepts W3-TOOL.",
+   "dependencies": [],
+   "acceptance_criteria": [
+    "Evidence table with versions plus commands",
+    "Recommendation or explicit OPEN with reasons",
+    "No default framework named elsewhere until this lands"
+   ],
+   "documentation": [
+    "docs/architecture/web3-toolchain-pipeline.md",
+    "docs/architecture/adr-web3-toolchain.md"
+   ],
+   "repository_paths": [
+    "docs/architecture/web3-toolchain-pipeline.md"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "tests": [
+    "bun run docs:check green",
+    "evidence table with both official URLs and 2026-11-25 read date",
+    "no version number invented: release pins listed as OPEN because the pages do not state a current release"
+   ]
+  },
+  {
+   "id": "W0-WEB3-03",
+   "title": "Contract IR v1 schema plus fixtures plus docs gate",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 after owner decision D22 accepted W3-IR and W3-VER. Delivered the canonical, target-independent Contract IR v1: docs/architecture/contract-ir/contract.schema.json (draft 2020-12, additionalProperties false, envelope apiVersion vibesdk-contract/v1 plus kind SmartContract, metadata, spec.abstract generic core, spec.targets per-VM block, spec.extensions namespaced vendor block) and two canonical fixtures (escrow-vault core-only immutable EVM contract; omnichain-messenger carrying a layerzero-v2 namespace plus a pinned dependency on vibe/escrow-vault@0.1.0). Added scripts/validate-contract-ir.mjs reusing scripts/lib/schema-subset.mjs (same semantics as the manifest and System IR gates) and wired it as the sixth validator in bun run docs:check. The gate enforces: schema validity; byte-identical canonical serialization; the core stays target-independent by key AND by value (vm, language, solc, chains, eid, endpoint, dvn, executor, peer, tokenStandards, erc20/721/1155, layerzero and messagingProvider are refused in spec.abstract); no runtime state (status, address, deployedAt, txHash, balance, nonce, health, owner); an evm target must carry its evm block because the schema subset cannot express if/then; payable functions must declare a policy and every policy reference must resolve; extension namespaces are lowercase kebab-case and may not shadow abstract/targets/extensions; dependency refs must be pinned and resolvable. Eight negative probes are derived from a real fixture and must be rejected (seven semantic plus one schema-level status probe); a deliberately broken fixture was also verified to fail the gate with exit 1 before being removed. No generator, compiler, registry, route, table, or dependency exists; nothing on the live path changed.",
+   "dependencies": [
+    "W0-WEB3-01",
+    "W0-WEB3-02"
+   ],
+   "acceptance_criteria": [
+    "Schema plus fixtures validate inside docs:check",
+    "No vendor or VM field survives in the generic core",
+    "Provenance (irDigest plus toolchain name and version) is mandatory",
+    "Canonical serialization round-trips byte-identically",
+    "Eight negative probes are rejected for the stated reason"
+   ],
+   "documentation": [
+    "docs/architecture/web3-smart-contract-ir.md",
+    "docs/architecture/adr-web3-ir-separation.md",
+    "docs/architecture/adr-web3-contract-ir-versioning.md"
+   ],
+   "repository_paths": [
+    "docs/architecture/contract-ir/contract.schema.json",
+    "docs/architecture/contract-ir/examples/",
+    "scripts/validate-contract-ir.mjs"
+   ],
+   "risk": "Medium",
+   "solo_developer_estimate": "M",
+   "tests": [
+    "bun run docs:check green with six validators",
+    "node scripts/validate-contract-ir.mjs --verbose: 2 fixtures, 2 identities, 8 negative probes rejected",
+    "broken-fixture probe: exit 1 with schema plus semantic diagnostics, then restored green"
+   ]
+  },
+  {
+   "id": "W1-WEB3-01",
+   "title": "Solidity generation scope plus template strategy",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "planned",
+   "description": "Define the initial Solidity generation scope (contract kinds, OpenZeppelin-style pinned modules, NatSpec policy) and template strategy. No generator code.",
+   "dependencies": [
+    "W0-WEB3-03"
+   ],
+   "acceptance_criteria": [
+    "Scope list with in/out of scope",
+    "Pinned module set with digests",
+    "Template lifecycle rules"
+   ],
+   "documentation": [
+    "docs/architecture/web3-smart-contract-ir.md"
+   ],
+   "repository_paths": [],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W1-WEB3-02",
+   "title": "Deterministic compilation plus artifact pipeline design",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "planned",
+   "description": "Design deterministic compilation (solc pin, optimizer, EVM target) and artifact storage (ABI, bytecode, metadata, digests). Sandbox constraints from W3-SANDBOX.",
+   "dependencies": [
+    "W0-WEB3-02",
+    "W0-WEB3-03"
+   ],
+   "acceptance_criteria": [
+    "Reproducibility rules recorded",
+    "Artifact manifest shape defined",
+    "Sandbox boundary referenced, no keys in sandbox"
+   ],
+   "documentation": [
+    "docs/architecture/web3-toolchain-pipeline.md"
+   ],
+   "repository_paths": [],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W2-WEB3-01",
+   "title": "Validation and security pipeline gates",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "planned",
+   "description": "Define required gates: unit, integration, fuzz/invariant, static analysis, simulation preview, provenance, policy enforcement. Passing gates never equal an audit.",
+   "dependencies": [
+    "W1-WEB3-02"
+   ],
+   "acceptance_criteria": [
+    "Gate list with pass/fail criteria",
+    "No gate claims audit status",
+    "Evidence artifacts per gate defined"
+   ],
+   "documentation": [
+    "docs/architecture/web3-toolchain-pipeline.md"
+   ],
+   "repository_paths": [],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W3-WEB3-01",
+   "title": "Wallet plus signing plus deployment lifecycle design",
+   "type": "DESIGN",
+   "priority": "P1",
+   "status": "planned",
+   "description": "Design wallet connection, transaction lifecycle (build/simulate/policy/approve/sign/broadcast/confirm), approval flows, testnet deployment, verification, deployment records. Wallet-first; managed signer deferred to O34.",
+   "dependencies": [
+    "W2-WEB3-01"
+   ],
+   "acceptance_criteria": [
+    "Lifecycle stages with distinct owners",
+    "Mainnet approval mandatory by default",
+    "Agent-held keys explicitly refused"
+   ],
+   "documentation": [
+    "docs/architecture/web3-security-signing.md",
+    "docs/architecture/web3-chain-abstraction.md"
+   ],
+   "repository_paths": [],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W4-WEB3-01",
+   "title": "LayerZero adapter plus interop manifest design",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "planned",
+   "description": "After O32 verification, design the generic interop interface, LayerZero adapter, interop manifest shape, peer/DVN config, lifecycle, retry/recovery, event normalization.",
+   "dependencies": [
+    "W0-WEB3-01",
+    "W3-WEB3-01"
+   ],
+   "acceptance_criteria": [
+    "Adapter behind the generic interface",
+    "LayerZero fields isolated from the generic core",
+    "Retry without false reversal promises"
+   ],
+   "documentation": [
+    "docs/architecture/web3-layerzero-interop.md"
+   ],
+   "repository_paths": [],
+   "risk": "High",
+   "solo_developer_estimate": "M",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W5-WEB3-01",
+   "title": "Agentic Web3 operations policy design",
+   "type": "DESIGN",
+   "priority": "P2",
+   "status": "planned",
+   "description": "Define policy-governed agent-to-contract calls, monitoring agents, approval classes for sensitive operations. Eino stays orchestration; chains stay execution.",
+   "dependencies": [
+    "W3-WEB3-01"
+   ],
+   "acceptance_criteria": [
+    "Approval classes defined",
+    "Monitoring event mapping defined",
+    "No autonomous mainnet signing path"
+   ],
+   "documentation": [
+    "docs/architecture/web3-security-signing.md",
+    "docs/architecture/web3-api-event-contracts.md"
+   ],
+   "repository_paths": [],
+   "risk": "High",
+   "solo_developer_estimate": "S",
+   "tests": [
+    "bun run docs:check green"
+   ]
+  },
+  {
+   "id": "W6-WEB3-01",
+   "title": "Web3 marketplace and metering design",
+   "type": "DESIGN",
+   "priority": "P3",
+   "status": "planned",
+   "description": "Design contract-template listing, publisher trust, provenance, metering dimensions, monetization hooks. No custody or money-movement preconditions.",
+   "dependencies": [
+    "W5-WEB3-01"
+   ],
+   "acceptance_criteria": [
+    "Listing requirements with W2 evidence rule",
+    "Metering dimensions without custody assumption",
+    "Trust levels mapped"
+   ],
+   "documentation": [
+    "docs/ecosystem/09-marketplace-architecture.md",
+    "docs/ecosystem/14-product-and-business-model.md"
+   ],
+   "repository_paths": [],
+   "risk": "Medium",
+   "solo_developer_estimate": "S",
+   "tests": [
+    "bun run docs:check green"
    ]
   }
  ]

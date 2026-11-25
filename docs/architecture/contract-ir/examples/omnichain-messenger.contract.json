@@ -1,0 +1,133 @@
+{
+  "apiVersion": "vibesdk-contract/v1",
+  "kind": "SmartContract",
+  "metadata": {
+    "description": "Sends an application payload to a peer deployment on another chain.",
+    "license": "MIT",
+    "name": "omnichain-messenger",
+    "publisher": "vibe",
+    "version": "0.1.0"
+  },
+  "spec": {
+    "abstract": {
+      "dependencies": [
+        {
+          "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "ref": "vibe/escrow-vault@0.1.0"
+        }
+      ],
+      "events": [
+        {
+          "name": "payloadQueued",
+          "params": [
+            "bytes32"
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "inputs": [
+            "bytes"
+          ],
+          "mutability": "payable",
+          "name": "sendPayload",
+          "policy": "operator-only"
+        },
+        {
+          "inputs": [
+            "bytes32",
+            "bytes"
+          ],
+          "mutability": "state-changing",
+          "name": "onPayload",
+          "policy": "peer-only"
+        }
+      ],
+      "invariants": [
+        "a payload is accepted only from the configured peer"
+      ],
+      "policies": [
+        {
+          "description": "Only the operator role may initiate a cross-chain send.",
+          "id": "operator-only"
+        },
+        {
+          "description": "Inbound payloads are accepted only from the configured peer.",
+          "id": "peer-only"
+        }
+      ],
+      "provenance": {
+        "generator": "contract-ir-fixture",
+        "irDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "toolchain": {
+          "name": "solc",
+          "version": "0.8.28"
+        }
+      },
+      "purpose": "Minimal omnichain application contract; vendor configuration is namespaced.",
+      "roles": [
+        {
+          "description": "Allowed to send payloads.",
+          "name": "operator"
+        },
+        {
+          "description": "The counterpart contract on the other chain.",
+          "name": "peer"
+        }
+      ],
+      "security": {
+        "auditStatus": "none",
+        "threatAssumptions": [
+          "peer address is registered directionally on both chains",
+          "verification threshold is reviewed before mainnet"
+        ]
+      },
+      "tests": [
+        {
+          "kind": "unit",
+          "required": true
+        },
+        {
+          "kind": "integration",
+          "required": true
+        },
+        {
+          "kind": "simulation",
+          "required": true
+        }
+      ],
+      "upgradeability": {
+        "risksAcknowledged": true,
+        "strategy": "proxy"
+      }
+    },
+    "extensions": {
+      "layerzero-v2": {
+        "dvnThreshold": "2-of-2",
+        "peers": [
+          {
+            "eid": 40245,
+            "peer": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        "verificationNote": "Vendor settings live here, never in the core."
+      }
+    },
+    "targets": {
+      "chains": [
+        "eip155:84532",
+        "eip155:421614"
+      ],
+      "evm": {
+        "evmVersion": "cancun",
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "solc": "0.8.28"
+      },
+      "language": "solidity",
+      "vm": "evm"
+    }
+  }
+}

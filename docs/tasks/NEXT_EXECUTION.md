@@ -180,4 +180,26 @@ History (superseded): ADI-FOUND-001a was originally scoped as validation tighten
 
 ADI note (2026-11-23, superseded 2026-11-24): the 23 ADI-FOUND/CTX/MEM/EVT/EVAL/ECO tasks were PROPOSED design work, all BLOCKED on dependencies/decisions (lock/resolver, grants surface, durable idempotency, registry/provenance). None enters NEXT_EXECUTION until unblocked; D8/D9 gates unchanged.
 
+## Web3 track (parallel, MVP-independent, no code)
+
+`W0-WEB3-01` **DONE 2026-11-25** — official LayerZero V2 docs read and
+recorded (five layers, channel plus nonce model, OApp peer rules, OFT
+debit/credit, X-of-Y-of-N verification, native plus ZRO fees); O32 answered
+for architecture, SDK versions and target chains still open.
+
+`W0-WEB3-02` **DONE 2026-11-25** — Foundry and Hardhat 3 compared from
+official docs; recommendation (Foundry primary, Hardhat 3 compatibility path)
+recorded PROPOSED in `architecture/adr-web3-toolchain.md`; O31 answered for
+capability comparison, release pins still open.
+
+Next in the Web3 track: `W0-WEB3-03` **DONE 2026-11-25** — owner decision D22
+accepted `W3-IR` and `W3-VER`, and Contract IR v1 shipped as schema plus two
+canonical fixtures plus the sixth docs validator (`scripts/validate-contract-ir.mjs`,
+eight negative probes; `bun run docs:check` runs six gates). Next planned:
+`W1-WEB3-01` (Solidity generation scope plus template strategy) and then
+`W1-WEB3-02` (compilation and artifacts). Still awaiting owner acceptance:
+`W3-TOOL` (Foundry primary, Hardhat 3 compatibility — evidence recorded) and
+`W3-LZ` (LayerZero architecture verified, adapter unimplemented). None of
+these blocks or reorders the P0–P7 engineering line above.
+
 ADI audit (2026-11-24, HEAD `ad69c8b`; updated 2026-11-25): 32 ADI task IDs — 28 DONE (18 design-only DONE + 10 code DONE: resolver `backend/pkg/composition`, snapshot store + `Verify`/`AdmitRun`, live binding `ADI-FOUND-004b`, producer `ADI-FOUND-004c`, plan compiler `backend/pkg/plan`, lexical memory `backend/pkg/memory`, L1+L2 evaluation `backend/pkg/evaluation`, activation core `backend/pkg/activation`, decision trace `backend/pkg/activation/trace.go` + `d1store`), 4 BLOCKED (`ADI-ECO-001..004`). Evidence matrix: `architecture/adi-implementation-evidence.md` (every capability linked to file:line code, migration, test names, local `go test ./...` green + CI `go-test`, commit SHAs). Agentic execution is a PROPOSED ADR (`architecture/adr-agentic-execution.md`), not an implementation. `P1-AGT-004` DONE 2026-11-24 (D8.2/D8.3/D8.4); `ADI-CTX-003` DONE 2026-11-25; `ADI-CTX-004` DONE 2026-11-25 (store only — no caller, so no trace is produced on the live path). D8/D9 gates unchanged.

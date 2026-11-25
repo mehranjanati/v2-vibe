@@ -1,0 +1,286 @@
+{
+  "$defs": {
+    "assets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "behaviors": { "items": { "type": "string" }, "type": "array", "uniqueItems": true },
+          "kind": { "enum": ["none", "fungible", "non-fungible"], "type": "string" }
+        },
+        "required": ["kind"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dependencies": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": { "$ref": "#/$defs/sha256" },
+          "ref": { "$ref": "#/$defs/pinnedRef" }
+        },
+        "required": ["ref"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/identifier" },
+          "params": { "items": { "type": "string" }, "type": "array" }
+        },
+        "required": ["name"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/identifier" },
+          "params": { "items": { "type": "string" }, "type": "array" }
+        },
+        "required": ["name"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "functions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": { "items": { "type": "string" }, "type": "array" },
+          "mutability": { "enum": ["pure", "view", "state-changing", "payable"], "type": "string" },
+          "name": { "$ref": "#/$defs/identifier" },
+          "outputs": { "items": { "type": "string" }, "type": "array" },
+          "policy": { "$ref": "#/$defs/policyId" }
+        },
+        "required": ["name", "mutability"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "identifier": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-zA-Z0-9_]*$",
+      "type": "string"
+    },
+    "invariants": { "items": { "type": "string", "minLength": 1 }, "type": "array" },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "maxLength": 1024 },
+        "labels": { "items": { "type": "string", "maxLength": 63 }, "type": "array", "uniqueItems": true },
+        "license": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "$ref": "#/$defs/name" },
+        "publisher": { "$ref": "#/$defs/name" },
+        "version": { "$ref": "#/$defs/semver" }
+      },
+      "required": ["name", "publisher", "version", "license"],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 63,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "pinnedRef": {
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?@[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "type": "string"
+    },
+    "policies": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": { "type": "string", "minLength": 1 },
+          "id": { "$ref": "#/$defs/policyId" }
+        },
+        "required": ["id", "description"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "policyId": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+([-][a-z0-9]+)*$",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "generator": { "type": "string" },
+        "irDigest": { "$ref": "#/$defs/sha256" },
+        "sourceDigest": { "$ref": "#/$defs/sha256" },
+        "toolchain": {
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 }
+          },
+          "required": ["name", "version"],
+          "type": "object"
+        }
+      },
+      "required": ["irDigest", "toolchain"],
+      "type": "object"
+    },
+    "roles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": { "type": "string" },
+          "name": { "$ref": "#/$defs/identifier" }
+        },
+        "required": ["name"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "security": {
+      "additionalProperties": false,
+      "properties": {
+        "auditStatus": { "enum": ["none", "reviewed", "audited"], "type": "string" },
+        "threatAssumptions": { "items": { "type": "string" }, "type": "array" }
+      },
+      "type": "object"
+    },
+    "semver": {
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "state": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/identifier" },
+          "type": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_\\[\\]]*$" },
+          "visibility": { "enum": ["public", "private", "internal"], "type": "string" }
+        },
+        "required": ["name", "type"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "targets": {
+      "additionalProperties": false,
+      "properties": {
+        "chains": {
+          "items": { "type": "string", "pattern": "^[a-z0-9]+:[0-9]+$" },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "evm": {
+          "additionalProperties": false,
+          "properties": {
+            "evmVersion": { "enum": ["cancun", "prague", "shanghai", "paris", "london"], "type": "string" },
+            "optimizer": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "runs": { "maximum": 1000000, "minimum": 1, "type": "integer" }
+              },
+              "required": ["enabled"],
+              "type": "object"
+            },
+            "solc": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "tokenStandards": {
+              "items": { "enum": ["erc20", "erc721", "erc1155"], "type": "string" },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": ["solc"],
+          "type": "object"
+        },
+        "language": { "enum": ["solidity"], "type": "string" },
+        "vm": { "enum": ["evm"], "type": "string" }
+      },
+      "required": ["vm", "language", "chains"],
+      "type": "object"
+    },
+    "tests": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": ["unit", "integration", "fuzz", "invariant", "static-analysis", "simulation"],
+            "type": "string"
+          },
+          "required": { "type": "boolean" }
+        },
+        "required": ["kind"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "upgradeability": {
+      "additionalProperties": false,
+      "properties": {
+        "notes": { "type": "string" },
+        "risksAcknowledged": { "type": "boolean" },
+        "strategy": { "enum": ["immutable", "proxy", "modular"], "type": "string" }
+      },
+      "required": ["strategy", "risksAcknowledged"],
+      "type": "object"
+    },
+    "abstract": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": { "$ref": "#/$defs/assets" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "errors": { "$ref": "#/$defs/errors" },
+        "events": { "$ref": "#/$defs/events" },
+        "functions": { "$ref": "#/$defs/functions" },
+        "invariants": { "$ref": "#/$defs/invariants" },
+        "policies": { "$ref": "#/$defs/policies" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "roles": { "$ref": "#/$defs/roles" },
+        "security": { "$ref": "#/$defs/security" },
+        "state": { "$ref": "#/$defs/state" },
+        "tests": { "$ref": "#/$defs/tests" },
+        "upgradeability": { "$ref": "#/$defs/upgradeability" }
+      },
+      "required": ["functions", "provenance", "upgradeability"],
+      "type": "object"
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "abstract": { "$ref": "#/$defs/abstract" },
+        "extensions": { "$ref": "#/$defs/extensions" },
+        "targets": { "$ref": "#/$defs/targets" }
+      },
+      "required": ["abstract", "targets"],
+      "type": "object"
+    }
+  },
+  "$id": "https://vibesdk.dev/schemas/contract-ir/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "vibesdk-contract/v1" },
+    "kind": { "const": "SmartContract" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "spec": { "$ref": "#/$defs/spec" }
+  },
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "title": "VibeSDK Smart Contract IR v1",
+  "type": "object"
+}

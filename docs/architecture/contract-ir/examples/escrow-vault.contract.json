@@ -1,0 +1,135 @@
+{
+  "apiVersion": "vibesdk-contract/v1",
+  "kind": "SmartContract",
+  "metadata": {
+    "description": "Holds funds until a named beneficiary releases them.",
+    "license": "MIT",
+    "name": "escrow-vault",
+    "publisher": "vibe",
+    "version": "0.1.0"
+  },
+  "spec": {
+    "abstract": {
+      "assets": [
+        {
+          "behaviors": [
+            "transferable"
+          ],
+          "kind": "fungible"
+        }
+      ],
+      "dependencies": [],
+      "errors": [
+        {
+          "name": "notOwner"
+        }
+      ],
+      "events": [
+        {
+          "name": "released",
+          "params": [
+            "address",
+            "uint256"
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "mutability": "state-changing",
+          "name": "release",
+          "policy": "owner-only"
+        },
+        {
+          "inputs": [
+            "address"
+          ],
+          "mutability": "view",
+          "name": "balanceOf",
+          "outputs": [
+            "uint256"
+          ]
+        }
+      ],
+      "invariants": [
+        "totalReleased never exceeds totalDeposited"
+      ],
+      "policies": [
+        {
+          "description": "Only the owner role may release funds.",
+          "id": "owner-only"
+        }
+      ],
+      "provenance": {
+        "generator": "contract-ir-fixture",
+        "irDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "toolchain": {
+          "name": "solc",
+          "version": "0.8.28"
+        }
+      },
+      "purpose": "Deterministic escrow with an owner-gated release and no upgrade path.",
+      "roles": [
+        {
+          "description": "Deployer-held role allowed to release.",
+          "name": "owner"
+        }
+      ],
+      "security": {
+        "auditStatus": "none",
+        "threatAssumptions": [
+          "owner key is not compromised",
+          "beneficiary address is correct at deploy time"
+        ]
+      },
+      "state": [
+        {
+          "name": "beneficiary",
+          "type": "address",
+          "visibility": "private"
+        },
+        {
+          "name": "totalDeposited",
+          "type": "uint256",
+          "visibility": "private"
+        }
+      ],
+      "tests": [
+        {
+          "kind": "unit",
+          "required": true
+        },
+        {
+          "kind": "fuzz",
+          "required": true
+        },
+        {
+          "kind": "static-analysis",
+          "required": true
+        }
+      ],
+      "upgradeability": {
+        "notes": "Immutable by design; a migration means a new deployment.",
+        "risksAcknowledged": false,
+        "strategy": "immutable"
+      }
+    },
+    "targets": {
+      "chains": [
+        "eip155:84532"
+      ],
+      "evm": {
+        "evmVersion": "cancun",
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "solc": "0.8.28",
+        "tokenStandards": [
+          "erc20"
+        ]
+      },
+      "language": "solidity",
+      "vm": "evm"
+    }
+  }
+}

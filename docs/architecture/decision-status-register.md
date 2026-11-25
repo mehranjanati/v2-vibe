@@ -1,4 +1,4 @@
-# Architecture Decision Status Register (single index — 2026-11-24)
+# Architecture Decision Status Register (single index — 2026-11-25)
 
 > **Purpose:** one authoritative status per decision; the log it indexes
 > stays in `10-decisions-and-open-questions.md` /
@@ -27,10 +27,21 @@
 | Eino-substrate | Eino is orchestration, not governance | ACCEPTED (2026-11-24, docs only) | `architecture/adr-eino-orchestration-substrate.md` |
 | Agentic-exec | agent node vs topology executor vs refuse | PROPOSED | `architecture/adr-agentic-execution.md` |
 | WASM-compat | Eino↔wasmCloud compat | RESEARCH_REQUIRED | `architecture/eino-wasm-compatibility.md` (+ `wasm-poc-spec.md`, `wasm-runtime-matrix.md`) |
+| W3-IR | System IR vs Smart Contract IR separation | **ACCEPTED (D22, 2026-11-25)** | `architecture/adr-web3-ir-separation.md` |
+| W3-EVM | EVM-first chain strategy | PROPOSED | `architecture/adr-web3-evm-first.md` |
+| W3-CHAIN | Chain adapter and provider abstraction | PROPOSED | `architecture/adr-web3-chain-abstraction.md` |
+| W3-LZ | LayerZero as modular interop adapter | PROPOSED (architecture verified 2026-11-25, adapter unimplemented) | `architecture/adr-web3-layerzero-adapter.md` |
+| W3-TOOL | Smart contract toolchain choice (Foundry primary, Hardhat 3 compat) | PROPOSED (evidence 2026-11-25; owner approval pending) | `architecture/adr-web3-toolchain.md` |
+| W3-SANDBOX | Contract build and test sandbox | PROPOSED | `architecture/adr-web3-execution-sandbox.md` |
+| W3-SIGN | Wallet-first signing authority | PROPOSED | `architecture/adr-web3-signing-authority.md` |
+| W3-VER | Smart Contract IR versioning and compatibility | **ACCEPTED (D22, 2026-11-25)** | `architecture/adr-web3-contract-ir-versioning.md` |
 
 ## Open questions carried (still unresolved)
 
 O1 (ICP/WTP evidence, gates D8) · O14/O22/O23 (commerce) · O15 (WASM
 interface choice — D21 narrows, PoC decides) · O24 (vault rotation) · O25
 (registry trust) · O26/O26a/O29 (lock digest/cycles) · O27 (registry shape)
-· O28 (eval datasets) · O9–O13 per the strategy log.
+· O28 (eval datasets) · O9–O13 per the strategy log. Web3 adds O30
+(wallet standard pin), O31 (toolchain comparison), O32 (LayerZero docs
+verification), O33 (verifier default), O34 (managed-signer custody);
+tracked in `ecosystem/10-decisions-and-open-questions.md`.

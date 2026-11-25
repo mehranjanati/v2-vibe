@@ -22,3 +22,12 @@ preserved, failure-shaped, no new auth plane). The kind-specific contract is
 recorded per loader: MCP servers must pass the official Registry v0.1
 `server.json` schema and the ToolHive lessons (five run modes, virtual server);
 Skills must follow the agentskills.io `SKILL.md` frontmatter and the progressive-loading token budget (proposal 2); OpenAPI imports must carry an owner plus a version pin and expose exactly the audited surface (proposal 3).
+
+## Web3 extensions (PROPOSED 2026-11-25, no loader shipped)
+
+Chain adapters, LayerZero integrations, deployment modules, monitoring
+capabilities, and contract-template publishers land as loaders onto the
+same core, with the Web3 addition that every loader documents its signing
+and approval path: which operations need approval, which keys or sessions
+they touch (by reference, never by value), and which audit events they
+emit. A Web3 loader without that section is incomplete by definition.

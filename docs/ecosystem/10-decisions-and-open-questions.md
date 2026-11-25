@@ -48,6 +48,23 @@
   a Worker preview; anything provable only on a separate host stays explicitly
   **unproven**. Resolves O21.
 
+- **D22 — Smart Contract IR accepted (2026-11-25, docs plus schema only).**
+  Adopt a versioned, canonical, **target-independent** Smart Contract
+  Intermediate Representation with a **generic semantic core**
+  (`spec.abstract`) and **explicit target-specific extensions**
+  (`spec.targets` per VM, `spec.extensions` per vendor). EVM/Solidity is the
+  initial implementation target. Contract IR stays **separate from System
+  IR**, while System IR can compose and reference on-chain contract
+  capabilities. Generated source is derived from the IR and must stay
+  traceable to its specification, toolchain, and artifacts. Contract:
+  `architecture/web3-smart-contract-ir.md`; schema plus fixtures:
+  `architecture/contract-ir/`; ADRs:
+  `architecture/adr-web3-ir-separation.md`,
+  `architecture/adr-web3-contract-ir-versioning.md`; gate:
+  `scripts/validate-contract-ir.mjs` (sixth docs validator, eight negative
+  probes). Consequences: `W0-WEB3-03` DONE; no generator, compiler, or
+  registry exists, and nothing on the live path changes.
+
 ## New open questions (all unresolved)
 
 O14 commerce protocol versions; O15 WASM interface choice; O16 GPU provider
@@ -100,5 +117,22 @@ but "how good is that mirror's word?" stays open: whether D1 stores full
 package digests are pinned, and whether a revoked/renamed upstream server
 propagates or tombstones locally. Unblock: the publish-flow design (no task owns it yet; ADI-ECO-003),
 before any `Verified` claim depends on cached provenance.
+
+## Web3 open questions (all unresolved except where noted, opened 2026-11-25)
+
+O30 wallet standard pin and session scoping (which connection standard, what
+permissions a session grants, how revocation propagates). **O31 toolchain
+comparison — answered 2026-11-25 by `W0-WEB3-02`**: Foundry and Hardhat 3
+capabilities verified from official docs; recommendation (Foundry primary,
+Hardhat 3 compatibility path) recorded as PROPOSED in
+`architecture/adr-web3-toolchain.md`; still open are release pins, Hardhat
+invariant coverage, scanner shortlist, and sandbox implementation. **O32
+LayerZero documentation verification — answered 2026-11-25 by `W0-WEB3-01`**
+for protocol architecture (five layers, channel plus nonce model, OApp, OFT,
+verification threshold, fee assets); still open: SDK package versions and the
+supported-chain list for target chains. O33 verifier default (which
+source-verification service per chain profile). O34 managed-signer custody
+(deferred; needs custody review plus ADR before any design). Remaining opens
+gate their own implementation tasks only; none gates current P0–P7 work.
 
 

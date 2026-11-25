@@ -36,6 +36,19 @@ ADI-CTX-003's stated dependency; the engine itself is DONE 2026-11-25 (`backend/
 Historical IDs keep their meaning; ecosystem IDs track the rollout and
 verification work on top. No task is marked DONE without repo evidence.
 
+## Web3 workstreams (2026-11-25; W0 complete, the rest planned)
+
+W0-WEB3-01 [DONE 2026-11-25, LayerZero architecture verified] -> W4-WEB3-01 (interop design).
+W0-WEB3-02 [DONE 2026-11-25, Foundry vs Hardhat evidence, W3-TOOL PROPOSED]
+-> W1-WEB3-02 (compilation design) -> W2-WEB3-01 (security gates) ->
+W3-WEB3-01 (wallet/signing/deploy) -> W4-WEB3-01 and W5-WEB3-01 (operations)
+-> W6-WEB3-01 (marketplace).
+W0-WEB3-01 plus W0-WEB3-02 plus D22 (W3-IR and W3-VER accepted) ->
+W0-WEB3-03 [DONE 2026-11-25, Contract IR v1 schema, fixtures and the sixth
+docs gate] -> W1-WEB3-01 (generation scope) -> W1-WEB3-02.
+Seven remain planned; the next Web3 step is W1-WEB3-01 (generation scope,
+depends on the DONE schema) and W3-TOOL/W3-LZ acceptance.
+
 ## ADI workstreams (2026-11-24 audit: 25 DONE, 7 BLOCKED; evidence in `architecture/adi-implementation-evidence.md`)
 
 ADI-FOUND-001 [DONE 2026-11-23, audit] -> ADI-FOUND-001a [DONE 2026-11-23, parity closed, `56da19a`] -> ADI-FOUND-002 [DONE 2026-11-23, lock contract] -> ADI-FOUND-003 [DONE 2026-11-23, resolver design] -> ADI-FOUND-003a [DONE 2026-11-23, `backend/pkg/composition`, `309af45`] -> ADI-FOUND-004 [DONE 2026-11-23, run-snapshot design] -> ADI-FOUND-004a [DONE 2026-11-23, migration 0017 + store + AdmitRun] -> ADI-FOUND-004b [DONE 2026-11-23, live guard + rollout switch] -> ADI-FOUND-004c [DONE 2026-11-24, producer resolve + persist + compile + start, `ad69c8b`]
