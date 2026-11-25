@@ -5,7 +5,10 @@
 > Companions: `web3-chain-abstraction.md`, `web3-layerzero-interop.md`,
 > `web3-security-gates.md` (G0–G10 gates plus the verdict model; invariant 5 is
 > enforced structurally there — signing refuses a deployment whose verdict is not
-> `gates_passed`, and no gate may set an audit status).
+> `gates_passed`, and no gate may set an audit status),
+> `web3-signing-and-deployment.md` (**the lifecycle this document's invariants are
+> implemented in** — nine stages with distinct owners, the `TxIntent` digest binding,
+> approvals, broadcast/confirm, and the deployment record).
 > Decision: `adr-web3-signing-authority.md` (PROPOSED).
 
 ## Mandatory invariants

@@ -1947,8 +1947,8 @@
    "title": "Wallet plus signing plus deployment lifecycle design",
    "type": "DESIGN",
    "priority": "P1",
-   "status": "planned",
-   "description": "Design wallet connection, transaction lifecycle (build/simulate/policy/approve/sign/broadcast/confirm), approval flows, testnet deployment, verification, deployment records. Wallet-first; managed signer deferred to O34.",
+   "status": "DONE",
+   "description": "DONE 2026-11-25 (design only, no wallet/signer/RPC/table added). docs/architecture/web3-signing-and-deployment.md specifies one lifecycle — intent, simulate, policy, approve, sign, broadcast, confirm, record, verify — as nine stages S1-S9 with an owner column and a refuses-to-run column each, so the boundaries are authorization boundaries rather than function calls. Acceptance: (1) distinct owners — N2 forbids any component from performing two of approve/sign/broadcast (the control plane builds/simulates/policies/broadcasts but never approves or signs; the custody holder approves/signs but never broadcasts or records), backed by an actors table with an explicit may-not column, and stage order is enforced by state plus the evidence digest that justified each transition; (2) mainnet approval mandatory by default — N4 plus the mainnet rule that a policy allow verdict is necessary but never sufficient, riskClass high also requires simulation evidence and a rollback/pause plan reference, testnet auto-approval is limited to explicitly configured low-risk operation kinds and recorded with autoApprovedBy and the policy version, and no configuration value makes mainnet self-approving; (3) agent-held keys explicitly refused — N1 states the agent tool surface has no method accepting or returning key material, the TxIntent schema has no key/seed/signature field, the agent may only propose an intent and may not approve/sign/broadcast/set approver, and the platform never asks a user to paste a key, mnemonic or keystore. Also defines: the TxIntent object (vibesdk-txintent/v1) with a canonical intentDigest over every field except itself, mandatory expiresAt, riskClass and policyVersion copied in, and a wallet reference (wallet:tenant:checksummed-address) instead of an account key; wallet/session rules citing primary standards verified Final on 2026-11-25 (EIP-1193 provider API, EIP-6963 multi provider discovery, ERC-4361 sign-in with Ethereum, EIP-712 typed structured data which explicitly leaves replay protection to the application — hence digest binding and single-use approvals, ERC-55 checksummed addresses); approval rules (one digest/chain/nonce/expiry, single use, revocation before signature only, self-approval refusal mirroring the waiver rule, multisig/timelock threshold declared per profile); the signing boundary (rebuilds the payload from the intent, verifies the signature recovers to the authorized address, records a reference plus recovered address, never logs reusable material, never broadcasts); broadcast/confirm rules (idempotency key chainId+from+nonce, nonce reservation, replacement needs a new intent and approval, status vocabulary submitted/included/confirmed/finalized/reverted/replaced/dropped with included not equal to finality, reorg keeps both observations, retry never widens authority); the deployment record (vibesdk-deployment/v1, checksummed address, proxy implementation and admin refs, policy/approval/simulation refs, finality rule, verification status not_verified/pending/source_verified/mismatched where source_verified is explicitly not an audit, append-only with a supersedes pointer, timestamps allowed because it is an event record not a reproduction claim); tenancy and audit events; and a twelve-row failure/recovery matrix stating who retries, what is idempotent, and what needs a new approval. Open items recorded: remote/QR wallet family pin, managed signer O34, final approval-policy schema in the signing ADR, multisig threshold verification method, per-chain confirmation and fee-bump rules, session TTL, verifier default.",
    "dependencies": [
     "W2-WEB3-01"
    ],
@@ -1958,14 +1958,19 @@
     "Agent-held keys explicitly refused"
    ],
    "documentation": [
+    "docs/architecture/web3-signing-and-deployment.md",
     "docs/architecture/web3-security-signing.md",
     "docs/architecture/web3-chain-abstraction.md"
    ],
-   "repository_paths": [],
+   "repository_paths": [
+    "docs/architecture/web3-signing-and-deployment.md"
+   ],
    "risk": "High",
    "solo_developer_estimate": "M",
    "tests": [
-    "bun run docs:check green"
+    "bun run docs:check green with six validators",
+    "wallet and signing standards verified Final at eips.ethereum.org on 2026-11-25",
+    "no code, wallet SDK, RPC client, route, table or dependency added: go.mod, package.json and bun.lock untouched"
    ]
   },
   {

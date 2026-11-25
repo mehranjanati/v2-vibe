@@ -51,10 +51,12 @@ module set with computed digests, template lifecycle] -> W1-WEB3-02 [DONE
 digests, twelve build rules with measured evidence, vibesdk-artifact/v1 manifest,
 no-keys sandbox boundary] -> W2-WEB3-01 [DONE 2026-11-25, eleven validation gates
 G0–G10 with pass/fail lists and per-gate evidence, structural no-audit verdict
-model] -> W3-WEB3-01 (wallet/signing/deployment; refuses any deployment whose
-verdict is not gates_passed).
-Four remain planned; the next Web3 step is W3-WEB3-01 (signing lifecycle) and
-W3-TOOL/W3-LZ acceptance. Nothing in this track blocks the P0–P7 line.
+model] -> W3-WEB3-01 [DONE 2026-11-25, nine-stage signing and deployment lifecycle
+with distinct owners, digest-bound approvals, mainnet-by-default human approval and
+agent keys refused structurally] -> W4-WEB3-01 and W5-WEB3-01 (interop and
+operations; both still gated on W3-TOOL/W3-LZ acceptance).
+Three remain planned; the Web3 design chain is complete through the signing
+boundary. Nothing in this track blocks the P0–P7 line.
 
 ## ADI workstreams (2026-11-24 audit: 25 DONE, 7 BLOCKED; evidence in `architecture/adi-implementation-evidence.md`)
 

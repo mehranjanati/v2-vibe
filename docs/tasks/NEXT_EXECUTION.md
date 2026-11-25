@@ -293,10 +293,41 @@ Evidence: one digest-addressed artefact per gate (`admission.json`, the manifest
 digest under test, never-overwrite retention, and a verdict that references artefacts
 by digest so tampering breaks the reference instead of changing the story.
 
-Next planned: `W3-WEB3-01` (wallet/signing/deployment lifecycle — it consumes the
-verdict and G9's approval record, and owns the key boundary). Still awaiting owner
-acceptance: `W3-TOOL` (Foundry primary, Hardhat 3 compatibility — evidence recorded)
-and `W3-LZ` (LayerZero architecture verified, adapter unimplemented). None of
-these blocks or reorders the P0–P7 engineering line above.
+`W3-WEB3-01` **DONE 2026-11-25** (design only, no wallet or signer added) —
+`architecture/web3-signing-and-deployment.md`. One lifecycle as nine stages
+(intent → simulate → policy → approve → sign → broadcast → confirm → record →
+verify), each with an **owner** and a **refuses-to-run** condition, so the boundaries
+are authorization boundaries rather than function calls: the control plane builds,
+simulates, checks policy and broadcasts but never approves or signs; the custody
+holder approves and signs but never broadcasts or records; no component may perform
+two of approve/sign/broadcast.
+
+The three acceptance criteria are structural. **Distinct owners:** an actors table
+with an explicit "may not" column plus the no-two-stages rule above. **Mainnet
+approval mandatory:** a policy allow verdict is necessary but never sufficient —
+`riskClass: high` also needs simulation evidence and a rollback/pause plan, testnet
+auto-approval is limited to explicitly configured low-risk operation kinds and is
+recorded with the policy version, and no config value makes mainnet self-approving.
+**Agent keys refused:** the agent tool surface has no method that accepts or returns
+key material, `TxIntent` has no key/seed/signature field, the agent may only propose
+an intent, and the platform never asks a user to paste a key, mnemonic or keystore.
+
+Also defined: the `vibesdk-txintent/v1` object with a canonical `intentDigest`
+(approval binds to the digest, one chain, one nonce, one expiry — necessary because
+EIP-712 explicitly leaves replay protection to the application), wallet/session rules
+citing standards verified Final on 2026-11-25 (EIP-1193, EIP-6963, ERC-4361, EIP-712,
+ERC-55 checksummed addresses), approval single-use and self-approval refusal, the
+signing boundary that rebuilds the payload from the intent and verifies the recovered
+address, broadcast idempotency by `(chainId, from, nonce)` with `included ≠ finalized`,
+the append-only `vibesdk-deployment/v1` record (`source_verified` is explicitly not an
+audit), tenancy/audit events, and a twelve-row failure/recovery matrix where a retry
+never widens authority.
+
+That closes the Web3 design chain through the signing boundary. Still awaiting owner
+acceptance: `W3-TOOL` (Foundry primary, Hardhat 3 compatibility — evidence recorded),
+`W3-LZ` (LayerZero architecture verified, adapter unimplemented), and the open items
+this document defers (remote/QR wallet pin, managed signer **O34**, final
+approval-policy schema, multisig verification method, per-chain confirmations, verifier
+default). None of these blocks or reorders the P0–P7 engineering line above.
 
 ADI audit (2026-11-24, HEAD `ad69c8b`; updated 2026-11-25): 32 ADI task IDs — 28 DONE (18 design-only DONE + 10 code DONE: resolver `backend/pkg/composition`, snapshot store + `Verify`/`AdmitRun`, live binding `ADI-FOUND-004b`, producer `ADI-FOUND-004c`, plan compiler `backend/pkg/plan`, lexical memory `backend/pkg/memory`, L1+L2 evaluation `backend/pkg/evaluation`, activation core `backend/pkg/activation`, decision trace `backend/pkg/activation/trace.go` + `d1store`), 4 BLOCKED (`ADI-ECO-001..004`). Evidence matrix: `architecture/adi-implementation-evidence.md` (every capability linked to file:line code, migration, test names, local `go test ./...` green + CI `go-test`, commit SHAs). Agentic execution is a PROPOSED ADR (`architecture/adr-agentic-execution.md`), not an implementation. `P1-AGT-004` DONE 2026-11-24 (D8.2/D8.3/D8.4); `ADI-CTX-003` DONE 2026-11-25; `ADI-CTX-004` DONE 2026-11-25 (store only — no caller, so no trace is produced on the live path). D8/D9 gates unchanged.

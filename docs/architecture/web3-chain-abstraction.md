@@ -29,6 +29,8 @@ rewrite. All labels below use `evm-` prefixes where EVM-specific.
   bytecode plus metadata) to deployment record (address, chain, tx hash,
   compiler triple, source digest) to verified source on an explorer
   (ASSUMPTION: Sourcify/Blockscout-style verification; OPEN: choose default).
+  The record fields and the nine-stage lifecycle are specified in
+  `web3-signing-and-deployment.md`.
 - Transaction lifecycle: build, simulate, policy check, approve, sign,
   broadcast, confirm. Signing is a separate boundary owned by
   `web3-security-signing.md`; this interface never sees a private key.
@@ -44,8 +46,10 @@ rewrite. All labels below use `evm-` prefixes where EVM-specific.
 - Language v1: Solidity targeting EVM (FACT: Solidity is an EVM-targeting,
   statically typed language with ABI spec, optimizer, and metadata output;
   `https://docs.soliditylang.org` read 2026-11-25).
-- Libraries v1: OpenZeppelin-style pinned modules (OPEN: pin exact package
-  set after toolchain ADR).
+- Libraries v1: the package set is pinned in
+  `web3-solidity-generation-scope.md` (`@openzeppelin/contracts` 5.6.1, 17 entry
+  points with per-file SHA-256); the compiler and build settings are pinned in
+  `web3-compilation-and-artifacts.md`.
 - Networks v1: one low-cost EVM testnet for development, Ethereum mainnet
   semantics for the security model; no second VM until its adapter ADR lands.
 - Explicitly not claimed: Solana, Move/Aptos/Sui, Bitcoin script, or any
