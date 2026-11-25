@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,10 +12,15 @@ import (
 )
 
 // cfStub is a stand-in for the Workflows API: it records requests and answers
-// with the envelope shape the adapter parses.
+// with the envelope shape the adapter parses. It deliberately enforces the
+// documented REST contract — `instance_id` (not `id`) plus a JSON-encoded
+// `params` string on create, and `PATCH .../status` for lifecycle edits — so a
+// regression back to the invented endpoints fails here.
 type cfStub struct {
 	server    *httptest.Server
 	requests  []string
+	bodies    map[string]string
+	patches   []string // status values sent through PATCH .../status, in order
 	status    string
 	failWith  int
 	body      string
@@ -23,32 +29,62 @@ type cfStub struct {
 
 func newCFStub(t *testing.T) *cfStub {
 	t.Helper()
-	stub := &cfStub{status: "queued", instances: map[string]bool{}}
+	stub := &cfStub{status: "queued", instances: map[string]bool{}, bodies: map[string]string{}}
 	stub.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		stub.requests = append(stub.requests, r.Method+" "+r.URL.Path)
+		key := r.Method + " " + r.URL.Path
+		stub.requests = append(stub.requests, key)
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			w.WriteHeader(http.StatusUnauthorized)
 			fmt.Fprint(w, `{"success":false,"errors":[{"code":10000,"message":"auth"}]}`)
 			return
 		}
+		raw, _ := io.ReadAll(r.Body)
+		stub.bodies[key] = string(raw)
 		if stub.failWith != 0 {
 			w.WriteHeader(stub.failWith)
 			fmt.Fprint(w, stub.body)
 			return
 		}
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/instances") {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/instances"):
 			var body struct {
-				ID string `json:"id"`
+				InstanceID string `json:"instance_id"`
+				ID         string `json:"id"`
+				Params     any    `json:"params"`
 			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if stub.instances[body.ID] {
-				w.WriteHeader(http.StatusConflict)
-				fmt.Fprint(w, `{"success":false,"errors":[{"code":1001,"message":"instance already exists"}]}`)
+			_ = json.Unmarshal(raw, &body)
+			if body.InstanceID == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":1000,"message":"instance_id is required"}]}`)
 				return
 			}
-			stub.instances[body.ID] = true
+			if _, isString := body.Params.(string); !isString {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":1000,"message":"params must be a JSON-encoded string"}]}`)
+				return
+			}
+			if stub.instances[body.InstanceID] {
+				w.WriteHeader(http.StatusConflict)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":10405,"message":"workflows.api.error.instance.already_exists"}]}`)
+				return
+			}
+			stub.instances[body.InstanceID] = true
 			w.WriteHeader(http.StatusAccepted)
-			fmt.Fprintf(w, `{"success":true,"result":{"id":%q,"status":%q}}`, body.ID, stub.status)
+			fmt.Fprintf(w, `{"success":true,"result":{"id":%q,"status":%q}}`, body.InstanceID, stub.status)
+			return
+		case r.Method == http.MethodPatch && strings.HasSuffix(r.URL.Path, "/status"):
+			var body struct {
+				Status string `json:"status"`
+			}
+			_ = json.Unmarshal(raw, &body)
+			stub.patches = append(stub.patches, body.Status)
+			switch body.Status {
+			case "pause", "resume", "terminate":
+				fmt.Fprintf(w, `{"success":true,"result":{"id":"run-1","status":%q}}`, body.Status)
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":1000,"message":"unknown status"}]}`)
+			}
 			return
 		}
 		fmt.Fprintf(w, `{"success":true,"result":{"id":"run-1","status":%q}}`, stub.status)
@@ -154,13 +190,109 @@ func TestCloudflareMapsTheContract(t *testing.T) {
 	want := []string{
 		"POST /accounts/acct-1/workflows/vibe-runs/instances",
 		"GET /accounts/acct-1/workflows/vibe-runs/instances/run-1",
-		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/terminate",
-		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/pause",
-		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/resume",
+		"PATCH /accounts/acct-1/workflows/vibe-runs/instances/run-1/status",
 	}
 	for _, path := range want {
 		if !contains(stub.requests, path) {
 			t.Errorf("missing request %q in %v", path, stub.requests)
+		}
+	}
+	// The invented endpoints must never be called again.
+	for _, dead := range []string{
+		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/terminate",
+		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/pause",
+		"POST /accounts/acct-1/workflows/vibe-runs/instances/run-1/resume",
+	} {
+		if contains(stub.requests, dead) {
+			t.Errorf("adapter called a non-existent endpoint: %q", dead)
+		}
+	}
+
+	// Create must send the documented body: instance_id plus a JSON-encoded
+	// params string (an object is rejected by the REST schema).
+	createBody := stub.bodies["POST /accounts/acct-1/workflows/vibe-runs/instances"]
+	var sent struct {
+		InstanceID string `json:"instance_id"`
+		ID         string `json:"id"`
+		Params     string `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(createBody), &sent); err != nil {
+		t.Fatalf("create body %q: %v", createBody, err)
+	}
+	if sent.InstanceID != "run-1" {
+		t.Errorf("create body instance_id = %q, want run-1", sent.InstanceID)
+	}
+	if sent.ID != "" {
+		t.Errorf("create body carries the undocumented `id` field: %q", sent.ID)
+	}
+	var params map[string]string
+	if err := json.Unmarshal([]byte(sent.Params), &params); err != nil {
+		t.Fatalf("params %q is not JSON-encoded: %v", sent.Params, err)
+	}
+	if params["tenant"] != "tenant-a" || params["plan"] != "run-1" {
+		t.Errorf("params = %v, want plan/tenant", params)
+	}
+
+	// Every lifecycle action is the documented status edit with the right value.
+	if got := strings.Join(stub.patches, ","); got != "terminate,pause,resume" {
+		t.Errorf("status edits = %q, want terminate,pause,resume (Cancel, Pause, Resume)", got)
+	}
+}
+
+// TestCloudflareLifecycleUsesStatusEdit pins each action to one status value, so a
+// wrong verb/body cannot hide behind the ordering of the mapping test.
+func TestCloudflareLifecycleUsesStatusEdit(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name string
+		call func(*Cloudflare) error
+		want string
+	}{
+		{"pause", func(c *Cloudflare) error { return c.Pause(ctx, "run-1") }, "pause"},
+		{"resume", func(c *Cloudflare) error { return c.Resume(ctx, "run-1") }, "resume"},
+		{"cancel", func(c *Cloudflare) error { return c.Cancel(ctx, "run-1", "operator") }, "terminate"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := newCFStub(t)
+			adapter := stub.adapter(t)
+			if err := tc.call(adapter); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			const key = "PATCH /accounts/acct-1/workflows/vibe-runs/instances/run-1/status"
+			if body := stub.bodies[key]; body != fmt.Sprintf(`{"status":%q}`, tc.want) {
+				t.Errorf("body = %q, want status %q", body, tc.want)
+			}
+			for _, req := range stub.requests {
+				if strings.Contains(req, "/pause") || strings.Contains(req, "/resume") || strings.Contains(req, "/terminate") {
+					t.Errorf("called a non-existent endpoint: %q", req)
+				}
+			}
+		})
+	}
+}
+
+// TestCloudflareMapsEveryDocumentedStatus covers the nine statuses the REST
+// schema lists: the three with no contract equivalent are live, not failed.
+func TestCloudflareMapsEveryDocumentedStatus(t *testing.T) {
+	cases := map[string]State{
+		"queued":          StateQueued,
+		"running":         StateRunning,
+		"paused":          StatePaused,
+		"errored":         StateFailed,
+		"terminated":      StateCancelled,
+		"complete":        StateSucceeded,
+		"waiting":         StateRunning,
+		"waitingForPause": StateRunning,
+		"rollingBack":     StateRunning,
+	}
+	for status, want := range cases {
+		state, stateErr := mapStatus(status)
+		if state != want {
+			t.Errorf("mapStatus(%q) = %s, want %s", status, state, want)
+		}
+		if want == StateRunning && stateErr != nil {
+			t.Errorf("mapStatus(%q) returned error %v, want nil", status, stateErr)
 		}
 	}
 }

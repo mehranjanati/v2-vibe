@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,15 +20,21 @@ import (
 // `Start` accepts a StepExecutor and ignores it, and `Sleep` is refused because a
 // sleep is declared inside the workflow, not injected from outside.
 //
-// Status: implemented, **not verified against a live account**. The conformance
-// suite needs a deployed workflow plus an account, so this adapter is exercised
-// against a stub server for its mapping only. See docs/DEV_CHECKLIST.md P7.11.
+// Request shapes follow the published Workflows REST schema (create:
+// `POST .../instances` with `instance_id` plus a JSON-encoded `params` string;
+// lifecycle: `PATCH .../instances/{id}/status` with `{"status":...}`), which is
+// also what wrangler 4.90.0 (cloudflare SDK 5.2.0) calls. Status: the mapping is
+// verified against that schema and the stub server, but **not yet against a live
+// account** — a real run needs a deployed workflow plus a token carrying
+// `Workers Scripts Write`. See docs/DEV_CHECKLIST.md P7.11 and
+// cloudflare_live_test.go (`-tags live`) for the one-command proof.
 type Cloudflare struct {
 	// AccountID and Workflow name the deployed workflow.
 	AccountID string
 	Workflow  string
-	// APIToken is a Cloudflare API token with Workflows edit permission. It is
-	// never logged or put in a URL.
+	// APIToken is a Cloudflare API token with `Workers Scripts Write` (the
+	// permission the instance endpoints document). It is never logged or put in
+	// a URL.
 	APIToken string
 	// BaseURL defaults to the public API.
 	BaseURL string
@@ -149,13 +154,42 @@ func classifyCloudflareError(status int, envelope cfEnvelope) error {
 	}
 }
 
+// cfDuplicateInstanceCode is the documented "an instance with this id already
+// exists" error (docs: error 10405, `workflows.api.error.instance.already_exists`).
+const cfDuplicateInstanceCode = 10405
+
+// isDuplicateInstance reports whether a failed create means "this run id already
+// exists" (C12). The numeric code is the stable signal; the message is only a
+// fallback because provider prose changes.
+func isDuplicateInstance(envelope cfEnvelope) bool {
+	for _, e := range envelope.Errors {
+		if e.Code == cfDuplicateInstanceCode {
+			return true
+		}
+		msg := strings.ToLower(e.Message)
+		if strings.Contains(msg, "already_exists") || strings.Contains(msg, "already exists") {
+			return true
+		}
+	}
+	return false
+}
+
 // mapStatus translates a Cloudflare instance status onto the contract's states. An
 // unknown status is a failure, never an optimistic success.
+//
+// The REST schema lists nine statuses. Three of them have no contract equivalent
+// (`waiting` on an event, `waitingForPause` mid-pause, `rollingBack` mid-terminate);
+// they are live, non-terminal instances, so they map to running rather than being
+// reported as failures.
 func mapStatus(status string) (State, *Error) {
 	switch strings.ToLower(status) {
 	case "queued":
 		return StateQueued, nil
 	case "running":
+		return StateRunning, nil
+	case "waiting", "waitingforpause", "rollingback":
+		// Live but not yet in the state the caller asked for; the contract has no
+		// waiting/rolling-back state and none of these is terminal.
 		return StateRunning, nil
 	case "paused":
 		return StatePaused, nil
@@ -176,15 +210,21 @@ func (c *Cloudflare) Start(ctx context.Context, plan RunPlan, _ StepExecutor) (R
 	if err := Admit(plan, c.Capabilities()); err != nil {
 		return RunHandle{RunID: plan.ID, Tenant: plan.Tenant, PlanID: plan.ID, State: StateRejected}, nil
 	}
+	// The REST contract takes `instance_id` and a JSON-encoded `params` string; an
+	// object is not accepted by the documented schema even though the SDK's
+	// generated types are looser.
+	params, err := json.Marshal(map[string]any{"plan": plan.ID, "tenant": plan.Tenant})
+	if err != nil {
+		return RunHandle{RunID: plan.ID, Tenant: plan.Tenant, PlanID: plan.ID}, Permanent("cloudflare: encode params: %v", err)
+	}
 	envelope, err := c.call(ctx, http.MethodPost, c.instanceURL(""), map[string]any{
-		"id":     plan.ID,
-		"params": map[string]any{"plan": plan.ID, "tenant": plan.Tenant},
+		"instance_id": plan.ID,
+		"params":      string(params),
 	})
 	if err != nil {
-		// 409 "already exists" arrives as a permanent error; treat it as the
-		// idempotent case by reading the existing instance instead.
-		var pe *Error
-		if errors.As(err, &pe) && strings.Contains(strings.ToLower(pe.Msg), "already exists") {
+		// A duplicate id arrives as a permanent error; only that case falls back
+		// to the existing instance (C12).
+		if isDuplicateInstance(envelope) {
 			return c.existingHandle(ctx, plan)
 		}
 		return RunHandle{RunID: plan.ID, Tenant: plan.Tenant, PlanID: plan.ID}, err
@@ -235,28 +275,36 @@ func (c *Cloudflare) Status(ctx context.Context, runID string) (Status, error) {
 	return status, nil
 }
 
+// setStatus performs the lifecycle edit the REST schema documents:
+// `PATCH .../instances/{id}/status` with `{"status": "pause"|"resume"|"terminate"}`
+// (also "restart", which this adapter does not expose).
+func (c *Cloudflare) setStatus(ctx context.Context, instanceID, status string) error {
+	if strings.TrimSpace(instanceID) == "" {
+		return Permanent("cloudflare: run id is required")
+	}
+	_, err := c.call(ctx, http.MethodPatch, c.instanceURL(instanceID)+"/status", map[string]any{"status": status})
+	return err
+}
+
 // Cancel implements Provider: terminate the instance.
-func (c *Cloudflare) Cancel(ctx context.Context, runID, reason string) error {
+//
+// The REST status edit carries no reason field, so the reason stays with the
+// caller's run record (and its audit trail); the provider is told only what to do.
+func (c *Cloudflare) Cancel(ctx context.Context, runID, _ string) error {
 	if !c.Capabilities().Cancel {
 		return &Error{Class: ErrAdmissionRefused, Msg: "cloudflare: cancel is not advertised"}
 	}
-	if strings.TrimSpace(runID) == "" {
-		return Permanent("cloudflare: run id is required")
-	}
-	_, err := c.call(ctx, http.MethodPost, c.instanceURL(runID)+"/terminate", map[string]any{"reason": reason})
-	return err
+	return c.setStatus(ctx, runID, "terminate")
 }
 
 // Pause implements Provider.
 func (c *Cloudflare) Pause(ctx context.Context, runID string) error {
-	_, err := c.call(ctx, http.MethodPost, c.instanceURL(runID)+"/pause", nil)
-	return err
+	return c.setStatus(ctx, runID, "pause")
 }
 
 // Resume implements Provider.
 func (c *Cloudflare) Resume(ctx context.Context, runID string) error {
-	_, err := c.call(ctx, http.MethodPost, c.instanceURL(runID)+"/resume", nil)
-	return err
+	return c.setStatus(ctx, runID, "resume")
 }
 
 // Sleep implements Provider: refused, because a Cloudflare sleep is declared
